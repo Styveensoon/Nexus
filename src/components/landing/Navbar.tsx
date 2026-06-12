@@ -1,360 +1,119 @@
-import React, { useState } from "react";
+import React from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions,
+  Image,
+  ImageSourcePropType,
 } from "react-native";
+import { Sparkles } from "lucide-react-native";
 
-import {
-  Menu,
-  X,
-  Sparkles,
-} from "lucide-react-native";
+interface NavbarProps {
+  navigation: any;
+  isDark: boolean;
+  logoUri?: ImageSourcePropType;
+}
 
-import { useTheme } from "../../context/ThemeContext";
+export default function Navbar({ navigation, isDark, logoUri }: NavbarProps) {
+  const { width } = useWindowDimensions();
+  const isMobile = width < 768;
 
-const { width } = Dimensions.get("window");
+  const bg            = isDark ? "#111827" : "#FFFFFF";
+  const border        = isDark ? "#374151" : "#E5E7EB";
+  const textPrimary   = isDark ? "#FFFFFF" : "#111827";
+  const textSecondary = isDark ? "#9CA3AF" : "#6B7280";
+  const shadowBase    = isDark ? "#000000" : "#000000";
 
-const isMobile = width < 768;
-
-export default function Navbar({ navigation }: any) {
-  const { isDark } = useTheme();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const paddingH = isMobile ? 24 : "5%";
 
   return (
-    <>
-      <View
-        style={[
-          styles.navbar,
-          isDark && styles.navbarDark,
-        ]}
-      >
-        {/* Logo */}
-        <View style={styles.logoContainer}>
-          <View style={styles.logoIcon}>
-            <Sparkles
-              size={16}
-              color="#FFFFFF"
-            />
-          </View>
+    <View style={[
+      styles.navContainer, 
+      { 
+        backgroundColor: bg, 
+        borderBottomColor: border,
+        shadowColor: shadowBase,
+      }
+    ]}>
+      {/* Aplicamos el mismo margen dinámico del Landing y quitamos el límite de ancho */}
+      <View style={[styles.navContent, { paddingHorizontal: paddingH }]}>
+        <TouchableOpacity style={styles.logoRow} onPress={() => navigation.navigate("Landing")}>
+          {logoUri ? (
+            <Image source={logoUri} style={styles.logoImage} resizeMode="contain" />
+          ) : (
+            <View style={styles.logoIcon}>
+              <Sparkles size={16} color="#FFFFFF" />
+            </View>
+          )}
+          <Text style={[styles.logoText, { color: textPrimary }]}>Nexus</Text>
+        </TouchableOpacity>
 
-          <Text
-            style={[
-              styles.logoText,
-              isDark && styles.darkText,
-            ]}
-          >
-            Nexus
-          </Text>
-        </View>
-
-        {/* WEB MENU */}
         {!isMobile && (
-          <>
-            <View style={styles.navLinks}>
-              <NavItem
-                label="Inicio"
-                isDark={isDark}
-              />
-
-              <NavItem
-                label="Características"
-                isDark={isDark}
-              />
-
-              <NavItem
-                label="Integraciones"
-                isDark={isDark}
-              />
-
-              <NavItem
-                label="Contacto"
-                isDark={isDark}
-              />
-            </View>
-
-            <View style={styles.actions}>
-              <TouchableOpacity
-                onPress={() =>
-                  navigation.navigate("Login")
-                }
-              >
-                <Text
-                  style={[
-                    styles.loginText,
-                    isDark && styles.darkSubText,
-                  ]}
-                >
-                  Iniciar sesión
-                </Text>
+          <View style={styles.links}>
+            {["Características", "Integraciones", "Precios"].map((l) => (
+              <TouchableOpacity key={l}>
+                <Text style={[styles.link, { color: textSecondary }]}>{l}</Text>
               </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.registerBtn}
-                onPress={() =>
-                  navigation.navigate("Register")
-                }
-              >
-                <Text style={styles.registerText}>
-                  Registrarse
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </>
+            ))}
+          </View>
         )}
 
-        {/* MOBILE MENU BUTTON */}
-        {isMobile && (
-          <TouchableOpacity
-            onPress={() =>
-              setMenuOpen(!menuOpen)
-            }
+        <View style={styles.actions}>
+          {!isMobile && (
+            <TouchableOpacity onPress={() => navigation.navigate("Login")}>
+              <Text style={[styles.linkBtn, { color: textSecondary }]}>Iniciar sesión</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity 
+            style={[styles.btnPrimary, { shadowColor: '#2563EB' }]}
+            onPress={() => navigation.navigate("Register")}
           >
-            {menuOpen ? (
-              <X
-                size={26}
-                color={
-                  isDark
-                    ? "#FFFFFF"
-                    : "#111827"
-                }
-              />
-            ) : (
-              <Menu
-                size={26}
-                color={
-                  isDark
-                    ? "#FFFFFF"
-                    : "#111827"
-                }
-              />
-            )}
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* MOBILE DROPDOWN */}
-      {menuOpen && isMobile && (
-        <View
-          style={[
-            styles.mobileMenu,
-            isDark && styles.mobileMenuDark,
-          ]}
-        >
-          <MobileItem
-            label="Inicio"
-          />
-
-          <MobileItem
-            label="Características"
-          />
-
-          <MobileItem
-            label="Integraciones"
-          />
-
-          <MobileItem
-            label="Contacto"
-          />
-
-          <TouchableOpacity
-            style={styles.mobileLogin}
-            onPress={() =>
-              navigation.navigate("Login")
-            }
-          >
-            <Text style={styles.mobileLoginText}>
-              Iniciar sesión
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.mobileRegister}
-            onPress={() =>
-              navigation.navigate("Register")
-            }
-          >
-            <Text style={styles.mobileRegisterText}>
-              Registrarse
+            <Text style={styles.btnPrimaryText}>
+              {isMobile ? "Registrarse" : "Comenzar gratis"}
             </Text>
           </TouchableOpacity>
         </View>
-      )}
-    </>
-  );
-}
-
-function NavItem({
-  label,
-  isDark,
-}: any) {
-  return (
-    <TouchableOpacity>
-      <Text
-        style={[
-          styles.navLink,
-          isDark && styles.darkSubText,
-        ]}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-}
-
-function MobileItem({
-  label,
-}: any) {
-  return (
-    <TouchableOpacity style={styles.mobileItem}>
-      <Text style={styles.mobileItemText}>
-        {label}
-      </Text>
-    </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  navbar: {
-    height: 80,
-    paddingHorizontal: 24,
+  navContainer: {
+    width: "100%",
+    borderBottomWidth: 1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 4,
+    zIndex: 50,
+  },
+  navContent: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-
-    backgroundColor: "#FFFFFF",
-
-    borderBottomWidth: 1,
-    borderColor: "#E5E7EB",
+    paddingVertical: 16,
+    width: "100%", // Sin maxWidth para que fluya
   },
-
-  navbarDark: {
-    backgroundColor: "#111827",
-    borderColor: "#1F2937",
-  },
-
-  logoContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  logoIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-
-    backgroundColor: "#2563EB",
-
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  logoText: {
-    marginLeft: 10,
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#111827",
-  },
-
-  darkText: {
-    color: "#FFFFFF",
-  },
-
-  darkSubText: {
-    color: "#CBD5E1",
-  },
-
-  navLinks: {
-    flexDirection: "row",
-    gap: 32,
-  },
-
-  navLink: {
-    fontSize: 15,
-    fontWeight: "500",
-    color: "#374151",
-  },
-
-  actions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 18,
-  },
-
-  loginText: {
-    fontSize: 15,
-    color: "#374151",
-    fontWeight: "500",
-  },
-
-  registerBtn: {
-    backgroundColor: "#2563EB",
-
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-
+  logoRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  logoIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: "#2563EB", justifyContent: "center", alignItems: "center" },
+  logoImage: { width: 32, height: 32, borderRadius: 8 },
+  logoText: { fontSize: 20, fontWeight: "700", letterSpacing: -0.5 },
+  links: { flexDirection: "row", gap: 32, alignItems: "center" },
+  link: { fontSize: 15, fontWeight: "500" },
+  actions: { flexDirection: "row", alignItems: "center", gap: 20 },
+  linkBtn: { fontSize: 15, fontWeight: "600" },
+  btnPrimary: { 
+    backgroundColor: "#2563EB", 
+    paddingHorizontal: 20, 
+    paddingVertical: 10, 
     borderRadius: 999,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
   },
-
-  registerText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-  },
-
-  mobileMenu: {
-    backgroundColor: "#FFFFFF",
-    padding: 20,
-
-    borderBottomWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-
-  mobileMenuDark: {
-    backgroundColor: "#111827",
-    borderColor: "#1F2937",
-  },
-
-  mobileItem: {
-    paddingVertical: 14,
-  },
-
-  mobileItemText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#111827",
-  },
-
-  mobileLogin: {
-    marginTop: 16,
-
-    paddingVertical: 14,
-
-    borderWidth: 1,
-    borderColor: "#D1D5DB",
-
-    borderRadius: 14,
-    alignItems: "center",
-  },
-
-  mobileLoginText: {
-    fontWeight: "700",
-  },
-
-  mobileRegister: {
-    marginTop: 12,
-
-    backgroundColor: "#2563EB",
-
-    paddingVertical: 14,
-
-    borderRadius: 14,
-    alignItems: "center",
-  },
-
-  mobileRegisterText: {
-    color: "#FFFFFF",
-    fontWeight: "700",
-  },
+  btnPrimaryText: { color: "#FFFFFF", fontSize: 14, fontWeight: "600" },
 });
