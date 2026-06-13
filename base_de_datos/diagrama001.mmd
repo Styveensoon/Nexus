@@ -1,0 +1,59 @@
+%% Abrir en 
+%% https://mermaid.live/edit
+
+---
+title: "Auth Schema — DevProject Manager"
+---
+erDiagram
+
+  AUTH_USERS["auth.users (Supabase)"] {
+    uuid id PK
+    string email
+    string encrypted_password
+    timestamp email_confirmed_at
+    jsonb raw_user_meta_data
+    timestamp created_at
+  }
+
+  AUTH_IDENTITIES["auth.identities (Supabase)"] {
+    uuid id PK
+    uuid user_id FK
+    string provider
+    jsonb identity_data
+    timestamp created_at
+  }
+
+  AUTH_SESSIONS["auth.sessions (Supabase)"] {
+    uuid id PK
+    uuid user_id FK
+    string token
+    timestamp created_at
+    timestamp not_after
+  }
+
+  PROFILES["profiles (Manual + trigger)"] {
+    uuid id PK
+    uuid user_id FK
+    string nombre
+    string apellido
+    string avatar_url
+    enum rol
+    enum estado
+    timestamp creado_at
+    timestamp actualizado_at
+  }
+
+  PERFIL_DESARROLLADOR["perfil_desarrollador (Manual)"] {
+    uuid id PK
+    uuid user_id FK
+    string especialidad
+    text[] habilidades
+    enum nivel_experiencia
+    text bio
+    timestamp actualizado_at
+  }
+
+  AUTH_USERS ||--o{ AUTH_IDENTITIES       : "OAuth providers"
+  AUTH_USERS ||--o{ AUTH_SESSIONS         : "sesiones activas"
+  AUTH_USERS ||--||  PROFILES             : "trigger on insert"
+  AUTH_USERS ||--o|  PERFIL_DESARROLLADOR : "completa despues"
