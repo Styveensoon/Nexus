@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -42,6 +42,12 @@ export default function LandingScreen({ navigation }: any) {
   const { isDark } = useTheme();
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
+  const isWeb = Platform.OS === "web";
+
+  // Hover sutil (solo web) para los CTA principales
+  const [hoverHeroPrimary, setHoverHeroPrimary] = useState(false);
+  const [hoverHeroSecondary, setHoverHeroSecondary] = useState(false);
+  const [hoverCta, setHoverCta] = useState(false);
 
   // Paleta Premium (Contrastes agresivos)
   const bg            = isDark ? "#020617" : "#FAFAFA"; 
@@ -147,11 +153,29 @@ export default function LandingScreen({ navigation }: any) {
 
               {/* BOTONES STACKED EN MÓVIL */}
               <View style={[styles.btnRow, { flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : 16 }]}>
-                <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: primaryColor, shadowColor: primaryColor, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.4, shadowRadius: 20, elevation: 10, width: isMobile ? '100%' : 'auto', paddingVertical: isMobile ? 16 : 20, paddingHorizontal: isMobile ? 24 : 36 }]} onPress={() => navigation.navigate("Register")}>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[
+                    styles.btnPrimary,
+                    { backgroundColor: primaryColor, shadowColor: primaryColor, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.4, shadowRadius: 20, elevation: 10, width: isMobile ? '100%' : 'auto', paddingVertical: isMobile ? 16 : 20, paddingHorizontal: isMobile ? 24 : 36 },
+                    isWeb && ({ transitionProperty: 'transform, box-shadow', transitionDuration: '0.2s', transform: [{ translateY: hoverHeroPrimary ? -3 : 0 }], shadowOpacity: hoverHeroPrimary ? 0.55 : 0.4 } as any),
+                  ]}
+                  onPress={() => navigation.navigate("Register")}
+                  {...(isWeb ? { onMouseEnter: () => setHoverHeroPrimary(true), onMouseLeave: () => setHoverHeroPrimary(false) } as any : {})}
+                >
                   <Text style={[styles.btnPrimaryText, { fontSize: isMobile ? 16 : 18 }]}>Iniciar gratis</Text>
                   <ArrowRight size={isMobile ? 16 : 18} color="#FFF" />
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.btnSecondary, { borderColor: border, backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "#FFF", width: isMobile ? '100%' : 'auto', paddingVertical: isMobile ? 16 : 20, paddingHorizontal: isMobile ? 24 : 36 }]} onPress={() => navigation.navigate("Login")}>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[
+                    styles.btnSecondary,
+                    { borderColor: border, backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "#FFF", width: isMobile ? '100%' : 'auto', paddingVertical: isMobile ? 16 : 20, paddingHorizontal: isMobile ? 24 : 36 },
+                    isWeb && ({ transitionProperty: 'transform, border-color', transitionDuration: '0.2s', transform: [{ translateY: hoverHeroSecondary ? -3 : 0 }], borderColor: hoverHeroSecondary ? textSecondary : border } as any),
+                  ]}
+                  onPress={() => navigation.navigate("Login")}
+                  {...(isWeb ? { onMouseEnter: () => setHoverHeroSecondary(true), onMouseLeave: () => setHoverHeroSecondary(false) } as any : {})}
+                >
                   <Text style={[styles.btnSecondaryText, { color: textPrimary, fontSize: isMobile ? 16 : 18 }]}>Ver demo</Text>
                 </TouchableOpacity>
               </View>
@@ -229,7 +253,16 @@ export default function LandingScreen({ navigation }: any) {
               Únete a los equipos que ya están construyendo el futuro con Nexus.
             </Text>
             <View style={[styles.btnRow, { justifyContent: "center" }]}>
-              <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: textPrimary, paddingHorizontal: isMobile ? 24 : 40, paddingVertical: isMobile ? 16 : 20, width: isMobile ? '100%' : 'auto' }]} onPress={() => navigation.navigate("Register")}>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[
+                  styles.btnPrimary,
+                  { backgroundColor: textPrimary, paddingHorizontal: isMobile ? 24 : 40, paddingVertical: isMobile ? 16 : 20, width: isMobile ? '100%' : 'auto' },
+                  isWeb && ({ transitionProperty: 'transform', transitionDuration: '0.2s', transform: [{ translateY: hoverCta ? -3 : 0 }] } as any),
+                ]}
+                onPress={() => navigation.navigate("Register")}
+                {...(isWeb ? { onMouseEnter: () => setHoverCta(true), onMouseLeave: () => setHoverCta(false) } as any : {})}
+              >
                 <Text style={[styles.btnPrimaryText, { color: isDark ? "#020617" : "#FFFFFF", fontSize: isMobile ? 16 : 18 }]}>Crear mi Workspace</Text>
               </TouchableOpacity>
             </View>
@@ -277,10 +310,10 @@ const styles = StyleSheet.create({
   heroTitle:        { fontWeight: "900", letterSpacing: -2 }, 
   heroDesc:         { fontWeight: "400" },
   btnRow:           { alignItems: "center" },
-  btnPrimary:       { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 999 },
-  btnPrimaryText:   { fontWeight: "700" },
-  btnSecondary:     { flexDirection: "row", alignItems: "center", borderRadius: 999, borderWidth: 1 },
-  btnSecondaryText: { fontWeight: "600" },
+  btnPrimary:       { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, borderRadius: 999 },
+  btnPrimaryText:   { fontWeight: "700", color: "#FFF", letterSpacing: 0.3 },
+  btnSecondary:     { flexDirection: "row", alignItems: "center", justifyContent: "center", borderRadius: 999, borderWidth: 1 },
+  btnSecondaryText: { fontWeight: "600", letterSpacing: 0.3 },
   section: {
     width: "100%",
   },
