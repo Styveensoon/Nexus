@@ -1,5 +1,5 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { Ionicons } from "@expo/vector-icons";
+import { Calendar, CircleCheckBig, Folder, LayoutGrid, User, Users } from "lucide-react-native";
 
 import DashboardScreen from "../screens/DashboardScreen";
 import ProjectsScreen from "../screens/ProjectsScreen";
@@ -7,60 +7,40 @@ import CalendarScreen from "../screens/CalendarScreen";
 import TeamScreen from "../screens/TeamScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import TasksScreen from "../screens/TasksScreen";
+import { useTheme } from "../context/ThemeContext";
 
 const Tab = createBottomTabNavigator();
 
+const TAB_ICONS: Record<string, any> = {
+  Dashboard: LayoutGrid,
+  Projects: Folder,
+  Tasks: CircleCheckBig,
+  Calendar: Calendar,
+  Team: Users,
+  Profile: User,
+};
+
 export default function BottomTabs() {
+  const { isDark } = useTheme();
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
 
         tabBarActiveTintColor: "#2563EB",
-        tabBarInactiveTintColor: "#9CA3AF",
+        tabBarInactiveTintColor: isDark ? "#64748B" : "#9CA3AF",
 
         tabBarStyle: {
           height: 70,
-          borderTopWidth: 0,
-          backgroundColor: "#FFFFFF",
+          borderTopWidth: 1,
+          borderTopColor: isDark ? "#1E293B" : "#F1F5F9",
+          backgroundColor: isDark ? "#0F172A" : "#FFFFFF",
         },
 
         tabBarIcon: ({ color, size }) => {
-          let iconName: any = "grid";
-
-          switch (route.name) {
-            case "Dashboard":
-              iconName = "grid";
-              break;
-
-            case "Projects":
-              iconName = "folder";
-              break;
-
-            case "Tasks":
-              iconName = "checkmark-circle";
-              break;
-
-            case "Calendar":
-              iconName = "calendar";
-              break;
-
-            case "Team":
-              iconName = "people";
-              break;
-
-            case "Profile":
-              iconName = "person";
-              break;
-          }
-
-          return (
-            <Ionicons
-              name={iconName}
-              size={size}
-              color={color}
-            />
-          );
+          const Icon = TAB_ICONS[route.name] ?? LayoutGrid;
+          return <Icon size={size} color={color} />;
         },
       })}
     >

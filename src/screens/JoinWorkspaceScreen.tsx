@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Platform,
   ScrollView,
   StyleSheet,
@@ -14,6 +15,14 @@ import { ArrowLeft, ArrowRight, Building2, CircleX, Hash, Sparkles } from "lucid
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { getOrganizationByCode, joinOrganization, Organization } from "../lib/organizations";
+
+const WELCOME_MESSAGES = [
+  "Los grandes equipos se construyen con las personas correctas. Bienvenido.",
+  "Cada gran resultado empieza con el equipo adecuado. Es un buen momento para unirte.",
+  "Tu talento suma. El equipo está listo para avanzar contigo.",
+  "Aquí las ideas se convierten en resultados. Únete y sé parte de eso.",
+  "Un paso más hacia un equipo con visión. Bienvenido a bordo.",
+];
 
 export default function JoinWorkspaceScreen({ navigation, route }: any) {
   const { isDark } = useTheme();
@@ -30,6 +39,12 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
   const [searched, setSearched] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
+
+  const welcomeMessage = useMemo(() => {
+    if (!organization) return "";
+    const index = organization.id.charCodeAt(0) % WELCOME_MESSAGES.length;
+    return WELCOME_MESSAGES[index];
+  }, [organization]);
 
   const bg            = isDark ? "#020617" : "#FAFAFA";
   const cardBg        = isDark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
@@ -140,16 +155,19 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
               <ActivityIndicator color={primaryColor} style={{ paddingVertical: 24 }} />
             ) : organization ? (
               <>
-                <View style={styles.previewRow}>
+                <View style={styles.previewCentered}>
                   <View style={[styles.previewLogo, { backgroundColor: organization.color }]}>
-                    <Building2 size={24} color="#FFF" />
+                    {organization.logo_url ? (
+                      <Image source={{ uri: organization.logo_url }} style={styles.previewLogoImage} />
+                    ) : (
+                      <Building2 size={30} color="#FFF" />
+                    )}
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.previewLabel, { color: textSecondary }]}>Te estás uniendo a</Text>
-                    <Text style={[styles.previewName, { color: textPrimary }]} numberOfLines={1}>
-                      {organization.name}
-                    </Text>
-                  </View>
+                  <Text style={[styles.previewLabel, { color: textSecondary }]}>Te estás uniendo a</Text>
+                  <Text style={[styles.previewName, { color: textPrimary }]} numberOfLines={1}>
+                    {organization.name}
+                  </Text>
+                  <Text style={[styles.welcomeMessage, { color: textSecondary }]}>{welcomeMessage}</Text>
                 </View>
 
                 {errorMsg && <Text style={styles.errorText}>{errorMsg}</Text>}
@@ -229,10 +247,15 @@ const styles = StyleSheet.create({
   title: { fontSize: 32, fontWeight: "900", letterSpacing: -1, marginBottom: 8 },
   subtitle: { fontSize: 16, lineHeight: 24, marginBottom: 32 },
   card: { borderRadius: 24, borderWidth: 1, padding: 28 },
-  previewRow: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 24 },
-  previewLogo: { width: 52, height: 52, borderRadius: 16, justifyContent: "center", alignItems: "center" },
-  previewLabel: { fontSize: 13, fontWeight: "600", marginBottom: 2 },
-  previewName: { fontSize: 20, fontWeight: "900", letterSpacing: -0.5 },
+  previewCentered: { alignItems: "center", marginBottom: 24 },
+  previewLogo: {
+    width: 76, height: 76, borderRadius: 38, justifyContent: "center", alignItems: "center",
+    overflow: "hidden", marginBottom: 16,
+  },
+  previewLogoImage: { width: 76, height: 76 },
+  previewLabel: { fontSize: 13, fontWeight: "600", marginBottom: 4 },
+  previewName: { fontSize: 22, fontWeight: "900", letterSpacing: -0.5, textAlign: "center", marginBottom: 12 },
+  welcomeMessage: { fontSize: 14, textAlign: "center", lineHeight: 21, paddingHorizontal: 12 },
   errorText: { color: "#EF4444", fontSize: 13, fontWeight: "600", marginBottom: 14 },
   errorBlock: { alignItems: "center", gap: 12, paddingVertical: 12, marginBottom: 20 },
   errorTitle: { fontSize: 16, fontWeight: "700", textAlign: "center" },

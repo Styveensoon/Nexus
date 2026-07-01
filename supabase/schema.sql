@@ -85,3 +85,18 @@ create policy "organization_members_select_own" on organization_members
 
 create policy "organization_members_insert_own" on organization_members
   for insert to authenticated with check (auth.uid() = user_id);
+
+-- ----------------------------------------------------------------------------
+-- OPCIONAL: solo si luego quieres mostrar el conteo real de miembros del equipo
+-- en el Dashboard. Con la política de arriba cada usuario solo ve su propia fila,
+-- así que un count() siempre da 1. Correr manualmente en el SQL Editor cuando se
+-- quiera habilitar (y agregar getOrganizationMemberCount en src/lib/organizations.ts).
+-- ----------------------------------------------------------------------------
+-- create or replace function my_organization_ids()
+-- returns setof uuid
+-- language sql security definer stable
+-- as $$ select organization_id from organization_members where user_id = auth.uid() $$;
+--
+-- create policy "organization_members_select_org" on organization_members
+--   for select to authenticated
+--   using (organization_id in (select my_organization_ids()));

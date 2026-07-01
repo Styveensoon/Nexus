@@ -1,573 +1,254 @@
-import React from "react";
+import React, { useState } from "react";
 import {
+  Image,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
-  TextInput,
   useWindowDimensions,
 } from "react-native";
-
 import { LinearGradient } from "expo-linear-gradient";
-import {
-  Ionicons,
-  MaterialCommunityIcons,
-} from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
+import { Building2, Copy, Folder, LogOut, Search, Sparkles } from "lucide-react-native";
 
 import { useTheme } from "../context/ThemeContext";
-import { COLORS } from "../styles/colors";
+import { useAuth } from "../context/AuthContext";
 
-export default function DashboardScreen() {
+function darkenHex(hex: string, amount = 0.25) {
+  const clean = hex.replace("#", "");
+  if (!/^[0-9A-Fa-f]{6}$/.test(clean)) return "#1D4ED8";
+  const num = parseInt(clean, 16);
+  const r = Math.round(((num >> 16) & 0xff) * (1 - amount));
+  const g = Math.round(((num >> 8) & 0xff) * (1 - amount));
+  const b = Math.round((num & 0xff) * (1 - amount));
+  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+export default function DashboardScreen({ navigation }: any) {
   const { isDark } = useTheme();
+  const { user, organization, loading, signOut } = useAuth();
   const { width } = useWindowDimensions();
+  const isMobile = width < 768;
+  const isWeb = Platform.OS === "web";
 
-  const isTablet = width >= 768;
+  const [copied, setCopied] = useState(false);
 
-  const theme = {
-    background: isDark ? "#0F172A" : COLORS.background,
-    surface: isDark ? "#1E293B" : COLORS.surface,
-    text: isDark ? "#F8FAFC" : COLORS.text,
-    secondary: isDark ? "#CBD5E1" : COLORS.textSecondary,
-    border: isDark ? "#334155" : COLORS.border,
+  const bg            = isDark ? "#020617" : "#FAFAFA";
+  const cardBg        = isDark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
+  const border        = isDark ? "rgba(51, 65, 85, 0.5)" : "rgba(226, 232, 240, 0.8)";
+  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
+  const textSecondary = isDark ? "#94A3B8" : "#475569";
+  const primaryColor  = "#2563EB";
+  const inputBg       = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
+
+  const ultraShadow = Platform.select({
+    web: {
+      boxShadow: isDark
+        ? "0 25px 50px -12px rgba(0,0,0,1), 0 0 0 1px rgba(255,255,255,0.05) inset"
+        : "0 30px 60px -15px rgba(0,0,0,0.08), 0 10px 30px -5px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02) inset",
+      backdropFilter: "blur(12px)",
+    } as any,
+    default: {
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: isDark ? 0.4 : 0.06,
+      shadowRadius: 16,
+      elevation: 6,
+    },
+  });
+
+  const firstName =
+    (user?.user_metadata as any)?.full_name?.trim?.().split(" ")[0] ||
+    user?.email?.split("@")[0] ||
+    "ahí";
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigation.getParent()?.reset({ index: 0, routes: [{ name: "Landing" }] });
   };
 
-  const stats = [
-    {
-      title: "Projects",
-      value: "12",
-      icon: "folder",
-      color: COLORS.primary,
-    },
-    {
-      title: "Tasks",
-      value: "184",
-      icon: "checkmark-circle",
-      color: COLORS.success,
-    },
-    {
-      title: "Team",
-      value: "7",
-      icon: "people",
-      color: COLORS.warning,
-    },
-    {
-      title: "Issues",
-      value: "23",
-      icon: "bug",
-      color: COLORS.error,
-    },
-  ];
+  const handleCopyCode = async () => {
+    if (!organization) return;
+    try {
+      await Clipboard.setStringAsync(organization.invite_code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // portapapeles no disponible (raro), el botón simplemente no cambia a "Copiado"
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { backgroundColor: bg, alignItems: "center", justifyContent: "center" }]}>
+        <Text style={{ color: textSecondary }}>Cargando…</Text>
+      </View>
+    );
+  }
 
   return (
-    <View
-      style={[
-        styles.container,
-        {
-          backgroundColor: theme.background,
-        },
-      ]}
-    >
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* HEADER */}
+    <View style={[styles.container, { backgroundColor: bg }]}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: isMobile ? 16 : 32 }}>
+        <View style={{ width: "100%", maxWidth: 960, alignSelf: "center" }}>
+          {/* HEADER */}
+          <View style={styles.header}>
+            <View style={styles.headerLeft}>
+              <View style={[styles.avatar, { backgroundColor: organization?.color ?? primaryColor }]}>
+                {organization?.logo_url ? (
+                  <Image source={{ uri: organization.logo_url }} style={styles.avatarImage} />
+                ) : (
+                  <Building2 size={22} color="#FFF" />
+                )}
+              </View>
+              <View>
+                <Text style={[styles.greeting, { color: textSecondary }]}>Hola, {firstName} 👋</Text>
+                <Text style={[styles.orgName, { color: textPrimary }]} numberOfLines={1}>
+                  {organization?.name ?? "Nexus"}
+                </Text>
+              </View>
+            </View>
 
-        <View style={styles.header}>
-          <View>
-            <Text
-              style={[
-                styles.greeting,
-                {
-                  color: theme.secondary,
-                },
-              ]}
+            <TouchableOpacity
+              activeOpacity={0.8}
+              style={[styles.iconBtn, { backgroundColor: cardBg, borderColor: border }]}
+              onPress={handleSignOut}
             >
-              Bienvenido 👋
-            </Text>
-
-            <Text
-              style={[
-                styles.title,
-                {
-                  color: theme.text,
-                },
-              ]}
-            >
-              Nexus Dashboard
-            </Text>
+              <LogOut size={18} color={textSecondary} />
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={styles.avatar}>
-            <Text style={styles.avatarText}>SL</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* SEARCH */}
-
-        <View
-          style={[
-            styles.searchContainer,
-            {
-              backgroundColor: theme.surface,
-            },
-          ]}
-        >
-          <Ionicons
-            name="search"
-            size={20}
-            color={theme.secondary}
-          />
-
-          <TextInput
-            placeholder="Buscar proyectos..."
-            placeholderTextColor={theme.secondary}
-            style={[
-              styles.searchInput,
-              {
-                color: theme.text,
-              },
-            ]}
-          />
-        </View>
-
-        {/* AI CARD */}
-
-        <LinearGradient
-          colors={[
-            COLORS.primary,
-            COLORS.primaryDark,
-          ]}
-          style={styles.aiCard}
-        >
-          <View>
-            <Text style={styles.aiSmall}>
-              NEXUS AI
-            </Text>
-
-            <Text style={styles.aiTitle}>
-              Productividad +18%
-            </Text>
-
-            <Text style={styles.aiDescription}>
-              Tus proyectos están avanzando más rápido esta semana.
-            </Text>
-          </View>
-
-          <MaterialCommunityIcons
-            name="robot-excited"
-            size={50}
-            color="#FFF"
-          />
-        </LinearGradient>
-
-        {/* STATS */}
-
-        <View
-          style={[
-            styles.statsContainer,
-            isTablet && styles.statsTablet,
-          ]}
-        >
-          {stats.map((item, index) => (
-            <View
-              key={index}
-              style={[
-                styles.statCard,
-                {
-                  backgroundColor: theme.surface,
-                },
-              ]}
-            >
-              <View
-                style={[
-                  styles.iconContainer,
-                  {
-                    backgroundColor:
-                      item.color + "20",
-                  },
-                ]}
-              >
-                <Ionicons
-                  name={
-                    item.icon as any
-                  }
-                  size={22}
-                  color={item.color}
+          {!organization ? (
+            <View style={[styles.card, { backgroundColor: cardBg, borderColor: border, marginTop: 24 }, ultraShadow]}>
+              <Text style={[styles.emptyTitle, { color: textPrimary }]}>Tu cuenta no tiene un workspace todavía</Text>
+              <Text style={[styles.emptySubtitle, { color: textSecondary }]}>
+                Cierra sesión y vuelve a entrar para retomar la creación o unión a una organización.
+              </Text>
+            </View>
+          ) : (
+            <>
+              {/* SEARCH */}
+              <View style={[styles.searchWrapper, { backgroundColor: inputBg, borderColor: border }]}>
+                <Search size={18} color={textSecondary} />
+                <TextInput
+                  placeholder="Buscar…"
+                  placeholderTextColor={textSecondary}
+                  style={[styles.searchInput, { color: textPrimary }, isWeb && styles.noOutline]}
                 />
               </View>
 
-              <Text
-                style={[
-                  styles.statNumber,
-                  {
-                    color: theme.text,
-                  },
-                ]}
+              {/* HERO */}
+              <LinearGradient
+                colors={[organization.color, darkenHex(organization.color)]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.heroCard}
               >
-                {item.value}
-              </Text>
+                <Text style={styles.heroLabel}>TU WORKSPACE</Text>
+                <Text style={styles.heroTitle} numberOfLines={1}>{organization.name}</Text>
 
-              <Text
-                style={[
-                  styles.statLabel,
-                  {
-                    color: theme.secondary,
-                  },
-                ]}
-              >
-                {item.title}
-              </Text>
-            </View>
-          ))}
+                <View style={styles.heroCodeRow}>
+                  <Text style={styles.heroCode}>{organization.invite_code}</Text>
+                  <TouchableOpacity activeOpacity={0.85} style={styles.heroCopyBtn} onPress={handleCopyCode}>
+                    <Copy size={14} color="#FFF" />
+                    <Text style={styles.heroCopyText}>{copied ? "¡Copiado!" : "Copiar código"}</Text>
+                  </TouchableOpacity>
+                </View>
+              </LinearGradient>
+
+              {/* STATS */}
+              <View style={[styles.statsRow, { flexDirection: isMobile ? "column" : "row" }]}>
+                <View style={[styles.statCard, { backgroundColor: cardBg, borderColor: border, width: isMobile ? "100%" : "48%" }, ultraShadow]}>
+                  <View style={[styles.statIcon, { backgroundColor: isDark ? "rgba(37,99,235,0.15)" : "#EFF6FF" }]}>
+                    <Building2 size={18} color={primaryColor} />
+                  </View>
+                  <Text style={[styles.statValue, { color: textPrimary }]}>
+                    {organization.owner_id === user?.id ? "Owner" : "Miembro"}
+                  </Text>
+                  <Text style={[styles.statLabel, { color: textSecondary }]}>Tu rol</Text>
+                </View>
+
+                {/* Cuando se habilite el conteo real de miembros (política RLS opcional
+                    en supabase/schema.sql), agregar aquí una tercera tarjeta "Miembros". */}
+                <View style={[styles.statCard, { backgroundColor: cardBg, borderColor: border, width: isMobile ? "100%" : "48%" }, ultraShadow]}>
+                  <View style={[styles.statIcon, { backgroundColor: isDark ? "rgba(37,99,235,0.15)" : "#EFF6FF" }]}>
+                    <Sparkles size={18} color={primaryColor} />
+                  </View>
+                  <Text style={[styles.statValue, { color: textPrimary }]} numberOfLines={1}>
+                    {organization.invite_code}
+                  </Text>
+                  <Text style={[styles.statLabel, { color: textSecondary }]}>Código de invitación</Text>
+                </View>
+              </View>
+
+              {/* PROYECTOS */}
+              <Text style={[styles.sectionTitle, { color: textPrimary }]}>Proyectos</Text>
+              <View style={[styles.emptyCard, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
+                <Folder size={32} color={textSecondary} />
+                <Text style={[styles.emptyTitle, { color: textPrimary }]}>Aún no tienes proyectos</Text>
+                <Text style={[styles.emptySubtitle, { color: textSecondary }]}>
+                  Cuando actives el módulo de proyectos, los verás aquí.
+                </Text>
+              </View>
+
+              {/* ACTIVIDAD */}
+              <Text style={[styles.sectionTitle, { color: textPrimary }]}>Actividad reciente</Text>
+              <View style={[styles.emptyCard, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
+                <Sparkles size={32} color={textSecondary} />
+                <Text style={[styles.emptyTitle, { color: textPrimary }]}>Sin actividad todavía</Text>
+                <Text style={[styles.emptySubtitle, { color: textSecondary }]}>
+                  Aquí verás lo que pase en tu workspace en tiempo real.
+                </Text>
+              </View>
+            </>
+          )}
+
+          <View style={{ height: 40 }} />
         </View>
-
-        {/* PRIORITY PROJECTS */}
-
-        <Text
-          style={[
-            styles.sectionTitle,
-            {
-              color: theme.text,
-            },
-          ]}
-        >
-          Proyectos Prioritarios
-        </Text>
-
-        {[
-          {
-            name: "Nexus Mobile App",
-            progress: 82,
-          },
-          {
-            name: "Dashboard Admin",
-            progress: 64,
-          },
-          {
-            name: "API Backend",
-            progress: 95,
-          },
-        ].map((project, index) => (
-          <View
-            key={index}
-            style={[
-              styles.projectCard,
-              {
-                backgroundColor: theme.surface,
-              },
-            ]}
-          >
-            <View style={styles.projectHeader}>
-              <Text
-                style={[
-                  styles.projectName,
-                  {
-                    color: theme.text,
-                  },
-                ]}
-              >
-                {project.name}
-              </Text>
-
-              <Text
-                style={{
-                  color: COLORS.primary,
-                  fontWeight: "700",
-                }}
-              >
-                {project.progress}%
-              </Text>
-            </View>
-
-            <View style={styles.progressBar}>
-              <View
-                style={[
-                  styles.progressFill,
-                  {
-                    width: `${project.progress}%`,
-                  },
-                ]}
-              />
-            </View>
-          </View>
-        ))}
-
-        {/* ACTIVITY */}
-
-        <Text
-          style={[
-            styles.sectionTitle,
-            {
-              color: theme.text,
-            },
-          ]}
-        >
-          Actividad Reciente
-        </Text>
-
-        {[
-          "Andrea completó Login",
-          "Nueva tarea creada",
-          "Sprint actualizado",
-        ].map((item, index) => (
-          <View
-            key={index}
-            style={[
-              styles.activityCard,
-              {
-                backgroundColor: theme.surface,
-              },
-            ]}
-          >
-            <Ionicons
-              name="flash"
-              size={18}
-              color={COLORS.primary}
-            />
-
-            <Text
-              style={{
-                color: theme.text,
-                marginLeft: 10,
-                flex: 1,
-              }}
-            >
-              {item}
-            </Text>
-          </View>
-        ))}
-
-        {/* EVENTS */}
-
-        <Text
-          style={[
-            styles.sectionTitle,
-            {
-              color: theme.text,
-            },
-          ]}
-        >
-          Próximos Eventos
-        </Text>
-
-        <View
-          style={[
-            styles.eventCard,
-            {
-              backgroundColor: theme.surface,
-            },
-          ]}
-        >
-          <Text
-            style={{
-              color: theme.text,
-              fontWeight: "700",
-            }}
-          >
-            Sprint Planning
-          </Text>
-
-          <Text
-            style={{
-              color: theme.secondary,
-              marginTop: 5,
-            }}
-          >
-            Hoy • 10:00 AM
-          </Text>
-        </View>
-
-        <View
-          style={{
-            height: 100,
-          }}
-        />
       </ScrollView>
-
-      {/* FAB */}
-
-      <TouchableOpacity style={styles.fab}>
-        <Ionicons
-          name="add"
-          size={30}
-          color="#FFF"
-        />
-      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-  },
+  container: { flex: 1 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 12, flexShrink: 1 },
+  avatar: { width: 50, height: 50, borderRadius: 16, justifyContent: "center", alignItems: "center" },
+  avatarImage: { width: 50, height: 50, borderRadius: 16 },
+  greeting: { fontSize: 13, fontWeight: "600" },
+  orgName: { fontSize: 20, fontWeight: "900", letterSpacing: -0.5, maxWidth: 240 },
+  iconBtn: { width: 42, height: 42, borderRadius: 21, borderWidth: 1, alignItems: "center", justifyContent: "center" },
 
-  header: {
-    marginTop: 50,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+  searchWrapper: {
+    flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14,
+    paddingHorizontal: 16, marginTop: 24,
   },
+  searchInput: { flex: 1, paddingVertical: 14, fontSize: 15 },
+  noOutline: { outlineStyle: "none" } as any,
 
-  greeting: {
-    fontSize: 14,
+  heroCard: { borderRadius: 24, padding: 24, marginTop: 20 },
+  heroLabel: { color: "rgba(255,255,255,0.8)", fontWeight: "800", fontSize: 12, letterSpacing: 1 },
+  heroTitle: { color: "#FFF", fontSize: 26, fontWeight: "900", marginTop: 6, letterSpacing: -0.5 },
+  heroCodeRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 20 },
+  heroCode: { color: "#FFF", fontSize: 15, fontWeight: "700", letterSpacing: 2 },
+  heroCopyBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8,
   },
+  heroCopyText: { color: "#FFF", fontWeight: "700", fontSize: 12 },
 
-  title: {
-    fontSize: 30,
-    fontWeight: "900",
-  },
+  statsRow: { gap: 16, marginTop: 20, justifyContent: "space-between" },
+  statCard: { borderRadius: 20, borderWidth: 1, padding: 18 },
+  statIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: "center", alignItems: "center", marginBottom: 12 },
+  statValue: { fontSize: 18, fontWeight: "900" },
+  statLabel: { fontSize: 13, marginTop: 4 },
 
-  avatar: {
-    width: 55,
-    height: 55,
-    borderRadius: 28,
-    backgroundColor: COLORS.primary,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  avatarText: {
-    color: "#FFF",
-    fontWeight: "900",
-  },
-
-  searchContainer: {
-    marginTop: 25,
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 18,
-    paddingHorizontal: 15,
-    height: 58,
-  },
-
-  searchInput: {
-    flex: 1,
-    marginLeft: 10,
-  },
-
-  aiCard: {
-    marginTop: 25,
-    borderRadius: 28,
-    padding: 24,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-
-  aiSmall: {
-    color: "#DBEAFE",
-    fontWeight: "700",
-  },
-
-  aiTitle: {
-    color: "#FFF",
-    fontSize: 24,
-    fontWeight: "900",
-    marginTop: 5,
-  },
-
-  aiDescription: {
-    color: "#DBEAFE",
-    marginTop: 10,
-    maxWidth: 220,
-  },
-
-  statsContainer: {
-    marginTop: 25,
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-  },
-
-  statsTablet: {
-    justifyContent: "space-evenly",
-  },
-
-  statCard: {
-    width: "48%",
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 15,
-  },
-
-  iconContainer: {
-    width: 45,
-    height: 45,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  statNumber: {
-    fontSize: 28,
-    fontWeight: "900",
-    marginTop: 12,
-  },
-
-  statLabel: {
-    marginTop: 5,
-  },
-
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    marginTop: 25,
-    marginBottom: 15,
-  },
-
-  projectCard: {
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 12,
-  },
-
-  projectHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-
-  projectName: {
-    fontWeight: "700",
-  },
-
-  progressBar: {
-    marginTop: 15,
-    height: 10,
-    borderRadius: 20,
-    backgroundColor: "#E5E7EB",
-  },
-
-  progressFill: {
-    height: "100%",
-    borderRadius: 20,
-    backgroundColor: COLORS.primary,
-  },
-
-  activityCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 18,
-    borderRadius: 18,
-    marginBottom: 12,
-  },
-
-  eventCard: {
-    padding: 20,
-    borderRadius: 20,
-    marginBottom: 30,
-  },
-
-  fab: {
-    position: "absolute",
-    right: 25,
-    bottom: 30,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: COLORS.primary,
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 10,
-  },
+  card: { borderRadius: 20, borderWidth: 1, padding: 24 },
+  sectionTitle: { fontSize: 18, fontWeight: "800", marginTop: 28, marginBottom: 12, letterSpacing: -0.3 },
+  emptyCard: { borderRadius: 20, borderWidth: 1, padding: 28, alignItems: "center", gap: 8 },
+  emptyTitle: { fontSize: 15, fontWeight: "700", textAlign: "center" },
+  emptySubtitle: { fontSize: 13, textAlign: "center", lineHeight: 20 },
 });
