@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import type { TeamSuggestion } from "./semillero";
+import { getTeamsByIds, Team } from "./teams";
 
 export type ProjectStatus = "planning" | "active" | "on_hold" | "completed";
 
@@ -26,29 +27,36 @@ export type Project = {
   name: string;
   description: string | null;
   color: string;
+  iconUrl: string | null;
   status: ProjectStatus;
   leaderId: string | null;
   firstSteps: string[];
+  goals: string[];
+  areas: string[];
   createdBy: string;
   createdAt: string;
   members: ProjectMemberProfile[];
+  teams: Team[];
 };
 
 export async function listProjects(organizationId: string) {
   const { data: projectRows, error: projectsError } = await supabase
     .from("projects")
-    .select("id, organization_id, name, description, color, status, leader_id, first_steps, created_by, created_at")
+    .select(
+      "id, organization_id, name, description, color, icon_url, status, leader_id, first_steps, goals, areas, created_by, created_at"
+    )
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false });
 
   if (projectsError) return { data: [] as Project[], error: projectsError };
 
   const projectIds = (projectRows ?? []).map((p) => p.id);
+  const safeProjectIds = projectIds.length ? projectIds : ["00000000-0000-0000-0000-000000000000"];
 
   const { data: memberRows, error: membersError } = await supabase
     .from("project_members")
     .select("project_id, user_id, role_in_team")
-    .in("project_id", projectIds.length ? projectIds : ["00000000-0000-0000-0000-000000000000"]);
+    .in("project_id", safeProjectIds);
 
   if (membersError) return { data: [] as Project[], error: membersError };
 
@@ -61,6 +69,18 @@ export async function listProjects(organizationId: string) {
 
   if (profilesError) return { data: [] as Project[], error: profilesError };
 
+  const { data: projectTeamRows, error: projectTeamsError } = await supabase
+    .from("project_teams")
+    .select("project_id, team_id")
+    .in("project_id", safeProjectIds);
+
+  if (projectTeamsError) return { data: [] as Project[], error: projectTeamsError };
+
+  const teamIds = Array.from(new Set((projectTeamRows ?? []).map((pt) => pt.team_id)));
+  const { data: teams, error: teamsError } = await getTeamsByIds(teamIds);
+  if (teamsError) return { data: [] as Project[], error: teamsError };
+
+  const teamById = new Map(teams.map((t) => [t.id, t]));
   const profileById = new Map((profileRows ?? []).map((p) => [p.id, p]));
 
   const projects: Project[] = (projectRows ?? []).map((row) => ({
@@ -69,9 +89,12 @@ export async function listProjects(organizationId: string) {
     name: row.name,
     description: row.description,
     color: row.color,
+    iconUrl: row.icon_url,
     status: row.status as ProjectStatus,
     leaderId: row.leader_id,
     firstSteps: row.first_steps ?? [],
+    goals: row.goals ?? [],
+    areas: row.areas ?? [],
     createdBy: row.created_by,
     createdAt: row.created_at,
     members: (memberRows ?? [])
@@ -86,6 +109,10 @@ export async function listProjects(organizationId: string) {
           roleInTeam: m.role_in_team,
         };
       }),
+    teams: (projectTeamRows ?? [])
+      .filter((pt) => pt.project_id === row.id)
+      .map((pt) => teamById.get(pt.team_id))
+      .filter((t): t is Team => !!t),
   }));
 
   return { data: projects, error: null };
@@ -97,8 +124,12 @@ export async function createProject(params: {
   name: string;
   description?: string | null;
   color: string;
+  iconUrl?: string | null;
+  goals?: string[];
+  areas?: string[];
+  teamIds?: string[];
 }) {
-  const { data, error } = await supabase
+  const { data: project, error } = await supabase
     .from("projects")
     .insert({
       organization_id: params.organizationId,
@@ -106,12 +137,25 @@ export async function createProject(params: {
       name: params.name,
       description: params.description ?? null,
       color: params.color,
+      icon_url: params.iconUrl ?? null,
+      goals: params.goals ?? [],
+      areas: params.areas ?? [],
       status: "planning",
     })
     .select("id")
     .single();
 
-  return { data, error };
+  if (error || !project) return { data: null, error };
+
+  const teamIds = params.teamIds ?? [];
+  if (teamIds.length) {
+    const { error: teamsError } = await supabase
+      .from("project_teams")
+      .insert(teamIds.map((teamId) => ({ project_id: project.id, team_id: teamId })));
+    if (teamsError) return { data: project, error: teamsError };
+  }
+
+  return { data: project, error: null };
 }
 
 export async function createProjectFromSuggestion(
@@ -159,4 +203,13 @@ export async function updateProjectStatus(projectId: string, status: ProjectStat
 export async function deleteProject(projectId: string) {
   const { error } = await supabase.from("projects").delete().eq("id", projectId);
   return { error };
+}
+
+export async function countProjects(organizationId: string) {
+  const { count, error } = await supabase
+    .from("projects")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", organizationId);
+
+  return { count: count ?? 0, error };
 }

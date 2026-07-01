@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
+  Image,
   Modal,
   Platform,
   ScrollView,
@@ -10,21 +11,24 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   Check,
-  ChevronRight,
   Crown,
   Folder,
+  Layers,
   Plus,
   Search,
   Sparkles,
+  Target,
   Trash2,
+  Users,
   X,
 } from "lucide-react-native";
 
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
-import ColorPickerModal from "../components/ColorPickerModal";
+import IconColorPicker from "../components/IconColorPicker";
 import {
   createProject,
   deleteProject,
@@ -35,6 +39,7 @@ import {
   STATUS_ORDER,
   updateProjectStatus,
 } from "../lib/projects";
+import { listTeams, Team } from "../lib/teams";
 
 const STATUS_COLORS: Record<ProjectStatus, string> = {
   planning: "#F59E0B",
@@ -104,7 +109,14 @@ export default function ProjectsScreen({ navigation }: any) {
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [newColor, setNewColor] = useState(primaryColor);
-  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [newIconUrl, setNewIconUrl] = useState<string | null>(null);
+  const [newGoals, setNewGoals] = useState<string[]>([]);
+  const [newGoalInput, setNewGoalInput] = useState("");
+  const [newAreas, setNewAreas] = useState<string[]>([]);
+  const [newAreaInput, setNewAreaInput] = useState("");
+  const [orgTeams, setOrgTeams] = useState<Team[]>([]);
+  const [loadingOrgTeams, setLoadingOrgTeams] = useState(false);
+  const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
 
   const loadProjects = useCallback(async () => {
     if (!organization) return;
@@ -116,9 +128,13 @@ export default function ProjectsScreen({ navigation }: any) {
     setLoadingProjects(false);
   }, [organization]);
 
-  useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
+  // useFocusEffect (no useEffect) para que la lista se refresque cada vez que
+  // se vuelve a esta pestaña, no solo la primera vez que se monta.
+  useFocusEffect(
+    useCallback(() => {
+      loadProjects();
+    }, [loadProjects])
+  );
 
   const filteredProjects = projects.filter((p) => {
     const matchesStatus = statusFilter === "all" || p.status === statusFilter;
@@ -135,12 +151,54 @@ export default function ProjectsScreen({ navigation }: any) {
     completed: projects.filter((p) => p.status === "completed").length,
   };
 
-  const openCreateModal = () => {
+  const openCreateModal = async () => {
     setNewName("");
     setNewDescription("");
     setNewColor(primaryColor);
+    setNewIconUrl(null);
+    setNewGoals([]);
+    setNewGoalInput("");
+    setNewAreas([]);
+    setNewAreaInput("");
+    setSelectedTeamIds([]);
     setCreateError(null);
     setShowCreateModal(true);
+
+    if (organization) {
+      setLoadingOrgTeams(true);
+      const { data } = await listTeams(organization.id);
+      setOrgTeams(data);
+      setLoadingOrgTeams(false);
+    }
+  };
+
+  const addGoal = () => {
+    const value = newGoalInput.trim();
+    if (!value) return;
+    setNewGoals((prev) => [...prev, value]);
+    setNewGoalInput("");
+  };
+
+  const removeGoal = (goal: string) => {
+    setNewGoals((prev) => prev.filter((g) => g !== goal));
+  };
+
+  const addArea = () => {
+    const value = newAreaInput.trim();
+    if (!value || newAreas.some((a) => a.toLowerCase() === value.toLowerCase())) {
+      setNewAreaInput("");
+      return;
+    }
+    setNewAreas((prev) => [...prev, value]);
+    setNewAreaInput("");
+  };
+
+  const removeArea = (area: string) => {
+    setNewAreas((prev) => prev.filter((a) => a !== area));
+  };
+
+  const toggleTeamSelection = (teamId: string) => {
+    setSelectedTeamIds((prev) => (prev.includes(teamId) ? prev.filter((id) => id !== teamId) : [...prev, teamId]));
   };
 
   const handleCreate = async () => {
@@ -153,6 +211,10 @@ export default function ProjectsScreen({ navigation }: any) {
       name: newName.trim(),
       description: newDescription.trim() || null,
       color: newColor,
+      iconUrl: newIconUrl,
+      goals: newGoals,
+      areas: newAreas,
+      teamIds: selectedTeamIds,
     });
     setCreating(false);
     if (error) {
@@ -313,15 +375,24 @@ export default function ProjectsScreen({ navigation }: any) {
                       );
                     }
 
-                    const leader = project.members.find((m) => m.userId === project.leaderId);
-                    const otherMembers = project.members.filter((m) => m.userId !== project.leaderId);
+                    const allMembersMap = new Map<string, (typeof project.members)[number]>();
+                    [...project.members, ...project.teams.flatMap((t) => t.members)].forEach((m) => {
+                      if (!allMembersMap.has(m.userId)) allMembersMap.set(m.userId, m);
+                    });
+                    const allMembers = Array.from(allMembersMap.values());
+                    const leader = allMembers.find((m) => m.userId === project.leaderId);
+                    const otherMembers = allMembers.filter((m) => m.userId !== project.leaderId);
 
                     return (
                       <View key={project.id} style={[styles.projectCard, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
                         <View style={styles.projectHeader}>
                           <View style={styles.projectHeaderLeft}>
                             <View style={[styles.projectIcon, { backgroundColor: project.color + "20" }]}>
-                              <Folder size={20} color={project.color} />
+                              {project.iconUrl ? (
+                                <Image source={{ uri: project.iconUrl }} style={styles.projectIconImage} />
+                              ) : (
+                                <Folder size={20} color={project.color} />
+                              )}
                             </View>
                             <View style={{ flexShrink: 1 }}>
                               <Text style={[styles.projectTitle, { color: textPrimary }]} numberOfLines={1}>
@@ -343,6 +414,32 @@ export default function ProjectsScreen({ navigation }: any) {
                         <Text style={[styles.projectDescription, { color: textSecondary }]} numberOfLines={2}>
                           {project.description || "Sin descripción."}
                         </Text>
+
+                        {(project.teams.length > 0 || project.areas.length > 0) && (
+                          <View style={styles.tagsRow}>
+                            {project.teams.map((t) => (
+                              <View key={t.id} style={[styles.tagChip, { borderColor: border, backgroundColor: t.color + "15" }]}>
+                                <Users size={10} color={t.color} />
+                                <Text style={{ color: textPrimary, fontSize: 11, fontWeight: "700" }}>{t.name}</Text>
+                              </View>
+                            ))}
+                            {project.areas.map((area) => (
+                              <View key={area} style={[styles.tagChip, { borderColor: border, backgroundColor: inputBg }]}>
+                                <Layers size={10} color={textSecondary} />
+                                <Text style={{ color: textSecondary, fontSize: 11, fontWeight: "700" }}>{area}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        )}
+
+                        {project.goals.length > 0 && (
+                          <View style={styles.goalsRow}>
+                            <Target size={12} color={textSecondary} />
+                            <Text style={{ color: textSecondary, fontSize: 12, fontWeight: "600" }}>
+                              {project.goals.length} {project.goals.length === 1 ? "meta" : "metas"} definidas
+                            </Text>
+                          </View>
+                        )}
 
                         {leader && (
                           <View style={styles.leaderRow}>
@@ -408,6 +505,7 @@ export default function ProjectsScreen({ navigation }: any) {
       {/* CREATE MODAL */}
       <Modal visible={showCreateModal} transparent animationType="fade" onRequestClose={() => setShowCreateModal(false)}>
         <View style={styles.overlay}>
+          <ScrollView contentContainerStyle={styles.overlayScroll} showsVerticalScrollIndicator={false}>
           <View style={[styles.modalCard, { backgroundColor: isDark ? "#0F172A" : "#FFFFFF", borderColor: border }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: textPrimary }]}>Nuevo proyecto</Text>
@@ -435,16 +533,100 @@ export default function ProjectsScreen({ navigation }: any) {
               style={[styles.modalInput, styles.modalTextarea, { backgroundColor: inputBg, borderColor: border, color: textPrimary }, isWeb && styles.noOutline]}
             />
 
-            <Text style={[styles.modalLabel, { color: textSecondary }]}>Color</Text>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={[styles.colorSwatchRow, { backgroundColor: inputBg, borderColor: border }]}
-              onPress={() => setShowColorPicker(true)}
-            >
-              <View style={[styles.colorSwatch, { backgroundColor: newColor }]} />
-              <Text style={{ color: textPrimary, fontWeight: "600" }}>{newColor}</Text>
-              <ChevronRight size={16} color={textSecondary} />
-            </TouchableOpacity>
+            <IconColorPicker
+              isDark={isDark}
+              userId={user?.id ?? ""}
+              color={newColor}
+              onColorChange={setNewColor}
+              iconUrl={newIconUrl}
+              onIconChange={setNewIconUrl}
+              fallbackIcon={Folder}
+            />
+
+            <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Metas</Text>
+            <View style={[styles.chipInputRow, { backgroundColor: inputBg, borderColor: border }]}>
+              <TextInput
+                value={newGoalInput}
+                onChangeText={setNewGoalInput}
+                onSubmitEditing={addGoal}
+                placeholder="Ej. Lanzar el MVP antes de fin de mes"
+                placeholderTextColor={textSecondary}
+                style={[styles.chipInput, { color: textPrimary }, isWeb && styles.noOutline]}
+              />
+              <TouchableOpacity onPress={addGoal} hitSlop={8}>
+                <Plus size={18} color={primaryColor} />
+              </TouchableOpacity>
+            </View>
+            {newGoals.length > 0 && (
+              <View style={{ gap: 8, marginTop: 10 }}>
+                {newGoals.map((goal) => (
+                  <View key={goal} style={[styles.listItemRow, { backgroundColor: inputBg, borderColor: border }]}>
+                    <Target size={13} color={primaryColor} />
+                    <Text style={{ color: textPrimary, fontSize: 13, flex: 1 }}>{goal}</Text>
+                    <TouchableOpacity onPress={() => removeGoal(goal)} hitSlop={8}>
+                      <X size={14} color={textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Áreas involucradas</Text>
+            <View style={[styles.chipInputRow, { backgroundColor: inputBg, borderColor: border }]}>
+              <TextInput
+                value={newAreaInput}
+                onChangeText={setNewAreaInput}
+                onSubmitEditing={addArea}
+                placeholder="Ej. Diseño, Backend, Marketing"
+                placeholderTextColor={textSecondary}
+                style={[styles.chipInput, { color: textPrimary }, isWeb && styles.noOutline]}
+              />
+              <TouchableOpacity onPress={addArea} hitSlop={8}>
+                <Plus size={18} color={primaryColor} />
+              </TouchableOpacity>
+            </View>
+            {newAreas.length > 0 && (
+              <View style={styles.chipsWrapRow}>
+                {newAreas.map((area) => (
+                  <View key={area} style={[styles.removableChip, { borderColor: border, backgroundColor: inputBg }]}>
+                    <Text style={{ color: textPrimary, fontSize: 12.5, fontWeight: "600" }}>{area}</Text>
+                    <TouchableOpacity onPress={() => removeArea(area)} hitSlop={8}>
+                      <X size={12} color={textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Equipos (opcional)</Text>
+            {loadingOrgTeams ? (
+              <Text style={{ color: textSecondary, fontSize: 13 }}>Cargando equipos…</Text>
+            ) : orgTeams.length === 0 ? (
+              <Text style={{ color: textSecondary, fontSize: 13 }}>
+                Todavía no has creado ningún equipo. Puedes crear uno desde la pestaña Equipos.
+              </Text>
+            ) : (
+              <View style={styles.chipsWrapRow}>
+                {orgTeams.map((team) => {
+                  const selected = selectedTeamIds.includes(team.id);
+                  return (
+                    <TouchableOpacity
+                      key={team.id}
+                      activeOpacity={0.85}
+                      onPress={() => toggleTeamSelection(team.id)}
+                      style={[
+                        styles.teamSelectChip,
+                        { borderColor: selected ? team.color : border, backgroundColor: selected ? team.color + "20" : inputBg },
+                      ]}
+                    >
+                      <View style={[styles.colorSwatch, { width: 10, height: 10, borderRadius: 5, backgroundColor: team.color }]} />
+                      <Text style={{ color: textPrimary, fontSize: 12.5, fontWeight: "700" }}>{team.name}</Text>
+                      {selected && <Check size={13} color={team.color} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
 
             {createError && <Text style={[styles.errorText, { color: dangerColor }]}>{createError}</Text>}
 
@@ -458,19 +640,9 @@ export default function ProjectsScreen({ navigation }: any) {
               <Text style={styles.createBtnText}>{creating ? "Creando…" : "Crear proyecto"}</Text>
             </TouchableOpacity>
           </View>
+          </ScrollView>
         </View>
       </Modal>
-
-      <ColorPickerModal
-        visible={showColorPicker}
-        initialColor={newColor}
-        isDark={isDark}
-        onClose={() => setShowColorPicker(false)}
-        onConfirm={(hex) => {
-          setNewColor(hex);
-          setShowColorPicker(false);
-        }}
-      />
     </View>
   );
 }
@@ -536,6 +708,12 @@ const styles = StyleSheet.create({
   projectTitle: { fontSize: 16, fontWeight: "800" },
   projectDate: { fontSize: 11.5, marginTop: 3 },
   projectDescription: { fontSize: 13, lineHeight: 19, marginTop: 14 },
+  projectIconImage: { width: 42, height: 42, resizeMode: "cover" },
+
+  tagsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
+  tagChip: { flexDirection: "row", alignItems: "center", gap: 5, borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
+
+  goalsRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
 
   leaderRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 16 },
   leaderName: { fontSize: 13, fontWeight: "700", flexShrink: 1 },
@@ -560,14 +738,22 @@ const styles = StyleSheet.create({
   emptyLink: { fontSize: 13, fontWeight: "700", textAlign: "center", marginTop: 2 },
 
   overlay: { flex: 1, backgroundColor: "rgba(2, 6, 23, 0.6)", alignItems: "center", justifyContent: "center", padding: 20 },
-  modalCard: { width: "100%", maxWidth: 420, borderRadius: 24, borderWidth: 1, padding: 24 },
+  overlayScroll: { flexGrow: 1, alignItems: "center", justifyContent: "center", width: "100%" },
+  modalCard: { width: "100%", maxWidth: 460, borderRadius: 24, borderWidth: 1, padding: 24 },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
   modalTitle: { fontSize: 18, fontWeight: "800" },
   modalLabel: { fontSize: 12, fontWeight: "700", marginBottom: 8, marginTop: 14 },
   modalInput: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14 },
   modalTextarea: { minHeight: 80, textAlignVertical: "top" },
-  colorSwatchRow: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12 },
   colorSwatch: { width: 22, height: 22, borderRadius: 11 },
+
+  chipInputRow: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 4 },
+  chipInput: { flex: 1, paddingVertical: 12, fontSize: 13 },
+  listItemRow: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
+  chipsWrapRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
+  removableChip: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
+  teamSelectChip: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 },
+
   createBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 999, paddingVertical: 14, marginTop: 24 },
   createBtnText: { color: "#FFF", fontWeight: "700", fontSize: 14 },
 });

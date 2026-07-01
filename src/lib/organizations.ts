@@ -85,3 +85,45 @@ export async function getUserOrganization(userId: string) {
   if (error || !data) return { data: null, error };
   return { data: data.organization as unknown as Organization, error: null };
 }
+
+export type OrganizationMemberProfile = {
+  userId: string;
+  name: string;
+  avatarUrl: string | null;
+  avatarColor: string;
+  role: string | null;
+  customRole: string | null;
+};
+
+// Roster completo de la organización (para pickers de integrantes de equipos
+// y proyectos) — dos queries en vez de un join embebido porque no hay FK
+// directa entre organization_members y profiles (mismo patrón que la Edge
+// Function semillero-chat).
+export async function listOrganizationMembers(organizationId: string) {
+  const { data: memberRows, error: membersError } = await supabase
+    .from("organization_members")
+    .select("user_id")
+    .eq("organization_id", organizationId);
+
+  if (membersError) return { data: [] as OrganizationMemberProfile[], error: membersError };
+
+  const memberIds = (memberRows ?? []).map((m) => m.user_id);
+
+  const { data: profileRows, error: profilesError } = await supabase
+    .from("profiles")
+    .select("id, full_name, nickname, avatar_url, avatar_color, role, custom_role")
+    .in("id", memberIds.length ? memberIds : ["00000000-0000-0000-0000-000000000000"]);
+
+  if (profilesError) return { data: [] as OrganizationMemberProfile[], error: profilesError };
+
+  const members: OrganizationMemberProfile[] = (profileRows ?? []).map((p) => ({
+    userId: p.id,
+    name: p.nickname || p.full_name || "Sin nombre",
+    avatarUrl: p.avatar_url,
+    avatarColor: p.avatar_color ?? "#2563EB",
+    role: p.role,
+    customRole: p.custom_role,
+  }));
+
+  return { data: members, error: null };
+}

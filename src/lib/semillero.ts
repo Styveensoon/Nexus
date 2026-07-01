@@ -21,6 +21,12 @@ export type TeamSuggestion = {
   leader: { userId: string; name: string; reason: string };
   team: TeamSuggestionMember[];
   firstSteps: string[];
+  // Se llenan después de crear el proyecto/equipo real desde esta sugerencia,
+  // para que "Ver proyecto"/"Ver equipo" sobreviva a salir de esta pantalla y
+  // volver (antes solo vivía en estado local, que se perdía al remontar el
+  // componente y causaba un segundo intento de creación).
+  createdProjectId?: string;
+  createdTeamId?: string;
 };
 
 export type SemilleroMessage = {
@@ -104,6 +110,14 @@ export async function addMessage(
 
 export async function deleteMessage(messageId: string) {
   const { error } = await supabase.from("semillero_messages").delete().eq("id", messageId);
+  return { error };
+}
+
+export async function updateMessageTeamSuggestion(messageId: string, teamSuggestion: TeamSuggestion) {
+  const { error } = await supabase
+    .from("semillero_messages")
+    .update({ team_suggestion: teamSuggestion })
+    .eq("id", messageId);
   return { error };
 }
 

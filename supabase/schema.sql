@@ -233,6 +233,14 @@ create policy "semillero_messages_delete_own" on semillero_messages
   for delete to authenticated
   using (chat_id in (select id from semillero_chats where user_id = auth.uid()));
 
+-- Necesaria para persistir createdProjectId/createdTeamId en team_suggestion
+-- después de crear el proyecto/equipo real desde una sugerencia, así
+-- "Ver proyecto"/"Ver equipo" sobrevive a salir de la pantalla y volver.
+drop policy if exists "semillero_messages_update_own" on semillero_messages;
+create policy "semillero_messages_update_own" on semillero_messages
+  for update to authenticated
+  using (chat_id in (select id from semillero_chats where user_id = auth.uid()));
+
 -- ----------------------------------------------------------------------------
 -- projects: entregable real de una idea, creado a mano o desde una sugerencia
 -- de equipo de El Semillero (ver team_suggestion arriba). Solo el owner de la
@@ -310,6 +318,140 @@ create policy "project_members_insert_owner" on project_members
 
 drop policy if exists "project_members_delete_owner" on project_members;
 create policy "project_members_delete_owner" on project_members
+  for delete to authenticated
+  using (
+    project_id in (
+      select p.id from projects p
+      join organizations o on o.id = p.organization_id
+      where o.owner_id = auth.uid()
+    )
+  );
+
+-- Un proyecto también puede llevar metas, áreas afectadas e ícono propio
+-- (mismo patrón que avatar_url de profiles: null | URL subida/pegada).
+alter table projects
+  add column if not exists goals text[] not null default '{}',
+  add column if not exists areas text[] not null default '{}',
+  add column if not exists icon_url text;
+
+-- ----------------------------------------------------------------------------
+-- teams: equipos reales de la organización (no confundir con el "equipo
+-- sugerido" del Semillero, que vive solo en team_suggestion/project_members).
+-- Un proyecto manual puede llevar uno o más de estos equipos (project_teams).
+-- ----------------------------------------------------------------------------
+create table if not exists teams (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  name text not null,
+  description text,
+  color text not null default '#2563EB',
+  icon_url text,
+  leader_id uuid references auth.users(id) on delete set null,
+  created_by uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+alter table teams enable row level security;
+
+drop policy if exists "teams_select_org" on teams;
+create policy "teams_select_org" on teams
+  for select to authenticated
+  using (organization_id in (select my_organization_ids()));
+
+drop policy if exists "teams_insert_owner" on teams;
+create policy "teams_insert_owner" on teams
+  for insert to authenticated
+  with check (
+    auth.uid() = created_by
+    and exists (select 1 from organizations o where o.id = organization_id and o.owner_id = auth.uid())
+  );
+
+drop policy if exists "teams_update_owner" on teams;
+create policy "teams_update_owner" on teams
+  for update to authenticated
+  using (exists (select 1 from organizations o where o.id = organization_id and o.owner_id = auth.uid()));
+
+drop policy if exists "teams_delete_owner" on teams;
+create policy "teams_delete_owner" on teams
+  for delete to authenticated
+  using (exists (select 1 from organizations o where o.id = organization_id and o.owner_id = auth.uid()));
+
+-- ----------------------------------------------------------------------------
+-- team_members: integrantes de cada equipo y su rol dentro de ese equipo
+-- (uno de 6 roles comunes o uno personalizado, ver TEAM_ROLE_OPTIONS en
+-- src/lib/teams.ts; el encargado además queda marcado en teams.leader_id).
+-- ----------------------------------------------------------------------------
+create table if not exists team_members (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid not null references teams(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  role_in_team text,
+  created_at timestamptz not null default now(),
+  unique (team_id, user_id)
+);
+
+alter table team_members enable row level security;
+
+drop policy if exists "team_members_select_org" on team_members;
+create policy "team_members_select_org" on team_members
+  for select to authenticated
+  using (team_id in (select id from teams where organization_id in (select my_organization_ids())));
+
+drop policy if exists "team_members_insert_owner" on team_members;
+create policy "team_members_insert_owner" on team_members
+  for insert to authenticated
+  with check (
+    team_id in (
+      select t.id from teams t
+      join organizations o on o.id = t.organization_id
+      where o.owner_id = auth.uid()
+    )
+  );
+
+drop policy if exists "team_members_delete_owner" on team_members;
+create policy "team_members_delete_owner" on team_members
+  for delete to authenticated
+  using (
+    team_id in (
+      select t.id from teams t
+      join organizations o on o.id = t.organization_id
+      where o.owner_id = auth.uid()
+    )
+  );
+
+-- ----------------------------------------------------------------------------
+-- project_teams: qué equipos participan en cada proyecto (un proyecto manual
+-- puede llevar uno o más equipos ya formados; el creado desde El Semillero
+-- sigue usando project_members directo, ver arriba).
+-- ----------------------------------------------------------------------------
+create table if not exists project_teams (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects(id) on delete cascade,
+  team_id uuid not null references teams(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (project_id, team_id)
+);
+
+alter table project_teams enable row level security;
+
+drop policy if exists "project_teams_select_org" on project_teams;
+create policy "project_teams_select_org" on project_teams
+  for select to authenticated
+  using (project_id in (select id from projects where organization_id in (select my_organization_ids())));
+
+drop policy if exists "project_teams_insert_owner" on project_teams;
+create policy "project_teams_insert_owner" on project_teams
+  for insert to authenticated
+  with check (
+    project_id in (
+      select p.id from projects p
+      join organizations o on o.id = p.organization_id
+      where o.owner_id = auth.uid()
+    )
+  );
+
+drop policy if exists "project_teams_delete_owner" on project_teams;
+create policy "project_teams_delete_owner" on project_teams
   for delete to authenticated
   using (
     project_id in (

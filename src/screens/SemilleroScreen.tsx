@@ -40,9 +40,28 @@ import {
   renameChat,
   SemilleroChat,
   SemilleroMessage,
+  TeamSuggestion,
   touchChat,
+  updateMessageTeamSuggestion,
 } from "../lib/semillero";
 import { createProjectFromSuggestion } from "../lib/projects";
+import { createTeamFromSuggestion } from "../lib/teams";
+import { listOrganizationMembers } from "../lib/organizations";
+
+// La sugerencia de la IA se guardó hace tiempo y puede referirse a gente que
+// ya no está en la organización (p. ej. usuarios de seed_users.sql borrados
+// después de generar la sugerencia). Insertar directo produce un error de
+// foreign key críptico — validamos antes para dar un mensaje claro.
+async function findMissingSuggestionMembers(organizationId: string, suggestion: TeamSuggestion) {
+  const { data: roster } = await listOrganizationMembers(organizationId);
+  const validIds = new Set(roster.map((m) => m.userId));
+  const missingNames = new Set<string>();
+  if (!validIds.has(suggestion.leader.userId)) missingNames.add(suggestion.leader.name);
+  suggestion.team.forEach((m) => {
+    if (!validIds.has(m.userId)) missingNames.add(m.name);
+  });
+  return Array.from(missingNames);
+}
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -119,8 +138,9 @@ export default function SemilleroScreen({ navigation }: any) {
   const [renameValue, setRenameValue] = useState("");
   const [confirmDeleteChatId, setConfirmDeleteChatId] = useState<string | null>(null);
   const [creatingProjectFor, setCreatingProjectFor] = useState<string | null>(null);
-  const [createdProjectMessageIds, setCreatedProjectMessageIds] = useState<Record<string, true>>({});
-  const [projectErrorFor, setProjectErrorFor] = useState<string | null>(null);
+  const [projectErrorInfo, setProjectErrorInfo] = useState<{ msgId: string; message: string } | null>(null);
+  const [creatingTeamFor, setCreatingTeamFor] = useState<string | null>(null);
+  const [teamErrorInfo, setTeamErrorInfo] = useState<{ msgId: string; message: string } | null>(null);
 
   const scrollRef = useRef<ScrollView>(null);
 
@@ -275,14 +295,25 @@ export default function SemilleroScreen({ navigation }: any) {
     async (msg: SemilleroMessage) => {
       if (!organization || !user || !msg.team_suggestion || creatingProjectFor) return;
 
-      if (createdProjectMessageIds[msg.id]) {
+      if (msg.team_suggestion.createdProjectId) {
         navigation.navigate("Main", { screen: "Projects" });
         return;
       }
 
       setCreatingProjectFor(msg.id);
-      setProjectErrorFor(null);
-      const { error } = await createProjectFromSuggestion(
+      setProjectErrorInfo(null);
+
+      const missingNames = await findMissingSuggestionMembers(organization.id, msg.team_suggestion);
+      if (missingNames.length) {
+        setCreatingProjectFor(null);
+        setProjectErrorInfo({
+          msgId: msg.id,
+          message: `${missingNames.join(", ")} ya no ${missingNames.length === 1 ? "pertenece" : "pertenecen"} a tu organización. Pide una nueva sugerencia.`,
+        });
+        return;
+      }
+
+      const { data: project, error } = await createProjectFromSuggestion(
         organization.id,
         user.id,
         organization.color,
@@ -290,15 +321,60 @@ export default function SemilleroScreen({ navigation }: any) {
       );
       setCreatingProjectFor(null);
 
-      if (error) {
-        setProjectErrorFor(msg.id);
+      if (error || !project) {
+        setProjectErrorInfo({ msgId: msg.id, message: error?.message || "Error desconocido." });
         return;
       }
 
-      setCreatedProjectMessageIds((prev) => ({ ...prev, [msg.id]: true }));
+      const updatedSuggestion = { ...msg.team_suggestion, createdProjectId: project.id };
+      setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, team_suggestion: updatedSuggestion } : m)));
+      await updateMessageTeamSuggestion(msg.id, updatedSuggestion);
       navigation.navigate("Main", { screen: "Projects" });
     },
-    [organization, user, creatingProjectFor, createdProjectMessageIds, navigation]
+    [organization, user, creatingProjectFor, navigation]
+  );
+
+  const handleCreateTeam = useCallback(
+    async (msg: SemilleroMessage) => {
+      if (!organization || !user || !msg.team_suggestion || creatingTeamFor) return;
+
+      if (msg.team_suggestion.createdTeamId) {
+        navigation.navigate("Main", { screen: "Team" });
+        return;
+      }
+
+      setCreatingTeamFor(msg.id);
+      setTeamErrorInfo(null);
+
+      const missingNames = await findMissingSuggestionMembers(organization.id, msg.team_suggestion);
+      if (missingNames.length) {
+        setCreatingTeamFor(null);
+        setTeamErrorInfo({
+          msgId: msg.id,
+          message: `${missingNames.join(", ")} ya no ${missingNames.length === 1 ? "pertenece" : "pertenecen"} a tu organización. Pide una nueva sugerencia.`,
+        });
+        return;
+      }
+
+      const { data: team, error } = await createTeamFromSuggestion(
+        organization.id,
+        user.id,
+        organization.color,
+        msg.team_suggestion
+      );
+      setCreatingTeamFor(null);
+
+      if (error || !team) {
+        setTeamErrorInfo({ msgId: msg.id, message: error?.message || "Error desconocido." });
+        return;
+      }
+
+      const updatedSuggestion = { ...msg.team_suggestion, createdTeamId: team.id };
+      setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, team_suggestion: updatedSuggestion } : m)));
+      await updateMessageTeamSuggestion(msg.id, updatedSuggestion);
+      navigation.navigate("Main", { screen: "Team" });
+    },
+    [organization, user, creatingTeamFor, navigation]
   );
 
   useEffect(() => {
@@ -543,27 +619,53 @@ export default function SemilleroScreen({ navigation }: any) {
                         </View>
                       ))}
 
-                      <TouchableOpacity
-                        activeOpacity={0.85}
-                        disabled={creatingProjectFor === msg.id}
-                        style={[
-                          styles.createProjectBtn,
-                          { backgroundColor: primaryColor, opacity: creatingProjectFor === msg.id ? 0.6 : 1 },
-                        ]}
-                        onPress={() => handleCreateProject(msg)}
-                      >
-                        <Users size={16} color="#FFF" />
-                        <Text style={styles.createProjectBtnText}>
-                          {createdProjectMessageIds[msg.id]
-                            ? "Ver proyecto"
-                            : creatingProjectFor === msg.id
-                            ? "Creando…"
-                            : "Crear proyecto"}
-                        </Text>
-                      </TouchableOpacity>
-                      {projectErrorFor === msg.id && (
+                      <View style={styles.suggestionActionsRow}>
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          disabled={creatingProjectFor === msg.id}
+                          style={[
+                            styles.createProjectBtn,
+                            { backgroundColor: primaryColor, opacity: creatingProjectFor === msg.id ? 0.6 : 1 },
+                          ]}
+                          onPress={() => handleCreateProject(msg)}
+                        >
+                          <Users size={16} color="#FFF" />
+                          <Text style={styles.createProjectBtnText}>
+                            {msg.team_suggestion.createdProjectId
+                              ? "Ver proyecto"
+                              : creatingProjectFor === msg.id
+                              ? "Creando…"
+                              : "Crear proyecto"}
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          disabled={creatingTeamFor === msg.id}
+                          style={[
+                            styles.createProjectBtn,
+                            { backgroundColor: inputBg, borderWidth: 1, borderColor: border, opacity: creatingTeamFor === msg.id ? 0.6 : 1 },
+                          ]}
+                          onPress={() => handleCreateTeam(msg)}
+                        >
+                          <Users size={16} color={textPrimary} />
+                          <Text style={[styles.createProjectBtnText, { color: textPrimary }]}>
+                            {msg.team_suggestion.createdTeamId
+                              ? "Ver equipo"
+                              : creatingTeamFor === msg.id
+                              ? "Creando…"
+                              : "Crear equipo"}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                      {projectErrorInfo?.msgId === msg.id && (
                         <Text style={[styles.projectErrorText, { color: dangerColor }]}>
-                          No se pudo crear el proyecto. Intenta de nuevo.
+                          No se pudo crear el proyecto: {projectErrorInfo.message}
+                        </Text>
+                      )}
+                      {teamErrorInfo?.msgId === msg.id && (
+                        <Text style={[styles.projectErrorText, { color: dangerColor }]}>
+                          No se pudo crear el equipo: {teamErrorInfo.message}
                         </Text>
                       )}
                     </View>
@@ -698,9 +800,10 @@ const styles = StyleSheet.create({
   stepNumber: { fontSize: 13, fontWeight: "800" },
   stepText: { flex: 1, fontSize: 13, lineHeight: 19 },
 
+  suggestionActionsRow: { flexDirection: "row", gap: 10, marginTop: 16 },
   createProjectBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    borderRadius: 999, paddingVertical: 14, marginTop: 16,
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    borderRadius: 999, paddingVertical: 14,
   },
   createProjectBtnText: { color: "#FFF", fontWeight: "700", fontSize: 14 },
   projectErrorText: { fontSize: 12.5, fontWeight: "600", marginTop: 8, textAlign: "center" },

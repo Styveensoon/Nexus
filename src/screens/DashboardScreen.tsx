@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   Image,
   Platform,
@@ -10,6 +10,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Clipboard from "expo-clipboard";
 import {
@@ -28,6 +29,8 @@ import {
 
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
+import { countTeams } from "../lib/teams";
+import { countProjects } from "../lib/projects";
 
 const WELCOME_PHRASES: Array<(name: string) => string> = [
   (n) => `¡Qué bueno verte, ${n}! 👋`,
@@ -78,6 +81,19 @@ export default function DashboardScreen({ navigation }: any) {
   const [copied, setCopied] = useState(false);
   // Se elige una vez por montaje: cambia cada sesión / cada refresh, se mantiene estable mientras se navega dentro de la app.
   const [phraseIndex] = useState(() => Math.floor(Math.random() * WELCOME_PHRASES.length));
+  const [teamCount, setTeamCount] = useState<number | null>(null);
+  const [projectCount, setProjectCount] = useState<number | null>(null);
+
+  // useFocusEffect (no useEffect) para que los conteos se refresquen cada vez
+  // que se vuelve a esta pestaña (p. ej. después de crear un proyecto en otra
+  // pestaña) — con useEffect solo se cargaban una vez al montar el tab.
+  useFocusEffect(
+    useCallback(() => {
+      if (!organization) return;
+      countTeams(organization.id).then(({ count }) => setTeamCount(count));
+      countProjects(organization.id).then(({ count }) => setProjectCount(count));
+    }, [organization])
+  );
 
   const bg            = isDark ? "#020617" : "#FAFAFA";
   const cardBg        = isDark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
@@ -252,7 +268,13 @@ export default function DashboardScreen({ navigation }: any) {
                     <Users size={18} color={primaryColor} />
                   </View>
                   <Text style={[styles.tileTitle, { color: textPrimary }]}>Equipos</Text>
-                  <Text style={[styles.tileStatus, { color: textSecondary }]}>Aún no has creado equipos</Text>
+                  <Text style={[styles.tileStatus, { color: textSecondary }]}>
+                    {teamCount === null
+                      ? "Cargando…"
+                      : teamCount === 0
+                      ? "Aún no has creado equipos"
+                      : `${teamCount} ${teamCount === 1 ? "equipo creado" : "equipos creados"}`}
+                  </Text>
                 </TouchableOpacity>
 
                 <View style={[styles.tile, { backgroundColor: inputBg, borderColor: border, width: isMobile ? "100%" : "32%" }, ultraShadow]}>
@@ -278,8 +300,15 @@ export default function DashboardScreen({ navigation }: any) {
                   <Text style={[styles.sectionTitle, { color: textPrimary }]}>Proyectos</Text>
                   <View style={[styles.emptyCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}>
                     <Folder size={32} color={textSecondary} />
-                    <Text style={[styles.emptyTitle, { color: textPrimary }]}>No tienes ningún proyecto</Text>
-                    {organization.owner_id === user?.id && (
+                    <Text style={[styles.emptyTitle, { color: textPrimary }]}>
+                      {!projectCount
+                        ? "No tienes ningún proyecto"
+                        : `${projectCount} ${projectCount === 1 ? "proyecto" : "proyectos"} en tu organización`}
+                    </Text>
+                    <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("Projects")}>
+                      <Text style={[styles.emptyLink, { color: primaryColor }]}>Ver proyectos</Text>
+                    </TouchableOpacity>
+                    {!projectCount && organization.owner_id === user?.id && (
                       <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("Semillero")}>
                         <Text style={[styles.emptyLink, { color: primaryColor }]}>¿Tienes alguna idea? Concrétala.</Text>
                       </TouchableOpacity>
