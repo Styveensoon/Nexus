@@ -111,7 +111,7 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
     }
     await refreshOrganization();
     setJoining(false);
-    navigation.replace("Main");
+    navigation.replace("ProfileSetup");
   };
 
   return (

@@ -11,23 +11,28 @@ Plataforma de gestión de proyectos con IA local, self-hosted, multiplataforma (
 Lo real y funcional hoy:
 - **Auth completo con Supabase:** registro, login, verificación de correo, sign out. Ver `src/context/AuthContext.tsx` (`useAuth()`) y `src/lib/supabase.ts`.
 - **Organizaciones (= "workspace" de la visión, pero simplificado):** crear organización con nombre/color/logo personalizables, o unirse por código de invitación. Ver `src/lib/organizations.ts` y `supabase/schema.sql`.
-- **Pantallas "premium" ya rediseñadas** (identidad visual consistente, ver sección de abajo): `LandingScreen`, `LoginScreen`, `RegisterScreen`, `WorkspaceSetupScreen`, `JoinWorkspaceScreen`, `SemilleroScreen`, `DashboardScreen`, `BottomTabs`.
+- **Pantallas "premium" ya rediseñadas** (identidad visual consistente, ver sección de abajo): `LandingScreen`, `LoginScreen`, `RegisterScreen`, `WorkspaceSetupScreen`, `JoinWorkspaceScreen`, `SemilleroScreen`, `DashboardScreen`, `BottomTabs`, `ProfileSetupScreen`, `ProfileScreen`.
 - **Dashboard/home** rediseñado para la vista del admin/creador de la organización: fondo con el color de marca de la org, tarjeta con código de invitación, sección "El Semillero" (placeholder honesto, sin IA real todavía), tiles de Equipos/Badges/Clientes (informativos, sin backend), nav propia responsive (barra arriba en desktop ≥768px, abajo en móvil).
+- **Perfil de colaborador completo:** tras crear/unirse a organización, `ProfileSetupScreen` obliga a pasar por un onboarding de perfil (todos los campos opcionales) antes del Dashboard. La pestaña `Profile` real (ya no mock) tiene modo vista + modo edición (ícono de tuerca) usando el mismo formulario compartido `src/components/ProfileEditorForm.tsx`. Campos: mote, bio corta, foto (8 avatares prediseñados o subida real con drag-and-drop en web / picker nativo en mobile a Supabase Storage), color de card, zona horaria, rol/cargo, idiomas con nivel CEFR (A1–C2), habilidades con nivel 1-10 (arrastrable, componente `LevelDots`). Badges/Equipos/Proyectos se muestran en la pestaña Profile pero son de solo lectura con estado vacío honesto (ver abajo).
 
 Lo que **NO** existe todavía, aunque el resto de este documento lo describa como visión:
 - Ningún backend de IA (ni Groq ni Ollama conectados a nada).
-- Tablas de `projects`, `tasks`, `issues`, `teams`, `comments` — **no existen en la base de datos.** Las únicas tablas reales son `profiles`, `organizations`, `organization_members`.
+- Tablas de `projects`, `tasks`, `issues`, `teams`, `comments` — **no existen en la base de datos.** Las únicas tablas reales son `profiles`, `organizations`, `organization_members` (más el bucket de Storage `avatars`).
 - Roles ricos (`team_leader`, `client`) — hoy `organization_members.role` solo es `'owner' | 'member'`.
-- Las pestañas **Projects/Tasks/Calendar/Team/Profile siguen con datos de ejemplo (mock)**, usan `@expo/vector-icons` en vez de `lucide-react-native`, y no llaman a `useAuth()`. Redecidir/rediseñar cada una es trabajo pendiente, una por una.
+- Quién asigna badges (team_leader/admin) — hoy `profiles.badges` existe en el esquema pero nada lo escribe todavía; la pestaña Profile solo lo muestra.
+- Las pestañas **Projects/Tasks/Calendar/Team siguen con datos de ejemplo (mock)**, usan `@expo/vector-icons` en vez de `lucide-react-native`, y no llaman a `useAuth()`. Redecidir/rediseñar cada una es trabajo pendiente, una por una. (`Profile` ya se rediseñó, ver arriba.)
 - Nada de infraestructura de Raspberry Pi / Docker / Cloudflare Tunnel.
 
 ## Patrones de código ya establecidos (reusar, no reinventar)
 - **Paleta local por pantalla** (no hay theme file compartido para las pantallas nuevas): cada componente calcula sus propios `bg`, `cardBg`, `border`, `textPrimary`, `textSecondary`, `primaryColor = "#2563EB"`, `inputBg` a partir de `isDark` (de `useTheme()`). Copiar el bloque tal cual de cualquier pantalla ya rediseñada en vez de crear una paleta nueva.
 - **Sombra:** patrón `ultraShadow` vía `Platform.select({ web: { boxShadow, backdropFilter: "blur(12px)" }, default: { shadowColor/Offset/Opacity/Radius, elevation } })`.
 - **Responsive:** `const isMobile = useWindowDimensions().width < 768` en cada pantalla — no hay breakpoints centralizados. Contenido en desktop va dentro de un contenedor `maxWidth` centrado (960–1280 según la pantalla).
-- **Íconos:** `lucide-react-native` en todo lo nuevo/rediseñado. Las pantallas viejas sin rediseñar (Projects/Tasks/Calendar/Team/Profile) todavía usan `@expo/vector-icons` — no mezclar los dos sistemas al tocar una pantalla, migrar a lucide si se rediseña.
+- **Íconos:** `lucide-react-native` en todo lo nuevo/rediseñado. Las pantallas viejas sin rediseñar (Projects/Tasks/Calendar/Team) todavía usan `@expo/vector-icons` — no mezclar los dos sistemas al tocar una pantalla, migrar a lucide si se rediseña.
 - **Botones primarios:** píldora (`borderRadius: 999`).
-- **Filosofía anti-fake:** nunca simular que algo funciona cuando no hay backend. Si no hay feature real, se muestra un estado vacío honesto o un aviso tipo "esto estará disponible pronto" — nunca un spinner falso ni un botón que aparenta éxito. (Ver `SemilleroScreen.tsx` como ejemplo: el formulario es real, el submit no llama a nada, solo avisa.)
+- **Filosofía anti-fake:** nunca simular que algo funciona cuando no hay backend. Si no hay feature real, se muestra un estado vacío honesto o un aviso tipo "esto estará disponible pronto" — nunca un spinner falso ni un botón que aparenta éxito. (Ver `SemilleroScreen.tsx`, o las secciones Badges/Equipos/Proyectos de `ProfileScreen.tsx`.)
+- **Formularios reusables:** la edición de perfil vive en `src/components/ProfileEditorForm.tsx` (self-contained: hace su propio fetch/save) y la usan tanto `ProfileSetupScreen` (onboarding, sin botón cancelar) como `ProfileScreen` en modo edición (con cancelar) — pasarle `onCancel` o no cambia el layout del botón de guardar.
+- **Modales tipo picker:** `ColorPickerModal` (hue bar + hex) y `TimezoneModal` (búsqueda + lista) comparten el mismo overlay/card. Para inputs "arrastrables" (slider discreto), ver `LevelDots.tsx` (usa `PanResponder`, igual que la hue bar del color picker; acepta `disabled` para modo solo-lectura).
+- **Código específico de plataforma:** cuando algo necesita DOM real en web (ej. `AvatarUploadZone` con drag-and-drop), usar el patrón `Componente.tsx` (nativo) + `Componente.web.tsx` (web) — Metro resuelve el archivo correcto por plataforma solo con el nombre.
 
 ## Trampas conocidas (para no perder tiempo redescubriéndolas)
 - **`src/navigation/AppNavigator.tsx` está muerto.** No compila (importa `@react-navigation/native-stack`, que no está instalado) y no se usa en ningún lado. El navegador raíz real es `App.tsx` (cargado vía `index.ts`), envuelto en `ThemeProvider > AuthProvider > NavigationContainer`. Si `tsc` marca un error ahí, es preexistente y se ignora.
@@ -35,6 +40,8 @@ Lo que **NO** existe todavía, aunque el resto de este documento lo describa com
 - **RLS de `organization_members` solo deja ver la fila propia** (`organization_members_select_own`). Un `count()` de miembros del equipo siempre da 1 con esa política — por eso el Dashboard no muestra conteo real de miembros. Hay una política opcional ya escrita (comentada) al final de `supabase/schema.sql` para habilitarlo si se necesita.
 - **Nunca poner la `secret`/`service_role` key de Supabase en `.env`** (solo la `anon`/`publishable`, que va al cliente). Ya pasó una vez en este proyecto.
 - **`AGENTS.md` dice Expo SDK 56, pero lo instalado es SDK 54** (`~54.0.0` en `package.json`/`app.json`). Si hace falta consultar docs versionadas de Expo, usar v54, no v56.
+- **Las políticas de Postgres (`create policy`) no son idempotentes** (no existe `if not exists` para políticas). Por eso `schema.sql` hace `drop policy if exists "..." on tabla;` antes de cada `create policy` — así es seguro re-correr el archivo completo cada vez que se le agrega algo, en vez de tener que copiar solo el bloque nuevo.
+- **`assets/images/avatares/` se ha vaciado solo más de una vez** (parece un problema de sincronización de OneDrive, no de git — la carpeta ni siquiera está trackeada). `src/lib/profiles.ts` hace `require()` estático de cada archivo en `DEFAULT_AVATARS`; si falta uno solo, Metro no arma el bundle y **toda la app queda en blanco** (no solo la pantalla de perfil). Si la app se ve en blanco sin razón aparente, revisar esta carpeta antes que nada.
 
 ## Jerarquía y roles (visión objetivo, no implementada aún)
 - **Jerarquía objetivo:** Workspace → Proyecto → Equipo → Task/Issue → Reportes
@@ -43,8 +50,8 @@ Lo que **NO** existe todavía, aunque el resto de este documento lo describa com
 
 ## Diferenciadores clave (visión de producto, no perder de vista al implementar)
 - **Semillero IA:** admin escribe una idea → IA analiza perfiles reales del workspace → arma equipo ideal + roadmap + primeras tareas. *(Hoy: pantalla `SemilleroScreen` con formulario real y aviso de "próximamente", sin IA conectada.)*
-- **Perfiles tipo LinkedIn** con habilidades y nivel de experiencia (alimentan al Semillero IA). *(No implementado.)*
-- **Badges** discretos, gestionados por team leaders/admins con sugerencias de IA. *(Hoy: tile informativo en el Dashboard, sin backend.)*
+- **Perfiles tipo LinkedIn** con habilidades y nivel de experiencia (alimentan al Semillero IA). *(Implementado: mote, bio, avatar/foto, color, zona horaria, rol, idiomas con nivel CEFR, habilidades con nivel 1-10 — ver `ProfileEditorForm.tsx`. Falta que el Semillero realmente los use.)*
+- **Badges** discretos, gestionados por team leaders/admins con sugerencias de IA. *(Columna `profiles.badges` y sección de solo lectura en `ProfileScreen` ya existen; falta el mecanismo de quién los otorga.)*
 - **Workspaces con marca propia:** logo, color primario/secundario, modo claro/oscuro por workspace. *(Implementado: nombre/color/logo por organización vía `WorkspaceSetupScreen` y su `ColorPickerModal`.)*
 - **Client Room:** vista curada para clientes externos, construida por el admin. *(Hoy: tile "Clientes" informativo en el Dashboard, sin pantalla propia todavía.)*
 - **Chat/comentarios** en cada task, issue, equipo y proyecto (archivos, fotos, links). *(No implementado — no hay tasks/issues todavía.)*
@@ -56,7 +63,7 @@ Lo que **NO** existe todavía, aunque el resto de este documento lo describa com
 |---|---|---|
 | Frontend | Expo SDK 54 + React Native (iOS, Android, Web — un solo código, `react-native-web`) | ✅ en uso |
 | Navegación | React Navigation (`@react-navigation/stack` en `App.tsx` raíz + `@react-navigation/bottom-tabs` custom en `BottomTabs.tsx`) | ✅ en uso |
-| Base de datos (dev) | Supabase Cloud | ✅ en uso (solo `profiles`/`organizations`/`organization_members`) |
+| Base de datos (dev) | Supabase Cloud | ✅ en uso (`profiles`/`organizations`/`organization_members` + Storage `avatars`) |
 | Base de datos (prod) | Supabase self-hosted en Docker (en el Pi) | ⏳ roadmap, no empezado |
 | IA (dev) | Groq API, modelo Mixtral | ⏳ roadmap, no conectado |
 | IA (prod) | Ollama con Mistral 7B o Llama 3.2, local en el Pi 5 | ⏳ roadmap, no empezado |
@@ -75,9 +82,10 @@ Lo que **NO** existe todavía, aunque el resto de este documento lo describa com
 ## Base de datos — esquema real hoy
 Fuente de verdad: `supabase/schema.sql`. Correr ahí, no adivinar.
 
-- **`profiles`** (`id` → `auth.users.id`, `full_name`, `email`, `created_at`) — se crea sola vía trigger `handle_new_user` al registrarse.
+- **`profiles`** (`id` → `auth.users.id`, `full_name`, `email`, `created_at`, se crea sola vía trigger `handle_new_user` al registrarse) + columnas de perfil: `avatar_url` (`null` | `"default:<archivo>.png"` | URL subida), `avatar_color`, `nickname`, `bio`, `timezone`, `role`, `custom_role`, `skills` (`text[]`), `skill_levels` (`jsonb`, `{nombre: 1-10}`), `languages` (`text[]`), `language_levels` (`jsonb`, `{nombre: "A1"-"C2"}`), `badges` (`jsonb`, `[{id,name,color}]`, no editable desde el cliente).
 - **`organizations`** (`id`, `name`, `color`, `logo_url`, `invite_code` único, `owner_id`, `created_at`).
 - **`organization_members`** (`id`, `organization_id`, `user_id`, `role` `'owner'|'member'`, `created_at`, único por `(organization_id, user_id)`).
+- **Storage bucket `avatars`** (público): fotos de perfil subidas, una carpeta por `user_id`. Políticas: lectura pública, escritura solo en la carpeta propia.
 - RLS activo en las tres tablas. Ver trampa de `organization_members_select_own` arriba.
 
 ## Variables de entorno (dev)
@@ -106,4 +114,4 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=   # la "anon"/"publishable" key, NUNCA la "secret
 - Antes de tocar esquema de base de datos, confirmar impacto en RLS policies existentes.
 
 ## Estado actual / foco
-**Última actualización:** conecté el auth real con Supabase (registro, login, verificación de correo) y el flujo completo de onboarding: crear organización con personalización (nombre, color, logo vía picker propio) o unirse por código de invitación. Rediseñé el Dashboard/home para la vista del admin/creador de la organización (fondo con su color de marca, tarjeta de invitación, sección "El Semillero" como entrada placeholder a la futura IA, y navegación propia responsive — barra arriba en desktop, abajo en móvil). Pendiente: conectar el Semillero a IA real, construir la vista de miembro no-admin, y las pestañas de Projects/Tasks/Team/Profile siguen con datos de ejemplo (mock) sin tocar.
+**Última actualización:** construí el perfil de colaborador completo — onboarding obligatorio (`ProfileSetupScreen`, todos los campos opcionales) entre crear/unirse a organización y el Dashboard, y la pestaña `Profile` real con modo vista + edición (antes era mock). Ambos comparten el formulario `ProfileEditorForm.tsx`. Incluye foto (8 avatares default o subida real a Supabase Storage con drag-and-drop en web), color de card (con contraste automático de texto), zona horaria, rol, idiomas con nivel CEFR, habilidades con nivel 1-10 arrastrable. Badges/Equipos/Proyectos ya tienen su espacio en la pestaña Profile pero con estado vacío honesto (no hay quién asigna badges ni tablas de teams/proyectos todavía). Pendiente: conectar el Semillero a IA real, construir la vista de miembro no-admin del Dashboard, definir quién asigna badges, y las pestañas de Projects/Tasks/Calendar/Team siguen con datos de ejemplo (mock) sin tocar.

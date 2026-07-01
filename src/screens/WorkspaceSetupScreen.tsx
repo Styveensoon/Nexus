@@ -88,7 +88,7 @@ export default function WorkspaceSetupScreen({ navigation, route }: any) {
 
     await refreshOrganization();
     setLoading(false);
-    navigation.replace("Main");
+    navigation.replace("ProfileSetup");
   };
 
   return (

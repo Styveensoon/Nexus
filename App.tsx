@@ -8,6 +8,7 @@ import LoginScreen from './src/screens/LoginScreen'
 import RegisterScreen from './src/screens/RegisterScreen'
 import WorkspaceSetupScreen from './src/screens/WorkspaceSetupScreen'
 import JoinWorkspaceScreen from './src/screens/JoinWorkspaceScreen'
+import ProfileSetupScreen from './src/screens/ProfileSetupScreen'
 import SemilleroScreen from './src/screens/SemilleroScreen'
 import BottomTabs from './src/navigation/BottomTabs'
 
@@ -28,6 +29,7 @@ export default function App() {
             <Stack.Screen name="Register" component={RegisterScreen} />
             <Stack.Screen name="WorkspaceSetup" component={WorkspaceSetupScreen} />
             <Stack.Screen name="JoinWorkspace" component={JoinWorkspaceScreen} />
+            <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
             <Stack.Screen name="Main" component={BottomTabs} />
             <Stack.Screen name="Semillero" component={SemilleroScreen} />
           </Stack.Navigator>
