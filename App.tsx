@@ -8,6 +8,7 @@ import LoginScreen from './src/screens/LoginScreen'
 import RegisterScreen from './src/screens/RegisterScreen'
 import WorkspaceSetupScreen from './src/screens/WorkspaceSetupScreen'
 import JoinWorkspaceScreen from './src/screens/JoinWorkspaceScreen'
+import SemilleroScreen from './src/screens/SemilleroScreen'
 import BottomTabs from './src/navigation/BottomTabs'
 
 const Stack = createStackNavigator()
@@ -28,6 +29,7 @@ export default function App() {
             <Stack.Screen name="WorkspaceSetup" component={WorkspaceSetupScreen} />
             <Stack.Screen name="JoinWorkspace" component={JoinWorkspaceScreen} />
             <Stack.Screen name="Main" component={BottomTabs} />
+            <Stack.Screen name="Semillero" component={SemilleroScreen} />
           </Stack.Navigator>
         </NavigationContainer>
       </AuthProvider>

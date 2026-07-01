@@ -12,10 +12,34 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Clipboard from "expo-clipboard";
-import { Building2, Copy, Folder, LogOut, Search, Sparkles } from "lucide-react-native";
+import {
+  Activity,
+  BadgeCheck,
+  Building2,
+  ChevronRight,
+  Copy,
+  Folder,
+  LogOut,
+  Search,
+  Sparkles,
+  UserCheck,
+  Users,
+} from "lucide-react-native";
 
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
+
+const WELCOME_PHRASES: Array<(name: string) => string> = [
+  (n) => `¡Qué bueno verte, ${n}! 👋`,
+  (n) => `Bienvenido de nuevo, ${n} 👋`,
+  (n) => `Listo para un gran día, ${n}?`,
+  (n) => `${n}, tu equipo te está esperando 🚀`,
+  (n) => `Hoy es un buen día para avanzar, ${n}`,
+  (n) => `De vuelta a la acción, ${n} 💪`,
+  (n) => `A construir grandes cosas, ${n}`,
+  (n) => `${n}, vamos con todo hoy`,
+  (n) => `Un gusto tenerte aquí, ${n} 👋`,
+];
 
 function darkenHex(hex: string, amount = 0.25) {
   const clean = hex.replace("#", "");
@@ -27,6 +51,23 @@ function darkenHex(hex: string, amount = 0.25) {
   return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
 }
 
+function mixHex(hex: string, base: string, weight = 0.14) {
+  const parse = (h: string) => {
+    const clean = h.replace("#", "");
+    return /^[0-9A-Fa-f]{6}$/.test(clean) ? parseInt(clean, 16) : null;
+  };
+  const a = parse(hex);
+  const b = parse(base);
+  if (a === null || b === null) return base;
+  const mix = (shift: number) => {
+    const av = (a >> shift) & 0xff;
+    const bv = (b >> shift) & 0xff;
+    return Math.round(av * weight + bv * (1 - weight));
+  };
+  const r = mix(16), g = mix(8), c = mix(0);
+  return `#${[r, g, c].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
 export default function DashboardScreen({ navigation }: any) {
   const { isDark } = useTheme();
   const { user, organization, loading, signOut } = useAuth();
@@ -35,6 +76,8 @@ export default function DashboardScreen({ navigation }: any) {
   const isWeb = Platform.OS === "web";
 
   const [copied, setCopied] = useState(false);
+  // Se elige una vez por montaje: cambia cada sesión / cada refresh, se mantiene estable mientras se navega dentro de la app.
+  const [phraseIndex] = useState(() => Math.floor(Math.random() * WELCOME_PHRASES.length));
 
   const bg            = isDark ? "#020617" : "#FAFAFA";
   const cardBg        = isDark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
@@ -43,6 +86,7 @@ export default function DashboardScreen({ navigation }: any) {
   const textSecondary = isDark ? "#94A3B8" : "#475569";
   const primaryColor  = "#2563EB";
   const inputBg       = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
+  const sheetBg       = isDark ? "#0B1120" : "#FFFFFF";
 
   const ultraShadow = Platform.select({
     web: {
@@ -60,10 +104,15 @@ export default function DashboardScreen({ navigation }: any) {
     },
   });
 
+  const pageBg = organization ? mixHex(organization.color, bg, 0.14) : bg;
+  const orgColor = organization?.color ?? primaryColor;
+
   const firstName =
     (user?.user_metadata as any)?.full_name?.trim?.().split(" ")[0] ||
     user?.email?.split("@")[0] ||
     "ahí";
+
+  const welcomeMessage = WELCOME_PHRASES[phraseIndex](firstName);
 
   const handleSignOut = async () => {
     await signOut();
@@ -90,24 +139,38 @@ export default function DashboardScreen({ navigation }: any) {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: bg }]}>
+    <View style={[styles.container, { backgroundColor: pageBg }]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: isMobile ? 16 : 32 }}>
-        <View style={{ width: "100%", maxWidth: 960, alignSelf: "center" }}>
+        <View style={{ width: "100%", maxWidth: 1280, alignSelf: "center" }}>
           {/* HEADER */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              <View style={[styles.avatar, { backgroundColor: organization?.color ?? primaryColor }]}>
-                {organization?.logo_url ? (
-                  <Image source={{ uri: organization.logo_url }} style={styles.avatarImage} />
-                ) : (
-                  <Building2 size={22} color="#FFF" />
-                )}
+              <View style={styles.avatarWrap}>
+                <View style={[styles.avatarGlow, { backgroundColor: mixHex(orgColor, isDark ? "#020617" : "#FAFAFA", 0.4) }]} />
+                <View style={[styles.avatar, { backgroundColor: orgColor }]}>
+                  {organization?.logo_url ? (
+                    <Image source={{ uri: organization.logo_url }} style={styles.avatarImage} />
+                  ) : (
+                    <Building2 size={28} color="#FFF" />
+                  )}
+                </View>
               </View>
-              <View>
-                <Text style={[styles.greeting, { color: textSecondary }]}>Hola, {firstName} 👋</Text>
-                <Text style={[styles.orgName, { color: textPrimary }]} numberOfLines={1}>
-                  {organization?.name ?? "Nexus"}
+              <View style={{ flexShrink: 1 }}>
+                <Text style={[styles.greetingBig, { color: textPrimary }]} numberOfLines={1}>
+                  {welcomeMessage}
                 </Text>
+                <View style={styles.orgChipRow}>
+                  <Text style={[styles.orgNameChip, { color: textSecondary }]} numberOfLines={1}>
+                    {organization?.name ?? "Nexus"}
+                  </Text>
+                  {organization && (
+                    <View style={[styles.rolePill, { backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(2,6,23,0.06)" }]}>
+                      <Text style={[styles.rolePillText, { color: textSecondary }]}>
+                        {organization.owner_id === user?.id ? "OWNER" : "MIEMBRO"}
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </View>
             </View>
 
@@ -128,7 +191,7 @@ export default function DashboardScreen({ navigation }: any) {
               </Text>
             </View>
           ) : (
-            <>
+            <View style={[styles.sheet, { backgroundColor: sheetBg, borderColor: border, padding: isMobile ? 16 : 24 }, ultraShadow]}>
               {/* SEARCH */}
               <View style={[styles.searchWrapper, { backgroundColor: inputBg, borderColor: border }]}>
                 <Search size={18} color={textSecondary} />
@@ -158,51 +221,80 @@ export default function DashboardScreen({ navigation }: any) {
                 </View>
               </LinearGradient>
 
-              {/* STATS */}
-              <View style={[styles.statsRow, { flexDirection: isMobile ? "column" : "row" }]}>
-                <View style={[styles.statCard, { backgroundColor: cardBg, borderColor: border, width: isMobile ? "100%" : "48%" }, ultraShadow]}>
-                  <View style={[styles.statIcon, { backgroundColor: isDark ? "rgba(37,99,235,0.15)" : "#EFF6FF" }]}>
-                    <Building2 size={18} color={primaryColor} />
-                  </View>
-                  <Text style={[styles.statValue, { color: textPrimary }]}>
-                    {organization.owner_id === user?.id ? "Owner" : "Miembro"}
+              {/* EL SEMILLERO */}
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[styles.semilleroCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}
+                onPress={() => navigation.navigate("Semillero")}
+              >
+                <View style={[styles.semilleroIcon, { backgroundColor: mixHex(organization.color, isDark ? "#0F172A" : "#FFFFFF", 0.18) }]}>
+                  <Sparkles size={22} color={organization.color} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.semilleroTitle, { color: textPrimary }]}>El Semillero</Text>
+                  <Text style={[styles.semilleroDesc, { color: textSecondary }]} numberOfLines={2}>
+                    Describe tu proyecto y la IA forma el equipo ideal basándose en perfiles reales de tu organización.
                   </Text>
-                  <Text style={[styles.statLabel, { color: textSecondary }]}>Tu rol</Text>
+                </View>
+                <ChevronRight size={20} color={textSecondary} />
+              </TouchableOpacity>
+
+              {/* EQUIPOS / BADGES / CLIENTES */}
+              <View style={[styles.tileRow, { flexDirection: isMobile ? "column" : "row" }]}>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[styles.tile, { backgroundColor: inputBg, borderColor: border, width: isMobile ? "100%" : "32%" }, ultraShadow]}
+                  onPress={() => navigation.navigate("Team")}
+                >
+                  <View style={[styles.tileIcon, { backgroundColor: isDark ? "rgba(37,99,235,0.15)" : "#EFF6FF" }]}>
+                    <Users size={18} color={primaryColor} />
+                  </View>
+                  <Text style={[styles.tileTitle, { color: textPrimary }]}>Equipos</Text>
+                  <Text style={[styles.tileStatus, { color: textSecondary }]}>Aún no has creado equipos</Text>
+                </TouchableOpacity>
+
+                <View style={[styles.tile, { backgroundColor: inputBg, borderColor: border, width: isMobile ? "100%" : "32%" }, ultraShadow]}>
+                  <View style={[styles.tileIcon, { backgroundColor: isDark ? "rgba(37,99,235,0.15)" : "#EFF6FF" }]}>
+                    <BadgeCheck size={18} color={primaryColor} />
+                  </View>
+                  <Text style={[styles.tileTitle, { color: textPrimary }]}>Badges</Text>
+                  <Text style={[styles.tileStatus, { color: textSecondary }]}>Aún no hay badges otorgados</Text>
                 </View>
 
-                {/* Cuando se habilite el conteo real de miembros (política RLS opcional
-                    en supabase/schema.sql), agregar aquí una tercera tarjeta "Miembros". */}
-                <View style={[styles.statCard, { backgroundColor: cardBg, borderColor: border, width: isMobile ? "100%" : "48%" }, ultraShadow]}>
-                  <View style={[styles.statIcon, { backgroundColor: isDark ? "rgba(37,99,235,0.15)" : "#EFF6FF" }]}>
-                    <Sparkles size={18} color={primaryColor} />
+                <View style={[styles.tile, { backgroundColor: inputBg, borderColor: border, width: isMobile ? "100%" : "32%" }, ultraShadow]}>
+                  <View style={[styles.tileIcon, { backgroundColor: isDark ? "rgba(37,99,235,0.15)" : "#EFF6FF" }]}>
+                    <UserCheck size={18} color={primaryColor} />
                   </View>
-                  <Text style={[styles.statValue, { color: textPrimary }]} numberOfLines={1}>
-                    {organization.invite_code}
-                  </Text>
-                  <Text style={[styles.statLabel, { color: textSecondary }]}>Código de invitación</Text>
+                  <Text style={[styles.tileTitle, { color: textPrimary }]}>Clientes</Text>
+                  <Text style={[styles.tileStatus, { color: textSecondary }]}>Aún no tienes clientes agregados</Text>
                 </View>
               </View>
 
-              {/* PROYECTOS */}
-              <Text style={[styles.sectionTitle, { color: textPrimary }]}>Proyectos</Text>
-              <View style={[styles.emptyCard, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
-                <Folder size={32} color={textSecondary} />
-                <Text style={[styles.emptyTitle, { color: textPrimary }]}>Aún no tienes proyectos</Text>
-                <Text style={[styles.emptySubtitle, { color: textSecondary }]}>
-                  Cuando actives el módulo de proyectos, los verás aquí.
-                </Text>
-              </View>
+              {/* PROYECTOS + ACTIVIDAD */}
+              <View style={[styles.sectionsRow, { flexDirection: isMobile ? "column" : "row" }]}>
+                <View style={{ width: isMobile ? "100%" : "48%" }}>
+                  <Text style={[styles.sectionTitle, { color: textPrimary }]}>Proyectos</Text>
+                  <View style={[styles.emptyCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}>
+                    <Folder size={32} color={textSecondary} />
+                    <Text style={[styles.emptyTitle, { color: textPrimary }]}>No tienes ningún proyecto</Text>
+                    <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("Semillero")}>
+                      <Text style={[styles.emptyLink, { color: primaryColor }]}>¿Tienes alguna idea? Concrétala.</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
 
-              {/* ACTIVIDAD */}
-              <Text style={[styles.sectionTitle, { color: textPrimary }]}>Actividad reciente</Text>
-              <View style={[styles.emptyCard, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
-                <Sparkles size={32} color={textSecondary} />
-                <Text style={[styles.emptyTitle, { color: textPrimary }]}>Sin actividad todavía</Text>
-                <Text style={[styles.emptySubtitle, { color: textSecondary }]}>
-                  Aquí verás lo que pase en tu workspace en tiempo real.
-                </Text>
+                <View style={{ width: isMobile ? "100%" : "48%" }}>
+                  <Text style={[styles.sectionTitle, { color: textPrimary }]}>Actividad reciente</Text>
+                  <View style={[styles.emptyCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}>
+                    <Activity size={32} color={textSecondary} />
+                    <Text style={[styles.emptyTitle, { color: textPrimary }]}>Sin actividad todavía</Text>
+                    <Text style={[styles.emptySubtitle, { color: textSecondary }]}>
+                      Aquí verás lo que pase en tu workspace en tiempo real.
+                    </Text>
+                  </View>
+                </View>
               </View>
-            </>
+            </View>
           )}
 
           <View style={{ height: 40 }} />
@@ -215,16 +307,23 @@ export default function DashboardScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  headerLeft: { flexDirection: "row", alignItems: "center", gap: 12, flexShrink: 1 },
-  avatar: { width: 50, height: 50, borderRadius: 16, justifyContent: "center", alignItems: "center" },
-  avatarImage: { width: 50, height: 50, borderRadius: 16 },
-  greeting: { fontSize: 13, fontWeight: "600" },
-  orgName: { fontSize: 20, fontWeight: "900", letterSpacing: -0.5, maxWidth: 240 },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 16, flexShrink: 1 },
+  avatarWrap: { width: 64, height: 64, alignItems: "center", justifyContent: "center" },
+  avatarGlow: { position: "absolute", width: 84, height: 84, borderRadius: 42 },
+  avatar: { width: 64, height: 64, borderRadius: 20, justifyContent: "center", alignItems: "center" },
+  avatarImage: { width: 64, height: 64, borderRadius: 20 },
+  greetingBig: { fontSize: 21, fontWeight: "900", letterSpacing: -0.5, maxWidth: 420 },
+  orgChipRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 6 },
+  orgNameChip: { fontSize: 13, fontWeight: "700", maxWidth: 220 },
+  rolePill: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  rolePillText: { fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
   iconBtn: { width: 42, height: 42, borderRadius: 21, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+
+  sheet: { borderRadius: 32, borderWidth: 1, padding: 24, marginTop: 28 },
 
   searchWrapper: {
     flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14,
-    paddingHorizontal: 16, marginTop: 24,
+    paddingHorizontal: 16,
   },
   searchInput: { flex: 1, paddingVertical: 14, fontSize: 15 },
   noOutline: { outlineStyle: "none" } as any,
@@ -240,15 +339,25 @@ const styles = StyleSheet.create({
   },
   heroCopyText: { color: "#FFF", fontWeight: "700", fontSize: 12 },
 
-  statsRow: { gap: 16, marginTop: 20, justifyContent: "space-between" },
-  statCard: { borderRadius: 20, borderWidth: 1, padding: 18 },
-  statIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: "center", alignItems: "center", marginBottom: 12 },
-  statValue: { fontSize: 18, fontWeight: "900" },
-  statLabel: { fontSize: 13, marginTop: 4 },
+  semilleroCard: {
+    flexDirection: "row", alignItems: "center", gap: 14, borderRadius: 20, borderWidth: 1, padding: 18, marginTop: 20,
+  },
+  semilleroIcon: { width: 44, height: 44, borderRadius: 14, justifyContent: "center", alignItems: "center" },
+  semilleroTitle: { fontSize: 15, fontWeight: "800", marginBottom: 4 },
+  semilleroDesc: { fontSize: 12.5, lineHeight: 18 },
+
+  tileRow: { gap: 14, marginTop: 20 },
+  tile: { borderRadius: 20, borderWidth: 1, padding: 18 },
+  tileIcon: { width: 36, height: 36, borderRadius: 11, justifyContent: "center", alignItems: "center", marginBottom: 12 },
+  tileTitle: { fontSize: 14, fontWeight: "800", marginBottom: 4 },
+  tileStatus: { fontSize: 12, lineHeight: 16 },
+
+  sectionsRow: { gap: 24 },
 
   card: { borderRadius: 20, borderWidth: 1, padding: 24 },
   sectionTitle: { fontSize: 18, fontWeight: "800", marginTop: 28, marginBottom: 12, letterSpacing: -0.3 },
   emptyCard: { borderRadius: 20, borderWidth: 1, padding: 28, alignItems: "center", gap: 8 },
   emptyTitle: { fontSize: 15, fontWeight: "700", textAlign: "center" },
   emptySubtitle: { fontSize: 13, textAlign: "center", lineHeight: 20 },
+  emptyLink: { fontSize: 13, fontWeight: "700", textAlign: "center", marginTop: 2 },
 });
