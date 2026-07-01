@@ -221,23 +221,25 @@ export default function DashboardScreen({ navigation }: any) {
                 </View>
               </LinearGradient>
 
-              {/* EL SEMILLERO */}
-              <TouchableOpacity
-                activeOpacity={0.85}
-                style={[styles.semilleroCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}
-                onPress={() => navigation.navigate("Semillero")}
-              >
-                <View style={[styles.semilleroIcon, { backgroundColor: mixHex(organization.color, isDark ? "#0F172A" : "#FFFFFF", 0.18) }]}>
-                  <Sparkles size={22} color={organization.color} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.semilleroTitle, { color: textPrimary }]}>El Semillero</Text>
-                  <Text style={[styles.semilleroDesc, { color: textSecondary }]} numberOfLines={2}>
-                    Describe tu proyecto y la IA forma el equipo ideal basándose en perfiles reales de tu organización.
-                  </Text>
-                </View>
-                <ChevronRight size={20} color={textSecondary} />
-              </TouchableOpacity>
+              {/* EL SEMILLERO (solo el owner puede usarlo) */}
+              {organization.owner_id === user?.id && (
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[styles.semilleroCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}
+                  onPress={() => navigation.navigate("Semillero")}
+                >
+                  <View style={[styles.semilleroIcon, { backgroundColor: mixHex(organization.color, isDark ? "#0F172A" : "#FFFFFF", 0.18) }]}>
+                    <Sparkles size={22} color={organization.color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.semilleroTitle, { color: textPrimary }]}>El Semillero</Text>
+                    <Text style={[styles.semilleroDesc, { color: textSecondary }]} numberOfLines={2}>
+                      Describe tu proyecto y la IA forma el equipo ideal basándose en perfiles reales de tu organización.
+                    </Text>
+                  </View>
+                  <ChevronRight size={20} color={textSecondary} />
+                </TouchableOpacity>
+              )}
 
               {/* EQUIPOS / BADGES / CLIENTES */}
               <View style={[styles.tileRow, { flexDirection: isMobile ? "column" : "row" }]}>
@@ -277,9 +279,11 @@ export default function DashboardScreen({ navigation }: any) {
                   <View style={[styles.emptyCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}>
                     <Folder size={32} color={textSecondary} />
                     <Text style={[styles.emptyTitle, { color: textPrimary }]}>No tienes ningún proyecto</Text>
-                    <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("Semillero")}>
-                      <Text style={[styles.emptyLink, { color: primaryColor }]}>¿Tienes alguna idea? Concrétala.</Text>
-                    </TouchableOpacity>
+                    {organization.owner_id === user?.id && (
+                      <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("Semillero")}>
+                        <Text style={[styles.emptyLink, { color: primaryColor }]}>¿Tienes alguna idea? Concrétala.</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
 
