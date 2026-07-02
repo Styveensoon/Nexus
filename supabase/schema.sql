@@ -701,3 +701,53 @@ drop policy if exists "task_comments_delete_own" on task_comments;
 create policy "task_comments_delete_own" on task_comments
   for delete to authenticated
   using (auth.uid() = user_id);
+
+-- ----------------------------------------------------------------------------
+-- task_comment_reactions: una reacción (like/corazón/dislike/duda) por
+-- persona por comentario, estilo WhatsApp — no varias reacciones distintas
+-- del mismo usuario en el mismo comentario. Tocar la misma reacción que ya
+-- pusiste la quita (toggle); tocar una distinta la reemplaza (lo maneja el
+-- cliente con upsert + delete, ver reactToComment en lib/tasks.ts).
+-- ----------------------------------------------------------------------------
+create table if not exists task_comment_reactions (
+  id uuid primary key default gen_random_uuid(),
+  comment_id uuid not null references task_comments(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  reaction text not null check (reaction in ('like', 'heart', 'dislike', 'question')),
+  created_at timestamptz not null default now(),
+  unique (comment_id, user_id)
+);
+
+alter table task_comment_reactions enable row level security;
+
+drop policy if exists "task_comment_reactions_select_involved" on task_comment_reactions;
+create policy "task_comment_reactions_select_involved" on task_comment_reactions
+  for select to authenticated
+  using (
+    exists (
+      select 1 from task_comments tc
+      where tc.id = comment_id and task_is_involved(tc.task_id)
+    )
+  );
+
+drop policy if exists "task_comment_reactions_insert_own" on task_comment_reactions;
+create policy "task_comment_reactions_insert_own" on task_comment_reactions
+  for insert to authenticated
+  with check (
+    auth.uid() = user_id
+    and exists (
+      select 1 from task_comments tc
+      where tc.id = comment_id and task_is_involved(tc.task_id)
+    )
+  );
+
+drop policy if exists "task_comment_reactions_update_own" on task_comment_reactions;
+create policy "task_comment_reactions_update_own" on task_comment_reactions
+  for update to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "task_comment_reactions_delete_own" on task_comment_reactions;
+create policy "task_comment_reactions_delete_own" on task_comment_reactions
+  for delete to authenticated
+  using (auth.uid() = user_id);

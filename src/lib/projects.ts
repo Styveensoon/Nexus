@@ -200,6 +200,46 @@ export async function updateProjectStatus(projectId: string, status: ProjectStat
   return { error };
 }
 
+export async function updateProject(
+  projectId: string,
+  updates: Partial<{
+    name: string;
+    description: string | null;
+    color: string;
+    iconUrl: string | null;
+    goals: string[];
+    areas: string[];
+  }>
+) {
+  const { error } = await supabase
+    .from("projects")
+    .update({
+      ...(updates.name !== undefined && { name: updates.name }),
+      ...(updates.description !== undefined && { description: updates.description }),
+      ...(updates.color !== undefined && { color: updates.color }),
+      ...(updates.iconUrl !== undefined && { icon_url: updates.iconUrl }),
+      ...(updates.goals !== undefined && { goals: updates.goals }),
+      ...(updates.areas !== undefined && { areas: updates.areas }),
+    })
+    .eq("id", projectId);
+
+  return { error };
+}
+
+// Reemplaza la lista completa de equipos asignados al proyecto (mismo patrón
+// que setTeamMembers en teams.ts) — borra y vuelve a insertar en vez de
+// diffear, porque project_teams no guarda más que el vínculo project<->team.
+export async function setProjectTeams(projectId: string, teamIds: string[]) {
+  const { error: deleteError } = await supabase.from("project_teams").delete().eq("project_id", projectId);
+  if (deleteError) return { error: deleteError };
+
+  if (!teamIds.length) return { error: null };
+
+  const rows = teamIds.map((teamId) => ({ project_id: projectId, team_id: teamId }));
+  const { error } = await supabase.from("project_teams").insert(rows);
+  return { error };
+}
+
 export async function deleteProject(projectId: string) {
   const { error } = await supabase.from("projects").delete().eq("id", projectId);
   return { error };

@@ -466,7 +466,7 @@ export default function TeamScreen() {
       <Modal visible={showCreateModal} transparent animationType="fade" onRequestClose={closeModal}>
         <View style={styles.overlay}>
           <ScrollView contentContainerStyle={styles.overlayScroll} showsVerticalScrollIndicator={false}>
-            <View style={[styles.modalCard, { backgroundColor: isDark ? "#0F172A" : "#FFFFFF", borderColor: border }]}>
+            <View style={[styles.modalCard, { backgroundColor: isDark ? "#0F172A" : "#FFFFFF", borderColor: border }, !isMobile && styles.modalCardWide]}>
               <View style={styles.modalHeader}>
                 <Text style={[styles.modalTitle, { color: textPrimary }]}>{editingTeamId ? "Editar equipo" : "Nuevo equipo"}</Text>
                 <TouchableOpacity onPress={closeModal} hitSlop={8}>
@@ -474,169 +474,181 @@ export default function TeamScreen() {
                 </TouchableOpacity>
               </View>
 
-              <Text style={[styles.modalLabel, { color: textSecondary }]}>Nombre</Text>
-              <TextInput
-                value={newName}
-                onChangeText={setNewName}
-                placeholder="Ej. Equipo de Producto"
-                placeholderTextColor={textSecondary}
-                style={[styles.modalInput, { backgroundColor: inputBg, borderColor: border, color: textPrimary }, isWeb && styles.noOutline]}
-              />
+              <View style={!isMobile && styles.formLayout}>
+                {/* Integrantes es la sección más pesada del formulario (buscador +
+                    roster scrollable + tarjetas de rol por integrante), así que va
+                    en la columna principal más ancha; Nombre/Descripción/Ícono son
+                    más compactos y van en el panel lateral — al revés que en
+                    Tasks/Projects, donde lo "principal" era el texto. Ver
+                    docs/PATRONES.md. */}
+                <View style={!isMobile ? styles.formMain : undefined}>
+                  <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 0 }]}>Integrantes</Text>
+                  {loadingRoster ? (
+                    <Text style={{ color: textSecondary }}>Cargando roster…</Text>
+                  ) : availableRoster.length === 0 && memberDrafts.length === 0 ? (
+                    <Text style={{ color: textSecondary, fontSize: 13 }}>Todavía no hay nadie más en tu organización.</Text>
+                  ) : (
+                    <>
+                      {availableRoster.length > 0 && (
+                        <View style={[styles.searchWrapper, { backgroundColor: inputBg, borderColor: border, marginBottom: 10 }]}>
+                          <Search size={16} color={textSecondary} />
+                          <TextInput
+                            value={rosterSearch}
+                            onChangeText={setRosterSearch}
+                            placeholder="Buscar integrante…"
+                            placeholderTextColor={textSecondary}
+                            style={[styles.searchInput, { color: textPrimary, paddingVertical: 10 }, isWeb && styles.noOutline]}
+                          />
+                        </View>
+                      )}
 
-              <Text style={[styles.modalLabel, { color: textSecondary }]}>Descripción (opcional)</Text>
-              <TextInput
-                value={newDescription}
-                onChangeText={setNewDescription}
-                placeholder="¿De qué se encarga este equipo?"
-                placeholderTextColor={textSecondary}
-                multiline
-                style={[styles.modalInput, styles.modalTextarea, { backgroundColor: inputBg, borderColor: border, color: textPrimary }, isWeb && styles.noOutline]}
-              />
-
-              <IconColorPicker
-                isDark={isDark}
-                userId={user?.id ?? ""}
-                color={newColor}
-                onColorChange={setNewColor}
-                iconUrl={newIconUrl}
-                onIconChange={setNewIconUrl}
-                fallbackIcon={Users}
-              />
-
-              <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Integrantes</Text>
-              {loadingRoster ? (
-                <Text style={{ color: textSecondary }}>Cargando roster…</Text>
-              ) : availableRoster.length === 0 && memberDrafts.length === 0 ? (
-                <Text style={{ color: textSecondary, fontSize: 13 }}>Todavía no hay nadie más en tu organización.</Text>
-              ) : (
-                <>
-                  {availableRoster.length > 0 && (
-                    <View style={[styles.searchWrapper, { backgroundColor: inputBg, borderColor: border, marginBottom: 10 }]}>
-                      <Search size={16} color={textSecondary} />
-                      <TextInput
-                        value={rosterSearch}
-                        onChangeText={setRosterSearch}
-                        placeholder="Buscar integrante…"
-                        placeholderTextColor={textSecondary}
-                        style={[styles.searchInput, { color: textPrimary, paddingVertical: 10 }, isWeb && styles.noOutline]}
-                      />
-                    </View>
+                      <View style={[styles.rosterPanel, { borderColor: border, backgroundColor: inputBg }]}>
+                        <ScrollView
+                          nestedScrollEnabled
+                          showsVerticalScrollIndicator={false}
+                          style={styles.rosterScroll}
+                          contentContainerStyle={styles.rosterScrollContent}
+                        >
+                          {filteredAvailableRoster.map((m) => (
+                            <TouchableOpacity
+                              key={m.userId}
+                              activeOpacity={0.85}
+                              onPress={() => setProfileModalTarget({ userId: m.userId, inTeam: false })}
+                              style={[styles.rosterCard, { borderColor: border, backgroundColor: cardBg }]}
+                            >
+                              <View style={[styles.avatarMini, { backgroundColor: m.avatarColor }]}>
+                                <Text style={styles.avatarMiniText}>{initials(m.name)}</Text>
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ color: textPrimary, fontWeight: "700", fontSize: 13 }} numberOfLines={1}>
+                                  {m.name}
+                                </Text>
+                                {!!(m.customRole || m.role) && (
+                                  <Text style={{ color: textSecondary, fontSize: 11.5 }} numberOfLines={1}>
+                                    {m.customRole || m.role}
+                                  </Text>
+                                )}
+                              </View>
+                              <ChevronRight size={16} color={textSecondary} />
+                            </TouchableOpacity>
+                          ))}
+                          {availableRoster.length > 0 && filteredAvailableRoster.length === 0 && (
+                            <Text style={{ color: textSecondary, fontSize: 13, textAlign: "center", padding: 12 }}>
+                              Nadie coincide con esa búsqueda.
+                            </Text>
+                          )}
+                        </ScrollView>
+                      </View>
+                    </>
                   )}
 
-                  <View style={[styles.rosterPanel, { borderColor: border, backgroundColor: inputBg }]}>
-                    <ScrollView
-                      nestedScrollEnabled
-                      showsVerticalScrollIndicator={false}
-                      style={styles.rosterScroll}
-                      contentContainerStyle={styles.rosterScrollContent}
-                    >
-                      {filteredAvailableRoster.map((m) => (
-                        <TouchableOpacity
-                          key={m.userId}
-                          activeOpacity={0.85}
-                          onPress={() => setProfileModalTarget({ userId: m.userId, inTeam: false })}
-                          style={[styles.rosterCard, { borderColor: border, backgroundColor: cardBg }]}
-                        >
-                          <View style={[styles.avatarMini, { backgroundColor: m.avatarColor }]}>
-                            <Text style={styles.avatarMiniText}>{initials(m.name)}</Text>
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ color: textPrimary, fontWeight: "700", fontSize: 13 }} numberOfLines={1}>
-                              {m.name}
-                            </Text>
-                            {!!(m.customRole || m.role) && (
-                              <Text style={{ color: textSecondary, fontSize: 11.5 }} numberOfLines={1}>
-                                {m.customRole || m.role}
-                              </Text>
-                            )}
-                          </View>
-                          <ChevronRight size={16} color={textSecondary} />
-                        </TouchableOpacity>
-                      ))}
-                      {availableRoster.length > 0 && filteredAvailableRoster.length === 0 && (
-                        <Text style={{ color: textSecondary, fontSize: 13, textAlign: "center", padding: 12 }}>
-                          Nadie coincide con esa búsqueda.
-                        </Text>
-                      )}
-                    </ScrollView>
-                  </View>
-                </>
-              )}
-
-              {memberDrafts.length > 0 && (
-                <View style={{ gap: 12, marginTop: 16 }}>
-                  {memberDrafts.map((draft) => {
-                    const isLeader = draft.userId === leaderId;
-                    return (
-                      <View key={draft.userId} style={[styles.memberDraftCard, { backgroundColor: inputBg, borderColor: border }]}>
-                        <View style={styles.memberDraftHeader}>
-                          <TouchableOpacity
-                            activeOpacity={0.8}
-                            style={styles.memberDraftIdentity}
-                            onPress={() => setProfileModalTarget({ userId: draft.userId, inTeam: true })}
-                          >
-                            <View style={[styles.avatarMini, { backgroundColor: draft.avatarColor }]}>
-                              <Text style={styles.avatarMiniText}>{initials(draft.name)}</Text>
-                            </View>
-                            <Text style={{ color: textPrimary, fontWeight: "700", fontSize: 13, flex: 1 }} numberOfLines={1}>
-                              {draft.name}
-                            </Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity hitSlop={8} onPress={() => toggleLeader(draft.userId)}>
-                            <Crown size={17} color={isLeader ? primaryColor : textSecondary} />
-                          </TouchableOpacity>
-                          <TouchableOpacity hitSlop={8} onPress={() => removeMemberDraft(draft.userId)}>
-                            <X size={15} color={textSecondary} />
-                          </TouchableOpacity>
-                        </View>
-
-                        {isLeader ? (
-                          <Text style={[styles.leaderDraftLabel, { color: primaryColor }]}>Encargado/a del equipo</Text>
-                        ) : (
-                          <>
-                            <View style={styles.roleChipsRow}>
-                              {TEAM_ROLE_OPTIONS.map((opt) => (
-                                <TouchableOpacity
-                                  key={opt}
-                                  activeOpacity={0.85}
-                                  onPress={() => setDraftRole(draft.userId, opt)}
-                                  style={[
-                                    styles.roleChip,
-                                    { borderColor: draft.roleOption === opt ? primaryColor : border, backgroundColor: draft.roleOption === opt ? primaryColor : "transparent" },
-                                  ]}
-                                >
-                                  <Text style={{ fontSize: 11.5, fontWeight: "700", color: draft.roleOption === opt ? "#FFF" : textPrimary }}>{opt}</Text>
-                                </TouchableOpacity>
-                              ))}
+                  {memberDrafts.length > 0 && (
+                    <View style={[!isMobile && styles.memberDraftsGrid, { marginTop: 16 }]}>
+                      {memberDrafts.map((draft) => {
+                        const isLeader = draft.userId === leaderId;
+                        return (
+                          <View key={draft.userId} style={[styles.memberDraftCard, { backgroundColor: inputBg, borderColor: border }, !isMobile && styles.memberDraftCardWide]}>
+                            <View style={styles.memberDraftHeader}>
                               <TouchableOpacity
-                                activeOpacity={0.85}
-                                onPress={() => setDraftRole(draft.userId, CUSTOM_TEAM_ROLE_VALUE)}
-                                style={[
-                                  styles.roleChip,
-                                  { borderColor: draft.roleOption === CUSTOM_TEAM_ROLE_VALUE ? primaryColor : border, backgroundColor: draft.roleOption === CUSTOM_TEAM_ROLE_VALUE ? primaryColor : "transparent" },
-                                ]}
+                                activeOpacity={0.8}
+                                style={styles.memberDraftIdentity}
+                                onPress={() => setProfileModalTarget({ userId: draft.userId, inTeam: true })}
                               >
-                                <Text style={{ fontSize: 11.5, fontWeight: "700", color: draft.roleOption === CUSTOM_TEAM_ROLE_VALUE ? "#FFF" : textPrimary }}>Otro</Text>
+                                <View style={[styles.avatarMini, { backgroundColor: draft.avatarColor }]}>
+                                  <Text style={styles.avatarMiniText}>{initials(draft.name)}</Text>
+                                </View>
+                                <Text style={{ color: textPrimary, fontWeight: "700", fontSize: 13, flex: 1 }} numberOfLines={1}>
+                                  {draft.name}
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity hitSlop={8} onPress={() => toggleLeader(draft.userId)}>
+                                <Crown size={17} color={isLeader ? primaryColor : textSecondary} />
+                              </TouchableOpacity>
+                              <TouchableOpacity hitSlop={8} onPress={() => removeMemberDraft(draft.userId)}>
+                                <X size={15} color={textSecondary} />
                               </TouchableOpacity>
                             </View>
-                            {draft.roleOption === CUSTOM_TEAM_ROLE_VALUE && (
-                              <TextInput
-                                value={draft.customRole}
-                                onChangeText={(v) => setDraftCustomRole(draft.userId, v)}
-                                placeholder="Escribe el rol"
-                                placeholderTextColor={textSecondary}
-                                style={[styles.customRoleInput, { backgroundColor: cardBg, borderColor: border, color: textPrimary }, isWeb && styles.noOutline]}
-                              />
-                            )}
-                          </>
-                        )}
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
 
-              {createError && <Text style={[styles.errorText, { color: dangerColor }]}>{createError}</Text>}
+                            {isLeader ? (
+                              <Text style={[styles.leaderDraftLabel, { color: primaryColor }]}>Encargado/a del equipo</Text>
+                            ) : (
+                              <>
+                                <View style={styles.roleChipsRow}>
+                                  {TEAM_ROLE_OPTIONS.map((opt) => (
+                                    <TouchableOpacity
+                                      key={opt}
+                                      activeOpacity={0.85}
+                                      onPress={() => setDraftRole(draft.userId, opt)}
+                                      style={[
+                                        styles.roleChip,
+                                        { borderColor: draft.roleOption === opt ? primaryColor : border, backgroundColor: draft.roleOption === opt ? primaryColor : "transparent" },
+                                      ]}
+                                    >
+                                      <Text style={{ fontSize: 11.5, fontWeight: "700", color: draft.roleOption === opt ? "#FFF" : textPrimary }}>{opt}</Text>
+                                    </TouchableOpacity>
+                                  ))}
+                                  <TouchableOpacity
+                                    activeOpacity={0.85}
+                                    onPress={() => setDraftRole(draft.userId, CUSTOM_TEAM_ROLE_VALUE)}
+                                    style={[
+                                      styles.roleChip,
+                                      { borderColor: draft.roleOption === CUSTOM_TEAM_ROLE_VALUE ? primaryColor : border, backgroundColor: draft.roleOption === CUSTOM_TEAM_ROLE_VALUE ? primaryColor : "transparent" },
+                                    ]}
+                                  >
+                                    <Text style={{ fontSize: 11.5, fontWeight: "700", color: draft.roleOption === CUSTOM_TEAM_ROLE_VALUE ? "#FFF" : textPrimary }}>Otro</Text>
+                                  </TouchableOpacity>
+                                </View>
+                                {draft.roleOption === CUSTOM_TEAM_ROLE_VALUE && (
+                                  <TextInput
+                                    value={draft.customRole}
+                                    onChangeText={(v) => setDraftCustomRole(draft.userId, v)}
+                                    placeholder="Escribe el rol"
+                                    placeholderTextColor={textSecondary}
+                                    style={[styles.customRoleInput, { backgroundColor: cardBg, borderColor: border, color: textPrimary }, isWeb && styles.noOutline]}
+                                  />
+                                )}
+                              </>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+
+                <View style={!isMobile ? styles.formSide : undefined}>
+                  <Text style={[styles.modalLabel, { color: textSecondary, marginTop: isMobile ? 20 : 0 }]}>Nombre</Text>
+                  <TextInput
+                    value={newName}
+                    onChangeText={setNewName}
+                    placeholder="Ej. Equipo de Producto"
+                    placeholderTextColor={textSecondary}
+                    style={[styles.modalInput, { backgroundColor: inputBg, borderColor: border, color: textPrimary }, isWeb && styles.noOutline]}
+                  />
+
+                  <Text style={[styles.modalLabel, { color: textSecondary }]}>Descripción (opcional)</Text>
+                  <TextInput
+                    value={newDescription}
+                    onChangeText={setNewDescription}
+                    placeholder="¿De qué se encarga este equipo?"
+                    placeholderTextColor={textSecondary}
+                    multiline
+                    style={[styles.modalInput, styles.modalTextarea, { backgroundColor: inputBg, borderColor: border, color: textPrimary }, isWeb && styles.noOutline]}
+                  />
+
+                  <IconColorPicker
+                    isDark={isDark}
+                    userId={user?.id ?? ""}
+                    color={newColor}
+                    onColorChange={setNewColor}
+                    iconUrl={newIconUrl}
+                    onIconChange={setNewIconUrl}
+                    fallbackIcon={Users}
+                  />
+                </View>
+              </View>
+
+              {createError && <Text style={[styles.errorText, { color: dangerColor, marginTop: 16 }]}>{createError}</Text>}
 
               <TouchableOpacity
                 activeOpacity={0.85}
@@ -714,16 +726,27 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(2, 6, 23, 0.6)", alignItems: "center", justifyContent: "center", padding: 20 },
   overlayScroll: { flexGrow: 1, alignItems: "center", justifyContent: "center", width: "100%" },
   modalCard: { width: "100%", maxWidth: 480, borderRadius: 24, borderWidth: 1, padding: 24 },
+  modalCardWide: { maxWidth: 1080, padding: 40 },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
   modalTitle: { fontSize: 18, fontWeight: "800" },
   modalLabel: { fontSize: 12, fontWeight: "700", marginBottom: 8, marginTop: 14 },
   modalInput: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14 },
   modalTextarea: { minHeight: 70, textAlignVertical: "top" },
 
+  // Mismo patrón de dos columnas que Tasks/Projects en desktop, pero acá
+  // Integrantes (la sección más pesada) va en la columna principal y
+  // Nombre/Descripción/Ícono (más compactos) en el panel lateral — ver nota
+  // en el JSX y docs/PATRONES.md.
+  formLayout: { flexDirection: "row", gap: 28, alignItems: "flex-start" },
+  formMain: { flex: 1.5, minWidth: 0 },
+  formSide: { width: 300 },
+
   chipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
   chipDot: { width: 8, height: 8, borderRadius: 4 },
 
+  memberDraftsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  memberDraftCardWide: { flexBasis: "48%", flexGrow: 1 },
   memberDraftCard: { borderWidth: 1, borderRadius: 16, padding: 12 },
   memberDraftHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   memberDraftIdentity: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },

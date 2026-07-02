@@ -13,6 +13,13 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
 
 export const TASK_STATUS_ORDER: TaskStatus[] = ["pending", "in_progress", "blocked", "completed"];
 
+export const TASK_STATUS_COLORS: Record<TaskStatus, string> = {
+  pending: "#94A3B8",
+  in_progress: "#2563EB",
+  blocked: "#EF4444",
+  completed: "#10B981",
+};
+
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
 
 export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
@@ -48,6 +55,30 @@ export type Task = {
   createdAt: string;
   assignee: TaskAssignee;
 };
+
+export function isOverdue(task: Task) {
+  if (!task.dueDate || task.status === "completed") return false;
+  return task.dueDate < new Date().toISOString().slice(0, 10);
+}
+
+export const DUE_SOON_DAYS = 2;
+// Violeta a propósito, no ámbar/naranja: la prioridad "Alta" ya usa naranja
+// (TASK_PRIORITY_COLORS.high) y un ámbar quedaba demasiado parecido a simple
+// vista — con el ícono distinto (bandera vs. calendario) ya alcanza para
+// distinguir el tipo de chip, pero el color no debía competir con la escala
+// de prioridad.
+export const DUE_SOON_COLOR = "#8B5CF6";
+
+export function isDueSoon(task: Task) {
+  if (!task.dueDate || task.status === "completed" || isOverdue(task)) return false;
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const limitIso = new Date(Date.now() + DUE_SOON_DAYS * 86400000).toISOString().slice(0, 10);
+  return task.dueDate >= todayIso && task.dueDate <= limitIso;
+}
+
+export function formatShortDate(iso: string) {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+}
 
 type TaskRow = {
   id: string;
@@ -213,6 +244,15 @@ export type TaskAttachmentType = "image" | "file" | "link" | "date";
 
 export type TaskCommentAttachment = { url: string; type: TaskAttachmentType; name: string | null };
 
+export type ReactionType = "like" | "heart" | "dislike" | "question";
+
+export const REACTION_TYPES: ReactionType[] = ["like", "heart", "dislike", "question"];
+
+export type CommentReactions = {
+  counts: Record<ReactionType, number>;
+  myReaction: ReactionType | null;
+};
+
 export type TaskComment = {
   id: string;
   taskId: string;
@@ -224,7 +264,12 @@ export type TaskComment = {
   authorAvatarColor: string;
   attachment: TaskCommentAttachment | null;
   replyTo: { id: string; authorName: string; content: string } | null;
+  reactions: CommentReactions;
 };
+
+function emptyReactions(): CommentReactions {
+  return { counts: { like: 0, heart: 0, dislike: 0, question: 0 }, myReaction: null };
+}
 
 export async function listTaskComments(taskId: string) {
   const { data: commentRows, error } = await supabase
@@ -242,6 +287,26 @@ export async function listTaskComments(taskId: string) {
     .in("id", userIds.length ? userIds : ["00000000-0000-0000-0000-000000000000"]);
 
   if (profilesError) return { data: [] as TaskComment[], error: profilesError };
+
+  const commentIds = (commentRows ?? []).map((c) => c.id);
+  const { data: reactionRows, error: reactionsError } = await supabase
+    .from("task_comment_reactions")
+    .select("comment_id, user_id, reaction")
+    .in("comment_id", commentIds.length ? commentIds : ["00000000-0000-0000-0000-000000000000"]);
+
+  if (reactionsError) return { data: [] as TaskComment[], error: reactionsError };
+
+  const {
+    data: { user: currentUser },
+  } = await supabase.auth.getUser();
+
+  const reactionsByComment = new Map<string, CommentReactions>();
+  (reactionRows ?? []).forEach((r) => {
+    const entry = reactionsByComment.get(r.comment_id) ?? emptyReactions();
+    entry.counts[r.reaction as ReactionType] += 1;
+    if (currentUser && r.user_id === currentUser.id) entry.myReaction = r.reaction as ReactionType;
+    reactionsByComment.set(r.comment_id, entry);
+  });
 
   const profileById = new Map((profileRows ?? []).map((p) => [p.id, p]));
   const rowById = new Map((commentRows ?? []).map((r) => [r.id, r]));
@@ -266,10 +331,35 @@ export async function listTaskComments(taskId: string) {
       replyTo: parentRow
         ? { id: parentRow.id, authorName: parentProfile?.nickname || parentProfile?.full_name || "Miembro", content: parentRow.content }
         : null,
+      reactions: reactionsByComment.get(row.id) ?? emptyReactions(),
     };
   });
 
   return { data: comments, error: null };
+}
+
+// Estilo WhatsApp: una sola reacción por persona por comentario. Tocar la
+// misma reacción que ya tenías la quita (toggle); tocar otra la reemplaza.
+export async function reactToComment(commentId: string, userId: string, reaction: ReactionType) {
+  const { data: existing } = await supabase
+    .from("task_comment_reactions")
+    .select("id, reaction")
+    .eq("comment_id", commentId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (existing?.reaction === reaction) {
+    const { error } = await supabase.from("task_comment_reactions").delete().eq("id", existing.id);
+    return { error };
+  }
+
+  if (existing) {
+    const { error } = await supabase.from("task_comment_reactions").update({ reaction }).eq("id", existing.id);
+    return { error };
+  }
+
+  const { error } = await supabase.from("task_comment_reactions").insert({ comment_id: commentId, user_id: userId, reaction });
+  return { error };
 }
 
 export async function addTaskComment(params: {

@@ -17,6 +17,7 @@ import {
   Crown,
   Folder,
   Layers,
+  Pencil,
   Plus,
   Search,
   Sparkles,
@@ -35,8 +36,10 @@ import {
   listProjects,
   Project,
   ProjectStatus,
+  setProjectTeams,
   STATUS_LABELS,
   STATUS_ORDER,
+  updateProject,
   updateProjectStatus,
 } from "../lib/projects";
 import { listTeams, Team } from "../lib/teams";
@@ -104,6 +107,7 @@ export default function ProjectsScreen({ navigation }: any) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
@@ -152,6 +156,7 @@ export default function ProjectsScreen({ navigation }: any) {
   };
 
   const openCreateModal = async () => {
+    setEditingProjectId(null);
     setNewName("");
     setNewDescription("");
     setNewColor(primaryColor);
@@ -161,6 +166,28 @@ export default function ProjectsScreen({ navigation }: any) {
     setNewAreas([]);
     setNewAreaInput("");
     setSelectedTeamIds([]);
+    setCreateError(null);
+    setShowCreateModal(true);
+
+    if (organization) {
+      setLoadingOrgTeams(true);
+      const { data } = await listTeams(organization.id);
+      setOrgTeams(data);
+      setLoadingOrgTeams(false);
+    }
+  };
+
+  const openEditModal = async (project: Project) => {
+    setEditingProjectId(project.id);
+    setNewName(project.name);
+    setNewDescription(project.description ?? "");
+    setNewColor(project.color);
+    setNewIconUrl(project.iconUrl);
+    setNewGoals(project.goals);
+    setNewGoalInput("");
+    setNewAreas(project.areas);
+    setNewAreaInput("");
+    setSelectedTeamIds(project.teams.map((t) => t.id));
     setCreateError(null);
     setShowCreateModal(true);
 
@@ -201,10 +228,36 @@ export default function ProjectsScreen({ navigation }: any) {
     setSelectedTeamIds((prev) => (prev.includes(teamId) ? prev.filter((id) => id !== teamId) : [...prev, teamId]));
   };
 
-  const handleCreate = async () => {
+  const handleSubmit = async () => {
     if (!organization || !user || !newName.trim()) return;
     setCreating(true);
     setCreateError(null);
+
+    if (editingProjectId) {
+      const { error } = await updateProject(editingProjectId, {
+        name: newName.trim(),
+        description: newDescription.trim() || null,
+        color: newColor,
+        iconUrl: newIconUrl,
+        goals: newGoals,
+        areas: newAreas,
+      });
+      if (error) {
+        setCreating(false);
+        setCreateError("No se pudo guardar el proyecto.");
+        return;
+      }
+      const { error: teamsError } = await setProjectTeams(editingProjectId, selectedTeamIds);
+      setCreating(false);
+      if (teamsError) {
+        setCreateError("El proyecto se guardó, pero no se pudieron actualizar los equipos.");
+        return;
+      }
+      setShowCreateModal(false);
+      loadProjects();
+      return;
+    }
+
     const { error } = await createProject({
       organizationId: organization.id,
       createdBy: user.id,
@@ -405,9 +458,14 @@ export default function ProjectsScreen({ navigation }: any) {
                           </View>
 
                           {isOwner && (
-                            <TouchableOpacity hitSlop={8} onPress={() => setConfirmDeleteId(project.id)}>
-                              <Trash2 size={16} color={textSecondary} />
-                            </TouchableOpacity>
+                            <View style={{ flexDirection: "row", gap: 14 }}>
+                              <TouchableOpacity hitSlop={8} onPress={() => openEditModal(project)}>
+                                <Pencil size={16} color={textSecondary} />
+                              </TouchableOpacity>
+                              <TouchableOpacity hitSlop={8} onPress={() => setConfirmDeleteId(project.id)}>
+                                <Trash2 size={16} color={textSecondary} />
+                              </TouchableOpacity>
+                            </View>
                           )}
                         </View>
 
@@ -502,142 +560,150 @@ export default function ProjectsScreen({ navigation }: any) {
         </View>
       </ScrollView>
 
-      {/* CREATE MODAL */}
+      {/* CREATE/EDIT MODAL */}
       <Modal visible={showCreateModal} transparent animationType="fade" onRequestClose={() => setShowCreateModal(false)}>
         <View style={styles.overlay}>
           <ScrollView contentContainerStyle={styles.overlayScroll} showsVerticalScrollIndicator={false}>
-          <View style={[styles.modalCard, { backgroundColor: isDark ? "#0F172A" : "#FFFFFF", borderColor: border }]}>
+          <View style={[styles.modalCard, { backgroundColor: isDark ? "#0F172A" : "#FFFFFF", borderColor: border }, !isMobile && styles.modalCardWide]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: textPrimary }]}>Nuevo proyecto</Text>
+              <Text style={[styles.modalTitle, { color: textPrimary }]}>{editingProjectId ? "Editar proyecto" : "Nuevo proyecto"}</Text>
               <TouchableOpacity onPress={() => setShowCreateModal(false)} hitSlop={8}>
                 <X size={20} color={textSecondary} />
               </TouchableOpacity>
             </View>
 
-            <Text style={[styles.modalLabel, { color: textSecondary }]}>Nombre</Text>
-            <TextInput
-              value={newName}
-              onChangeText={setNewName}
-              placeholder="Ej. Rediseño del checkout"
-              placeholderTextColor={textSecondary}
-              style={[styles.modalInput, { backgroundColor: inputBg, borderColor: border, color: textPrimary }, isWeb && styles.noOutline]}
-            />
+            <View style={!isMobile && styles.formLayout}>
+              <View style={!isMobile ? styles.formMain : undefined}>
+                <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 0 }]}>Nombre</Text>
+                <TextInput
+                  value={newName}
+                  onChangeText={setNewName}
+                  placeholder="Ej. Rediseño del checkout"
+                  placeholderTextColor={textSecondary}
+                  style={[styles.modalInput, { backgroundColor: inputBg, borderColor: border, color: textPrimary }, isWeb && styles.noOutline]}
+                />
 
-            <Text style={[styles.modalLabel, { color: textSecondary }]}>Descripción (opcional)</Text>
-            <TextInput
-              value={newDescription}
-              onChangeText={setNewDescription}
-              placeholder="¿De qué se trata?"
-              placeholderTextColor={textSecondary}
-              multiline
-              style={[styles.modalInput, styles.modalTextarea, { backgroundColor: inputBg, borderColor: border, color: textPrimary }, isWeb && styles.noOutline]}
-            />
+                <Text style={[styles.modalLabel, { color: textSecondary }]}>Descripción (opcional)</Text>
+                <TextInput
+                  value={newDescription}
+                  onChangeText={setNewDescription}
+                  placeholder="¿De qué se trata?"
+                  placeholderTextColor={textSecondary}
+                  multiline
+                  style={[styles.modalInput, styles.modalTextarea, { backgroundColor: inputBg, borderColor: border, color: textPrimary }, isWeb && styles.noOutline]}
+                />
 
-            <IconColorPicker
-              isDark={isDark}
-              userId={user?.id ?? ""}
-              color={newColor}
-              onColorChange={setNewColor}
-              iconUrl={newIconUrl}
-              onIconChange={setNewIconUrl}
-              fallbackIcon={Folder}
-            />
+                <IconColorPicker
+                  isDark={isDark}
+                  userId={user?.id ?? ""}
+                  color={newColor}
+                  onColorChange={setNewColor}
+                  iconUrl={newIconUrl}
+                  onIconChange={setNewIconUrl}
+                  fallbackIcon={Folder}
+                />
+              </View>
 
-            <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Metas</Text>
-            <View style={[styles.chipInputRow, { backgroundColor: inputBg, borderColor: border }]}>
-              <TextInput
-                value={newGoalInput}
-                onChangeText={setNewGoalInput}
-                onSubmitEditing={addGoal}
-                placeholder="Ej. Lanzar el MVP antes de fin de mes"
-                placeholderTextColor={textSecondary}
-                style={[styles.chipInput, { color: textPrimary }, isWeb && styles.noOutline]}
-              />
-              <TouchableOpacity onPress={addGoal} hitSlop={8}>
-                <Plus size={18} color={primaryColor} />
-              </TouchableOpacity>
-            </View>
-            {newGoals.length > 0 && (
-              <View style={{ gap: 8, marginTop: 10 }}>
-                {newGoals.map((goal) => (
-                  <View key={goal} style={[styles.listItemRow, { backgroundColor: inputBg, borderColor: border }]}>
-                    <Target size={13} color={primaryColor} />
-                    <Text style={{ color: textPrimary, fontSize: 13, flex: 1 }}>{goal}</Text>
-                    <TouchableOpacity onPress={() => removeGoal(goal)} hitSlop={8}>
-                      <X size={14} color={textSecondary} />
-                    </TouchableOpacity>
+              <View style={!isMobile ? styles.formSide : undefined}>
+                <Text style={[styles.modalLabel, { color: textSecondary, marginTop: isMobile ? 20 : 0 }]}>Metas</Text>
+                <View style={[styles.chipInputRow, { backgroundColor: inputBg, borderColor: border }]}>
+                  <TextInput
+                    value={newGoalInput}
+                    onChangeText={setNewGoalInput}
+                    onSubmitEditing={addGoal}
+                    placeholder="Ej. Lanzar el MVP antes de fin de mes"
+                    placeholderTextColor={textSecondary}
+                    style={[styles.chipInput, { color: textPrimary }, isWeb && styles.noOutline]}
+                  />
+                  <TouchableOpacity onPress={addGoal} hitSlop={8}>
+                    <Plus size={18} color={primaryColor} />
+                  </TouchableOpacity>
+                </View>
+                {newGoals.length > 0 && (
+                  <View style={{ gap: 8, marginTop: 10 }}>
+                    {newGoals.map((goal) => (
+                      <View key={goal} style={[styles.listItemRow, { backgroundColor: inputBg, borderColor: border }]}>
+                        <Target size={13} color={primaryColor} />
+                        <Text style={{ color: textPrimary, fontSize: 13, flex: 1 }}>{goal}</Text>
+                        <TouchableOpacity onPress={() => removeGoal(goal)} hitSlop={8}>
+                          <X size={14} color={textSecondary} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
                   </View>
-                ))}
-              </View>
-            )}
+                )}
 
-            <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Áreas involucradas</Text>
-            <View style={[styles.chipInputRow, { backgroundColor: inputBg, borderColor: border }]}>
-              <TextInput
-                value={newAreaInput}
-                onChangeText={setNewAreaInput}
-                onSubmitEditing={addArea}
-                placeholder="Ej. Diseño, Backend, Marketing"
-                placeholderTextColor={textSecondary}
-                style={[styles.chipInput, { color: textPrimary }, isWeb && styles.noOutline]}
-              />
-              <TouchableOpacity onPress={addArea} hitSlop={8}>
-                <Plus size={18} color={primaryColor} />
-              </TouchableOpacity>
-            </View>
-            {newAreas.length > 0 && (
-              <View style={styles.chipsWrapRow}>
-                {newAreas.map((area) => (
-                  <View key={area} style={[styles.removableChip, { borderColor: border, backgroundColor: inputBg }]}>
-                    <Text style={{ color: textPrimary, fontSize: 12.5, fontWeight: "600" }}>{area}</Text>
-                    <TouchableOpacity onPress={() => removeArea(area)} hitSlop={8}>
-                      <X size={12} color={textSecondary} />
-                    </TouchableOpacity>
+                <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Áreas involucradas</Text>
+                <View style={[styles.chipInputRow, { backgroundColor: inputBg, borderColor: border }]}>
+                  <TextInput
+                    value={newAreaInput}
+                    onChangeText={setNewAreaInput}
+                    onSubmitEditing={addArea}
+                    placeholder="Ej. Diseño, Backend, Marketing"
+                    placeholderTextColor={textSecondary}
+                    style={[styles.chipInput, { color: textPrimary }, isWeb && styles.noOutline]}
+                  />
+                  <TouchableOpacity onPress={addArea} hitSlop={8}>
+                    <Plus size={18} color={primaryColor} />
+                  </TouchableOpacity>
+                </View>
+                {newAreas.length > 0 && (
+                  <View style={styles.chipsWrapRow}>
+                    {newAreas.map((area) => (
+                      <View key={area} style={[styles.removableChip, { borderColor: border, backgroundColor: inputBg }]}>
+                        <Text style={{ color: textPrimary, fontSize: 12.5, fontWeight: "600" }}>{area}</Text>
+                        <TouchableOpacity onPress={() => removeArea(area)} hitSlop={8}>
+                          <X size={12} color={textSecondary} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
                   </View>
-                ))}
-              </View>
-            )}
+                )}
 
-            <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Equipos (opcional)</Text>
-            {loadingOrgTeams ? (
-              <Text style={{ color: textSecondary, fontSize: 13 }}>Cargando equipos…</Text>
-            ) : orgTeams.length === 0 ? (
-              <Text style={{ color: textSecondary, fontSize: 13 }}>
-                Todavía no has creado ningún equipo. Puedes crear uno desde la pestaña Equipos.
-              </Text>
-            ) : (
-              <View style={styles.chipsWrapRow}>
-                {orgTeams.map((team) => {
-                  const selected = selectedTeamIds.includes(team.id);
-                  return (
-                    <TouchableOpacity
-                      key={team.id}
-                      activeOpacity={0.85}
-                      onPress={() => toggleTeamSelection(team.id)}
-                      style={[
-                        styles.teamSelectChip,
-                        { borderColor: selected ? team.color : border, backgroundColor: selected ? team.color + "20" : inputBg },
-                      ]}
-                    >
-                      <View style={[styles.colorSwatch, { width: 10, height: 10, borderRadius: 5, backgroundColor: team.color }]} />
-                      <Text style={{ color: textPrimary, fontSize: 12.5, fontWeight: "700" }}>{team.name}</Text>
-                      {selected && <Check size={13} color={team.color} />}
-                    </TouchableOpacity>
-                  );
-                })}
+                <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Equipos (opcional)</Text>
+                {loadingOrgTeams ? (
+                  <Text style={{ color: textSecondary, fontSize: 13 }}>Cargando equipos…</Text>
+                ) : orgTeams.length === 0 ? (
+                  <Text style={{ color: textSecondary, fontSize: 13 }}>
+                    Todavía no has creado ningún equipo. Puedes crear uno desde la pestaña Equipos.
+                  </Text>
+                ) : (
+                  <View style={styles.chipsWrapRow}>
+                    {orgTeams.map((team) => {
+                      const selected = selectedTeamIds.includes(team.id);
+                      return (
+                        <TouchableOpacity
+                          key={team.id}
+                          activeOpacity={0.85}
+                          onPress={() => toggleTeamSelection(team.id)}
+                          style={[
+                            styles.teamSelectChip,
+                            { borderColor: selected ? team.color : border, backgroundColor: selected ? team.color + "20" : inputBg },
+                          ]}
+                        >
+                          <View style={[styles.colorSwatch, { width: 10, height: 10, borderRadius: 5, backgroundColor: team.color }]} />
+                          <Text style={{ color: textPrimary, fontSize: 12.5, fontWeight: "700" }}>{team.name}</Text>
+                          {selected && <Check size={13} color={team.color} />}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
               </View>
-            )}
+            </View>
 
-            {createError && <Text style={[styles.errorText, { color: dangerColor }]}>{createError}</Text>}
+            {createError && <Text style={[styles.errorText, { color: dangerColor, marginTop: 16 }]}>{createError}</Text>}
 
             <TouchableOpacity
               activeOpacity={0.85}
               disabled={!newName.trim() || creating}
               style={[styles.createBtn, { backgroundColor: primaryColor, opacity: !newName.trim() || creating ? 0.5 : 1 }]}
-              onPress={handleCreate}
+              onPress={handleSubmit}
             >
               <Sparkles size={16} color="#FFF" />
-              <Text style={styles.createBtnText}>{creating ? "Creando…" : "Crear proyecto"}</Text>
+              <Text style={styles.createBtnText}>
+                {creating ? (editingProjectId ? "Guardando…" : "Creando…") : editingProjectId ? "Guardar cambios" : "Crear proyecto"}
+              </Text>
             </TouchableOpacity>
           </View>
           </ScrollView>
@@ -740,7 +806,15 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(2, 6, 23, 0.6)", alignItems: "center", justifyContent: "center", padding: 20 },
   overlayScroll: { flexGrow: 1, alignItems: "center", justifyContent: "center", width: "100%" },
   modalCard: { width: "100%", maxWidth: 460, borderRadius: 24, borderWidth: 1, padding: 24 },
+  modalCardWide: { maxWidth: 1080, padding: 40 },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
+
+  // Mismo patrón de dos columnas que TasksScreen.tsx en desktop: contenido
+  // principal (nombre/descripción/ícono) a la izquierda, panel de metadata
+  // (metas/áreas/equipos) a la derecha — ver docs/PATRONES.md.
+  formLayout: { flexDirection: "row", gap: 28, alignItems: "flex-start" },
+  formMain: { flex: 1.5, minWidth: 0 },
+  formSide: { width: 300 },
   modalTitle: { fontSize: 18, fontWeight: "800" },
   modalLabel: { fontSize: 12, fontWeight: "700", marginBottom: 8, marginTop: 14 },
   modalInput: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14 },

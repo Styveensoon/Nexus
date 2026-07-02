@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Image,
   Linking,
@@ -15,18 +15,27 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 import {
   Calendar,
+  ChartGantt,
   Check,
   CircleCheckBig,
   Crown,
   FileText,
   Flag,
   Folder,
+  Heart,
+  HelpCircle,
+  Kanban,
+  Layers,
   Link2,
+  List,
   MessageSquare,
   Pencil,
   Plus,
   Reply,
   Send,
+  SmilePlus,
+  ThumbsDown,
+  ThumbsUp,
   Trash2,
   User,
   Users,
@@ -38,13 +47,23 @@ import { useAuth } from "../context/AuthContext";
 import { listProjects, Project } from "../lib/projects";
 import ChatAttachmentButtons from "../components/ChatAttachmentButtons";
 import DatePickerModal from "../components/DatePickerModal";
+import TaskCalendarView from "../components/TaskCalendarView";
+import TaskListView from "../components/TaskListView";
+import TaskGanttChart from "../components/TaskGanttChart";
 import {
   addTaskComment,
   createTask,
   deleteTask,
   deleteTaskComment,
+  DUE_SOON_COLOR,
+  formatShortDate,
+  isDueSoon,
+  isOverdue,
   listTaskComments,
   listTasksForProjects,
+  reactToComment,
+  ReactionType,
+  REACTION_TYPES,
   Task,
   TaskComment,
   TaskCommentAttachment,
@@ -53,6 +72,7 @@ import {
   TASK_PRIORITY_COLORS,
   TASK_PRIORITY_LABELS,
   TASK_PRIORITY_ORDER,
+  TASK_STATUS_COLORS,
   TASK_STATUS_LABELS,
   TASK_STATUS_ORDER,
   updateTask,
@@ -60,11 +80,18 @@ import {
   uploadTaskAttachment,
 } from "../lib/tasks";
 
-const STATUS_COLORS: Record<TaskStatus, string> = {
-  pending: "#94A3B8",
-  in_progress: "#2563EB",
-  blocked: "#EF4444",
-  completed: "#10B981",
+const REACTION_ICONS: Record<ReactionType, any> = {
+  like: ThumbsUp,
+  heart: Heart,
+  dislike: ThumbsDown,
+  question: HelpCircle,
+};
+
+const REACTION_COLORS: Record<ReactionType, string> = {
+  like: "#2563EB",
+  heart: "#EF4444",
+  dislike: "#F97316",
+  question: "#94A3B8",
 };
 
 const URL_REGEX = /(https?:\/\/[^\s]+)/g;
@@ -75,33 +102,24 @@ function initials(name: string) {
   return parts.slice(0, 2).map((p) => p[0]?.toUpperCase()).join("");
 }
 
-function formatShortDate(iso: string) {
-  return new Date(`${iso}T00:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
-}
-
-function isOverdue(task: Task) {
-  if (!task.dueDate || task.status === "completed") return false;
-  return task.dueDate < new Date().toISOString().slice(0, 10);
-}
-
-const DUE_SOON_DAYS = 2;
-// Violeta a propósito, no ámbar/naranja: la prioridad "Alta" ya usa naranja
-// (#F97316) y un ámbar quedaba demasiado parecido a simple vista — con la
-// bandera vs. el ícono de calendario ya alcanza para distinguir el tipo de
-// chip, pero el color no debía competir con la escala de prioridad.
-const DUE_SOON_COLOR = "#8B5CF6";
-
-function isDueSoon(task: Task) {
-  if (!task.dueDate || task.status === "completed" || isOverdue(task)) return false;
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const limitIso = new Date(Date.now() + DUE_SOON_DAYS * 86400000).toISOString().slice(0, 10);
-  return task.dueDate >= todayIso && task.dueDate <= limitIso;
-}
-
 function nextStatus(status: TaskStatus): TaskStatus {
   const idx = TASK_STATUS_ORDER.indexOf(status);
   return TASK_STATUS_ORDER[(idx + 1) % TASK_STATUS_ORDER.length];
 }
+
+// Sentinel para "todos los proyectos" en el selector de proyecto — Kanban
+// siempre necesita UNO real (columnas y creación de tasks son por proyecto),
+// pero Lista/Calendario/Gantt tienen sentido viendo todos a la vez.
+const ALL_PROJECTS = "__all__";
+
+type ViewMode = "kanban" | "list" | "calendar" | "gantt";
+
+const VIEW_MODE_OPTIONS: { mode: ViewMode; label: string; icon: any }[] = [
+  { mode: "kanban", label: "Kanban", icon: Kanban },
+  { mode: "list", label: "Lista", icon: List },
+  { mode: "calendar", label: "Calendario", icon: Calendar },
+  { mode: "gantt", label: "Gantt", icon: ChartGantt },
+];
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -131,7 +149,7 @@ function renderLinkifiedText(text: string, linkColor: string) {
 
 type AssignableUser = { userId: string; name: string; avatarUrl: string | null; avatarColor: string };
 
-export default function TasksScreen({ navigation, route }: any) {
+export default function TasksScreen({ navigation }: any) {
   const { isDark } = useTheme();
   const { user, organization, loading: authLoading } = useAuth();
   const { width } = useWindowDimensions();
@@ -168,6 +186,7 @@ export default function TasksScreen({ navigation, route }: any) {
   const [loadingData, setLoadingData] = useState(true);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [filterOnlyMine, setFilterOnlyMine] = useState(false);
   const [filterOverdueOnly, setFilterOverdueOnly] = useState(false);
@@ -219,6 +238,7 @@ export default function TasksScreen({ navigation, route }: any) {
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [linkInputValue, setLinkInputValue] = useState("");
   const [confirmDeleteCommentId, setConfirmDeleteCommentId] = useState<string | null>(null);
+  const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!organization) return;
@@ -232,7 +252,9 @@ export default function TasksScreen({ navigation, route }: any) {
       return;
     }
     setProjects(projectRows);
-    setSelectedProjectId((prev) => (prev && projectRows.some((p) => p.id === prev) ? prev : projectRows[0]?.id ?? null));
+    setSelectedProjectId((prev) =>
+      prev && (prev === ALL_PROJECTS || projectRows.some((p) => p.id === prev)) ? prev : projectRows[0]?.id ?? null
+    );
 
     const { data: taskRows, error: tasksError } = await listTasksForProjects(projectRows.map((p) => p.id));
     if (tasksError) setErrorText("No se pudieron cargar las tareas.");
@@ -307,11 +329,16 @@ export default function TasksScreen({ navigation, route }: any) {
   };
 
   const overdueCount = tasks.filter(isOverdue).length;
+  const isAllProjects = selectedProjectId === ALL_PROJECTS;
 
-  let projectTasks = selectedProjectId ? tasks.filter((t) => t.projectId === selectedProjectId) : [];
-  if (filterOnlyMine) projectTasks = projectTasks.filter(isAssignedToMe);
-  if (filterOverdueOnly) projectTasks = projectTasks.filter(isOverdue);
-  if (filterPriorities.size > 0) projectTasks = projectTasks.filter((t) => filterPriorities.has(t.priority));
+  // Kanban siempre necesita un proyecto real (columnas/creación son por
+  // proyecto) — con "Todos" seleccionado, se muestra un empty-state en vez
+  // de vaciar el tablero. Lista/Calendario/Gantt sí pueden ver todo junto.
+  const projectScopedTasks = selectedProjectId && !isAllProjects ? tasks.filter((t) => t.projectId === selectedProjectId) : tasks;
+  let visibleTasks = viewMode === "kanban" ? (selectedProjectId && !isAllProjects ? projectScopedTasks : []) : projectScopedTasks;
+  if (filterOnlyMine) visibleTasks = visibleTasks.filter(isAssignedToMe);
+  if (filterOverdueOnly) visibleTasks = visibleTasks.filter(isOverdue);
+  if (filterPriorities.size > 0) visibleTasks = visibleTasks.filter((t) => filterPriorities.has(t.priority));
 
   const openCreateModal = () => {
     setNewTitle("");
@@ -447,6 +474,7 @@ export default function TasksScreen({ navigation, route }: any) {
     setShowLinkInput(false);
     setLinkInputValue("");
     setConfirmDeleteCommentId(null);
+    setReactionPickerFor(null);
     if (!isInvolvedInTask(task, projects.find((p) => p.id === task.projectId) ?? null)) return;
     setLoadingComments(true);
     const { data, error } = await listTaskComments(task.id);
@@ -464,6 +492,7 @@ export default function TasksScreen({ navigation, route }: any) {
     setShowLinkInput(false);
     setLinkInputValue("");
     setConfirmDeleteCommentId(null);
+    setReactionPickerFor(null);
   };
 
   const startEditTask = () => {
@@ -592,21 +621,30 @@ export default function TasksScreen({ navigation, route }: any) {
     setComments(data);
   };
 
-  // Deep link desde el Calendario: navigation.navigate("Tasks", { projectId, taskId })
-  // preselecciona el proyecto y abre el detalle de esa task en cuanto termina de
-  // cargar. Se limpian los params después de usarlos para que no se repita el
-  // salto si el usuario vuelve a esta pestaña sin params nuevos.
-  useEffect(() => {
-    const routeProjectId = route?.params?.projectId as string | undefined;
-    const routeTaskId = route?.params?.taskId as string | undefined;
-    if (!routeProjectId || loadingData) return;
-    if (projects.some((p) => p.id === routeProjectId)) setSelectedProjectId(routeProjectId);
-    if (routeTaskId) {
-      const task = tasks.find((t) => t.id === routeTaskId);
-      if (task) openTaskDetail(task);
+  const handleReact = async (commentId: string, reaction: ReactionType) => {
+    if (!selectedTask || !user) return;
+    setReactionPickerFor(null);
+    const { error } = await reactToComment(commentId, user.id, reaction);
+    if (error) {
+      setCommentError("No se pudo reaccionar al comentario.");
+      return;
     }
-    navigation.setParams?.({ projectId: undefined, taskId: undefined });
-  }, [route?.params?.projectId, route?.params?.taskId, loadingData, projects, tasks]);
+    const { data } = await listTaskComments(selectedTask.id);
+    setComments(data);
+  };
+
+  const handleGanttDatesChange = async (taskId: string, startDate: string, dueDate: string) => {
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, startDate, dueDate } : t)));
+    const { error } = await updateTask(taskId, { startDate, dueDate });
+    if (error) setErrorText("No se pudo mover la task en el Gantt.");
+    const { data } = await listTasksForProjects(projects.map((p) => p.id));
+    setTasks(data);
+  };
+
+  const canEditTaskDates = useCallback(
+    (task: Task) => isProjectLeaderOrOwner(projects.find((p) => p.id === task.projectId) ?? null),
+    [isProjectLeaderOrOwner, projects]
+  );
 
   if (authLoading) {
     return (
@@ -711,9 +749,9 @@ export default function TasksScreen({ navigation, route }: any) {
             activeOpacity={canChangeStatus(task) ? 0.7 : 1}
             disabled={!canChangeStatus(task)}
             onPress={() => handleCycleStatus(task)}
-            style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[task.status] + "20" }]}
+            style={[styles.statusBadge, { backgroundColor: TASK_STATUS_COLORS[task.status] + "20" }]}
           >
-            <Text style={{ color: STATUS_COLORS[task.status], fontWeight: "700", fontSize: 11.5 }}>{TASK_STATUS_LABELS[task.status]}</Text>
+            <Text style={{ color: TASK_STATUS_COLORS[task.status], fontWeight: "700", fontSize: 11.5 }}>{TASK_STATUS_LABELS[task.status]}</Text>
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
@@ -721,11 +759,11 @@ export default function TasksScreen({ navigation, route }: any) {
   };
 
   const renderColumnBody = (status: TaskStatus) => {
-    const columnTasks = projectTasks.filter((t) => t.status === status);
+    const columnTasks = visibleTasks.filter((t) => t.status === status);
     return (
       <>
         <View style={styles.columnHeader}>
-          <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[status] }]} />
+          <View style={[styles.statusDot, { backgroundColor: TASK_STATUS_COLORS[status] }]} />
           <Text style={[styles.columnTitle, { color: textPrimary }]}>{TASK_STATUS_LABELS[status]}</Text>
           <Text style={[styles.columnCount, { color: textSecondary }]}>{columnTasks.length}</Text>
         </View>
@@ -786,7 +824,35 @@ export default function TasksScreen({ navigation, route }: any) {
             </View>
           ) : (
             <>
+              <View style={styles.viewSwitchRow}>
+                {VIEW_MODE_OPTIONS.map(({ mode, label, icon: Icon }) => {
+                  const active = viewMode === mode;
+                  return (
+                    <TouchableOpacity
+                      key={mode}
+                      activeOpacity={0.85}
+                      onPress={() => setViewMode(mode)}
+                      style={[styles.viewSwitchChip, { backgroundColor: active ? primaryColor : cardBg, borderColor: active ? primaryColor : border }]}
+                    >
+                      <Icon size={14} color={active ? "#FFF" : textSecondary} />
+                      <Text style={{ color: active ? "#FFF" : textPrimary, fontWeight: "700", fontSize: 12.5 }}>{label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.projectScroll}>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => setSelectedProjectId(ALL_PROJECTS)}
+                  style={[
+                    styles.projectChip,
+                    { backgroundColor: isAllProjects ? primaryColor : cardBg, borderColor: isAllProjects ? primaryColor : border },
+                  ]}
+                >
+                  <Layers size={12} color={isAllProjects ? "#FFF" : primaryColor} />
+                  <Text style={{ color: isAllProjects ? "#FFF" : textPrimary, fontWeight: "700", fontSize: 12.5 }}>Todos</Text>
+                </TouchableOpacity>
                 {projects.map((project) => {
                   const selected = project.id === selectedProjectId;
                   return (
@@ -863,8 +929,16 @@ export default function TasksScreen({ navigation, route }: any) {
 
               {errorText && <Text style={[styles.errorText, { color: dangerColor }]}>{errorText}</Text>}
 
-              {selectedProject &&
-                (isMobile ? (
+              {viewMode === "kanban" ? (
+                !selectedProject ? (
+                  <View style={[styles.emptyCard, { backgroundColor: cardBg, borderColor: border, marginTop: 20 }, ultraShadow]}>
+                    <Kanban size={32} color={textSecondary} />
+                    <Text style={[styles.emptyTitle, { color: textPrimary }]}>Elige un proyecto para ver su tablero</Text>
+                    <Text style={[styles.emptySubtitle, { color: textSecondary }]}>
+                      El Kanban muestra las tareas de un proyecto a la vez. Lista, Calendario y Gantt sí pueden mostrar todos juntos.
+                    </Text>
+                  </View>
+                ) : isMobile ? (
                   <View style={{ marginTop: 20 }}>
                     {TASK_STATUS_ORDER.map((status) => (
                       <View key={status} style={{ marginBottom: 22 }}>
@@ -880,7 +954,29 @@ export default function TasksScreen({ navigation, route }: any) {
                       </View>
                     ))}
                   </View>
-                ))}
+                )
+              ) : viewMode === "list" ? (
+                <View style={{ marginTop: 20 }}>
+                  <TaskListView tasks={visibleTasks} projects={projects} showProject={isAllProjects} isDark={isDark} onTaskPress={openTaskDetail} />
+                </View>
+              ) : viewMode === "calendar" ? (
+                <View style={{ marginTop: 20 }}>
+                  <TaskCalendarView tasks={visibleTasks} projects={projects} isDark={isDark} primaryColor={primaryColor} onTaskPress={openTaskDetail} />
+                </View>
+              ) : (
+                <View style={{ marginTop: 20 }}>
+                  <TaskGanttChart
+                    tasks={visibleTasks}
+                    projects={projects}
+                    showProject={isAllProjects}
+                    isDark={isDark}
+                    primaryColor={primaryColor}
+                    canEditTask={canEditTaskDates}
+                    onTaskPress={openTaskDetail}
+                    onDatesChange={handleGanttDatesChange}
+                  />
+                </View>
+              )}
             </>
           )}
 
@@ -1405,8 +1501,8 @@ export default function TasksScreen({ navigation, route }: any) {
                               style={[
                                 styles.statusPill,
                                 {
-                                  backgroundColor: selected ? STATUS_COLORS[status] : inputBg,
-                                  borderColor: selected ? STATUS_COLORS[status] : border,
+                                  backgroundColor: selected ? TASK_STATUS_COLORS[status] : inputBg,
+                                  borderColor: selected ? TASK_STATUS_COLORS[status] : border,
                                 },
                               ]}
                             >
@@ -1458,95 +1554,157 @@ export default function TasksScreen({ navigation, route }: any) {
                         ) : comments.length === 0 ? (
                           <Text style={{ color: textSecondary, fontSize: 12.5 }}>Todavía no hay comentarios.</Text>
                         ) : (
-                          comments.map((c) => (
-                            <View key={c.id} style={{ flexDirection: "row", gap: 10 }}>
-                              <View style={[styles.avatarMini, { backgroundColor: c.authorAvatarColor }]}>
-                                <Text style={styles.avatarMiniText}>{initials(c.authorName)}</Text>
-                              </View>
-                              <View style={{ flex: 1 }}>
-                                <View style={{ flexDirection: "row", gap: 8, alignItems: "baseline" }}>
-                                  <Text style={{ color: textPrimary, fontSize: 12.5, fontWeight: "700" }}>{c.authorName}</Text>
-                                  <Text style={{ color: textSecondary, fontSize: 11 }}>{formatTime(c.createdAt)}</Text>
-                                </View>
-
-                                {c.replyTo && (
-                                  <View style={[styles.replyQuote, { borderLeftColor: primaryColor, backgroundColor: cardBg }]}>
-                                    <Text style={{ color: primaryColor, fontSize: 11, fontWeight: "700" }}>{c.replyTo.authorName}</Text>
-                                    <Text style={{ color: textSecondary, fontSize: 11.5 }} numberOfLines={1}>
-                                      {c.replyTo.content || "Archivo adjunto"}
-                                    </Text>
+                          comments.map((c) => {
+                            const isMine = c.userId === user?.id;
+                            const reactionEntries = REACTION_TYPES.filter((rt) => c.reactions.counts[rt] > 0);
+                            return (
+                              <View key={c.id} style={[styles.commentRow, isMine && styles.commentRowMine]}>
+                                {!isMine && (
+                                  <View style={[styles.avatarMini, { backgroundColor: c.authorAvatarColor }]}>
+                                    <Text style={styles.avatarMiniText}>{initials(c.authorName)}</Text>
                                   </View>
                                 )}
+                                <View style={{ flexShrink: 1 }}>
+                                  <View
+                                    style={[
+                                      styles.commentBubble,
+                                      isMine ? styles.commentBubbleMine : styles.commentBubbleTheirs,
+                                      { backgroundColor: isMine ? primaryColor + "18" : cardBg, borderColor: isMine ? primaryColor + "40" : border },
+                                    ]}
+                                  >
+                                    <View style={{ flexDirection: "row", gap: 8, alignItems: "baseline" }}>
+                                      {!isMine && <Text style={{ color: textPrimary, fontSize: 12.5, fontWeight: "700" }}>{c.authorName}</Text>}
+                                      <Text style={{ color: textSecondary, fontSize: 11 }}>{formatTime(c.createdAt)}</Text>
+                                    </View>
 
-                                {!!c.content && (
-                                  <Text style={{ color: textSecondary, fontSize: 13, lineHeight: 18, marginTop: 4 }}>
-                                    {renderLinkifiedText(c.content, primaryColor)}
-                                  </Text>
-                                )}
+                                    {c.replyTo && (
+                                      <View style={[styles.replyQuote, { borderLeftColor: primaryColor, backgroundColor: bg }]}>
+                                        <Text style={{ color: primaryColor, fontSize: 11, fontWeight: "700" }}>{c.replyTo.authorName}</Text>
+                                        <Text style={{ color: textSecondary, fontSize: 11.5 }} numberOfLines={1}>
+                                          {c.replyTo.content || "Archivo adjunto"}
+                                        </Text>
+                                      </View>
+                                    )}
 
-                                {c.attachment &&
-                                  (c.attachment.type === "image" ? (
-                                    <TouchableOpacity activeOpacity={0.85} onPress={() => Linking.openURL(c.attachment!.url)} style={{ marginTop: 8 }}>
-                                      <Image source={{ uri: c.attachment.url }} style={styles.attachmentImage} />
-                                    </TouchableOpacity>
-                                  ) : c.attachment.type === "link" ? (
-                                    <TouchableOpacity
-                                      activeOpacity={0.85}
-                                      onPress={() => Linking.openURL(c.attachment!.url)}
-                                      style={[styles.attachmentFileChip, { backgroundColor: cardBg, borderColor: border }]}
-                                    >
-                                      <Link2 size={14} color={primaryColor} />
-                                      <Text style={{ color: primaryColor, fontSize: 12, fontWeight: "600", flexShrink: 1, textDecorationLine: "underline" }} numberOfLines={1}>
-                                        {c.attachment.url}
+                                    {!!c.content && (
+                                      <Text style={{ color: textSecondary, fontSize: 13, lineHeight: 18, marginTop: 4 }}>
+                                        {renderLinkifiedText(c.content, primaryColor)}
                                       </Text>
-                                    </TouchableOpacity>
-                                  ) : c.attachment.type === "date" ? (
-                                    <View style={[styles.attachmentFileChip, { backgroundColor: cardBg, borderColor: border }]}>
-                                      <Calendar size={14} color={primaryColor} />
-                                      <Text style={{ color: textPrimary, fontSize: 12, fontWeight: "600", flexShrink: 1, textTransform: "capitalize" }} numberOfLines={1}>
-                                        {formatAttachmentDate(c.attachment.url)}
-                                      </Text>
+                                    )}
+
+                                    {c.attachment &&
+                                      (c.attachment.type === "image" ? (
+                                        <TouchableOpacity activeOpacity={0.85} onPress={() => Linking.openURL(c.attachment!.url)} style={{ marginTop: 8 }}>
+                                          <Image source={{ uri: c.attachment.url }} style={styles.attachmentImage} />
+                                        </TouchableOpacity>
+                                      ) : c.attachment.type === "link" ? (
+                                        <TouchableOpacity
+                                          activeOpacity={0.85}
+                                          onPress={() => Linking.openURL(c.attachment!.url)}
+                                          style={[styles.attachmentFileChip, { backgroundColor: bg, borderColor: border }]}
+                                        >
+                                          <Link2 size={14} color={primaryColor} />
+                                          <Text style={{ color: primaryColor, fontSize: 12, fontWeight: "600", flexShrink: 1, textDecorationLine: "underline" }} numberOfLines={1}>
+                                            {c.attachment.url}
+                                          </Text>
+                                        </TouchableOpacity>
+                                      ) : c.attachment.type === "date" ? (
+                                        <View style={[styles.attachmentFileChip, { backgroundColor: bg, borderColor: border }]}>
+                                          <Calendar size={14} color={primaryColor} />
+                                          <Text style={{ color: textPrimary, fontSize: 12, fontWeight: "600", flexShrink: 1, textTransform: "capitalize" }} numberOfLines={1}>
+                                            {formatAttachmentDate(c.attachment.url)}
+                                          </Text>
+                                        </View>
+                                      ) : (
+                                        <TouchableOpacity
+                                          activeOpacity={0.85}
+                                          onPress={() => Linking.openURL(c.attachment!.url)}
+                                          style={[styles.attachmentFileChip, { backgroundColor: bg, borderColor: border }]}
+                                        >
+                                          <FileText size={14} color={primaryColor} />
+                                          <Text style={{ color: textPrimary, fontSize: 12, fontWeight: "600", flexShrink: 1 }} numberOfLines={1}>
+                                            {c.attachment.name ?? "Archivo adjunto"}
+                                          </Text>
+                                        </TouchableOpacity>
+                                      ))}
+                                  </View>
+
+                                  {reactionEntries.length > 0 && (
+                                    <View style={[styles.reactionSummaryRow, isMine && styles.reactionSummaryRowMine]}>
+                                      {reactionEntries.map((rt) => {
+                                        const Icon = REACTION_ICONS[rt];
+                                        const mine = c.reactions.myReaction === rt;
+                                        return (
+                                          <TouchableOpacity
+                                            key={rt}
+                                            activeOpacity={0.7}
+                                            onPress={() => handleReact(c.id, rt)}
+                                            style={[styles.reactionChip, { backgroundColor: mine ? REACTION_COLORS[rt] + "22" : inputBg, borderColor: mine ? REACTION_COLORS[rt] : border }]}
+                                          >
+                                            <Icon size={11} color={REACTION_COLORS[rt]} fill={mine ? REACTION_COLORS[rt] : "none"} />
+                                            <Text style={{ color: REACTION_COLORS[rt], fontSize: 10.5, fontWeight: "700" }}>{c.reactions.counts[rt]}</Text>
+                                          </TouchableOpacity>
+                                        );
+                                      })}
+                                    </View>
+                                  )}
+
+                                  {reactionPickerFor === c.id && (
+                                    <View style={[styles.reactionPicker, { backgroundColor: cardBg, borderColor: border }, isMine && styles.reactionPickerMine]}>
+                                      {REACTION_TYPES.map((rt) => {
+                                        const Icon = REACTION_ICONS[rt];
+                                        const active = c.reactions.myReaction === rt;
+                                        return (
+                                          <TouchableOpacity
+                                            key={rt}
+                                            hitSlop={6}
+                                            activeOpacity={0.7}
+                                            onPress={() => handleReact(c.id, rt)}
+                                            style={[styles.reactionPickerBtn, active && { backgroundColor: REACTION_COLORS[rt] + "25" }]}
+                                          >
+                                            <Icon size={16} color={REACTION_COLORS[rt]} fill={active ? REACTION_COLORS[rt] : "none"} />
+                                          </TouchableOpacity>
+                                        );
+                                      })}
+                                    </View>
+                                  )}
+
+                                  {confirmDeleteCommentId === c.id ? (
+                                    <View style={[styles.commentActionsRow, isMine && styles.commentActionsRowMine]}>
+                                      <Text style={{ color: textSecondary, fontSize: 11 }}>¿Borrar comentario?</Text>
+                                      <TouchableOpacity activeOpacity={0.7} onPress={() => handleDeleteComment(c.id)}>
+                                        <Text style={{ color: dangerColor, fontSize: 11, fontWeight: "700" }}>Sí, borrar</Text>
+                                      </TouchableOpacity>
+                                      <TouchableOpacity activeOpacity={0.7} onPress={() => setConfirmDeleteCommentId(null)}>
+                                        <Text style={{ color: textSecondary, fontSize: 11, fontWeight: "700" }}>Cancelar</Text>
+                                      </TouchableOpacity>
                                     </View>
                                   ) : (
-                                    <TouchableOpacity
-                                      activeOpacity={0.85}
-                                      onPress={() => Linking.openURL(c.attachment!.url)}
-                                      style={[styles.attachmentFileChip, { backgroundColor: cardBg, borderColor: border }]}
-                                    >
-                                      <FileText size={14} color={primaryColor} />
-                                      <Text style={{ color: textPrimary, fontSize: 12, fontWeight: "600", flexShrink: 1 }} numberOfLines={1}>
-                                        {c.attachment.name ?? "Archivo adjunto"}
-                                      </Text>
-                                    </TouchableOpacity>
-                                  ))}
-
-                                {confirmDeleteCommentId === c.id ? (
-                                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6 }}>
-                                    <Text style={{ color: textSecondary, fontSize: 11 }}>¿Borrar comentario?</Text>
-                                    <TouchableOpacity activeOpacity={0.7} onPress={() => handleDeleteComment(c.id)}>
-                                      <Text style={{ color: dangerColor, fontSize: 11, fontWeight: "700" }}>Sí, borrar</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity activeOpacity={0.7} onPress={() => setConfirmDeleteCommentId(null)}>
-                                      <Text style={{ color: textSecondary, fontSize: 11, fontWeight: "700" }}>Cancelar</Text>
-                                    </TouchableOpacity>
-                                  </View>
-                                ) : (
-                                  <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-                                    <TouchableOpacity activeOpacity={0.7} onPress={() => setReplyingTo(c)} style={styles.replyLink}>
-                                      <Reply size={11} color={textSecondary} />
-                                      <Text style={{ color: textSecondary, fontSize: 11, fontWeight: "700" }}>Responder</Text>
-                                    </TouchableOpacity>
-                                    {c.userId === user?.id && (
-                                      <TouchableOpacity activeOpacity={0.7} onPress={() => setConfirmDeleteCommentId(c.id)} style={styles.replyLink}>
-                                        <Trash2 size={11} color={textSecondary} />
-                                        <Text style={{ color: textSecondary, fontSize: 11, fontWeight: "700" }}>Borrar</Text>
+                                    <View style={[styles.commentActionsRow, isMine && styles.commentActionsRowMine]}>
+                                      <TouchableOpacity activeOpacity={0.7} onPress={() => setReplyingTo(c)} style={styles.replyLink}>
+                                        <Reply size={11} color={textSecondary} />
+                                        <Text style={{ color: textSecondary, fontSize: 11, fontWeight: "700" }}>Responder</Text>
                                       </TouchableOpacity>
-                                    )}
-                                  </View>
-                                )}
+                                      <TouchableOpacity
+                                        activeOpacity={0.7}
+                                        onPress={() => setReactionPickerFor(reactionPickerFor === c.id ? null : c.id)}
+                                        style={styles.replyLink}
+                                      >
+                                        <SmilePlus size={11} color={textSecondary} />
+                                        <Text style={{ color: textSecondary, fontSize: 11, fontWeight: "700" }}>Reaccionar</Text>
+                                      </TouchableOpacity>
+                                      {isMine && (
+                                        <TouchableOpacity activeOpacity={0.7} onPress={() => setConfirmDeleteCommentId(c.id)} style={styles.replyLink}>
+                                          <Trash2 size={11} color={textSecondary} />
+                                          <Text style={{ color: textSecondary, fontSize: 11, fontWeight: "700" }}>Borrar</Text>
+                                        </TouchableOpacity>
+                                      )}
+                                    </View>
+                                  )}
+                                </View>
                               </View>
-                            </View>
-                          ))
+                            );
+                          })
                         )}
                       </ScrollView>
                     </View>
@@ -1735,7 +1893,10 @@ const styles = StyleSheet.create({
   newBtn: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 999, paddingHorizontal: 18, paddingVertical: 12 },
   newBtnText: { color: "#FFF", fontWeight: "700", fontSize: 13 },
 
-  projectScroll: { marginTop: 20 },
+  viewSwitchRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 20 },
+  viewSwitchChip: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9 },
+
+  projectScroll: { marginTop: 16 },
   filterRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 14 },
   filterChip: { flexDirection: "row", alignItems: "center", gap: 5, borderWidth: 1, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 7 },
   filterDivider: { width: 1, height: 16, backgroundColor: "rgba(148, 163, 184, 0.4)" },
@@ -1809,7 +1970,7 @@ const styles = StyleSheet.create({
   divider: { height: 1, marginTop: 4 },
 
   replyQuote: { borderLeftWidth: 2, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, marginTop: 6 },
-  replyLink: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6, alignSelf: "flex-start" },
+  replyLink: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start" },
 
   attachmentImage: { width: 200, height: 150, borderRadius: 14, resizeMode: "cover" },
   attachmentFileChip: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, marginTop: 8, alignSelf: "flex-start", maxWidth: 260 },
@@ -1817,6 +1978,23 @@ const styles = StyleSheet.create({
 
   chatContainer: { borderWidth: 1, borderRadius: 18, marginBottom: 12, overflow: "hidden" },
   chatScrollContent: { padding: 14, gap: 16 },
+
+  // Burbujas de chat estilo WhatsApp: mías a la derecha (sin avatar, tinte del
+  // color de marca), del resto a la izquierda (con avatar, fondo neutro).
+  commentRow: { flexDirection: "row", gap: 10, maxWidth: "82%", alignSelf: "flex-start" },
+  commentRowMine: { alignSelf: "flex-end" },
+  commentBubble: { borderWidth: 1, borderRadius: 16, padding: 12 },
+  commentBubbleTheirs: { borderTopLeftRadius: 4 },
+  commentBubbleMine: { borderTopRightRadius: 4 },
+  commentActionsRow: { flexDirection: "row", alignItems: "center", gap: 14, marginTop: 6 },
+  commentActionsRowMine: { justifyContent: "flex-end" },
+
+  reactionSummaryRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 },
+  reactionSummaryRowMine: { justifyContent: "flex-end" },
+  reactionChip: { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  reactionPicker: { flexDirection: "row", gap: 4, borderWidth: 1, borderRadius: 999, padding: 4, marginTop: 6, alignSelf: "flex-start" },
+  reactionPickerMine: { alignSelf: "flex-end" },
+  reactionPickerBtn: { padding: 6, borderRadius: 999 },
 
   inlineBar: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10 },
 

@@ -1,11 +1,10 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
-import { Calendar, CircleCheckBig, Folder, LayoutGrid, LogOut, Sparkles, User, Users } from "lucide-react-native";
+import { CircleCheckBig, Folder, LayoutGrid, LogOut, Sparkles, User, Users } from "lucide-react-native";
 
 import DashboardScreen from "../screens/DashboardScreen";
 import ProjectsScreen from "../screens/ProjectsScreen";
-import CalendarScreen from "../screens/CalendarScreen";
 import TeamScreen from "../screens/TeamScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import TasksScreen from "../screens/TasksScreen";
@@ -14,11 +13,12 @@ import { useAuth } from "../context/AuthContext";
 
 const Tab = createBottomTabNavigator();
 
+// Calendario dejó de ser una pestaña propia — es una de las 4 vistas
+// (Kanban/Lista/Calendario/Gantt) dentro de Tasks, ver TasksScreen.tsx.
 const TAB_ICONS: Record<string, any> = {
   Dashboard: LayoutGrid,
   Projects: Folder,
   Tasks: CircleCheckBig,
-  Calendar: Calendar,
   Team: Users,
   Profile: User,
 };
@@ -27,7 +27,6 @@ const TAB_LABELS: Record<string, string> = {
   Dashboard: "Inicio",
   Projects: "Proyectos",
   Tasks: "Tareas",
-  Calendar: "Calendario",
   Team: "Equipo",
   Profile: "Perfil",
 };
@@ -130,7 +129,6 @@ export default function BottomTabs() {
       <Tab.Screen name="Dashboard" component={DashboardScreen} />
       <Tab.Screen name="Projects" component={ProjectsScreen} />
       <Tab.Screen name="Tasks" component={TasksScreen} />
-      <Tab.Screen name="Calendar" component={CalendarScreen} />
       <Tab.Screen name="Team" component={TeamScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
