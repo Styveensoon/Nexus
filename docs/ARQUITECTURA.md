@@ -11,7 +11,7 @@
 - **Badges** discretos, gestionados por team leaders/admins con sugerencias de IA. *(Columna `profiles.badges` y sección de solo lectura en `ProfileScreen` ya existen; falta el mecanismo de quién los otorga.)*
 - **Workspaces con marca propia:** logo, color primario/secundario, modo claro/oscuro por workspace. *(Implementado: nombre/color/logo por organización vía `WorkspaceSetupScreen` y su `ColorPickerModal`.)*
 - **Client Room:** vista curada para clientes externos, construida por el admin. *(Hoy: tile "Clientes" informativo en el Dashboard, sin pantalla propia todavía.)*
-- **Chat/comentarios** en cada task, issue, equipo y proyecto (archivos, fotos, links). *(Implementado para tasks: `task_comments` con texto, respuestas citadas, y adjuntos de imagen/archivo/link/fecha — ver `docs/ESTADO.md`. Pendiente para issues, equipos y proyectos.)*
+- **Chat/comentarios** en cada task, issue, equipo y proyecto (archivos, fotos, links). *(Implementado para tasks: `task_comments` con texto, respuestas citadas, adjuntos de imagen/archivo/link/fecha, burbujas alineadas estilo WhatsApp y reacciones de 4 tipos (`task_comment_reactions`) — ver `docs/ESTADO.md`. Pendiente para issues, equipos y proyectos.)*
 - **Múltiples vistas:** Kanban, Lista, Timeline/Gantt, Dashboard (con switch). *(Implementado en su mayoría: Tasks tiene un switch real entre Kanban, Lista, Calendario (no estaba en la lista original pero cumple el mismo rol) y Gantt (con drag para mover/redimensionar fechas). Falta solo la variante "Dashboard" — una vista de stats agregadas, distinta del Dashboard/home de la organización.)*
 - **Reportes automáticos con IA** en lenguaje natural. *(No implementado.)*
 

@@ -1,7 +1,7 @@
 # Estado actual — NEXUS
 Leer esto antes de asumir que algo existe.
 
-> **Pendiente de correr en Supabase:** `schema.sql` tiene migraciones sin aplicar todavía — tablas `tasks`/`task_comments` + trigger `enforce_task_update_permissions`, y las columnas `start_date`/`due_date`/`priority` agregadas después a `tasks` (ver abajo y `docs/BASE_DE_DATOS.md`). Es idempotente — correr el archivo completo en el SQL Editor, no solo el bloque nuevo.
+> **Pendiente de correr en Supabase:** `schema.sql` tiene migraciones sin aplicar todavía — tablas `tasks`/`task_comments`/`task_comment_reactions` + trigger `enforce_task_update_permissions`, las columnas `start_date`/`due_date`/`priority` agregadas después a `tasks`, y la policy `task_comments_delete_own` (ver abajo y `docs/BASE_DE_DATOS.md`). Es idempotente — correr el archivo completo en el SQL Editor, no solo el bloque nuevo.
 
 ## Lo real y funcional hoy
 - **Auth completo con Supabase:** registro, login, verificación de correo, sign out. Ver `src/context/AuthContext.tsx` (`useAuth()`) y `src/lib/supabase.ts`.
@@ -21,7 +21,7 @@ Leer esto antes de asumir que algo existe.
 ## Lo que NO existe todavía
 Aunque el resto de la documentación lo describa como visión:
 - Ollama (producción) sigue sin ninguna infraestructura construida. Groq (dev) ya está conectado, pero solo para el chat del Semillero — ver arriba.
-- Tabla de `issues` — no existe. Las tablas reales son `profiles`, `organizations`, `organization_members`, `semillero_chats`, `semillero_messages`, `projects`, `project_members`, `teams`, `team_members`, `project_teams`, `tasks`, `task_comments` (más el bucket de Storage `avatars`, reusado para íconos de equipos/proyectos y adjuntos de tasks).
+- Tabla de `issues` — no existe. Las tablas reales son `profiles`, `organizations`, `organization_members`, `semillero_chats`, `semillero_messages`, `projects`, `project_members`, `teams`, `team_members`, `project_teams`, `tasks`, `task_comments`, `task_comment_reactions` (más el bucket de Storage `avatars`, reusado para íconos de equipos/proyectos y adjuntos de tasks).
 - Roles ricos (`team_leader`, `client`) a nivel de **organización** — hoy `organization_members.role` solo es `'owner' | 'member'`. (Sí existe un "encargado" a nivel de **equipo**: `teams.leader_id`, y un "líder" a nivel de **proyecto**: `projects.leader_id` — no confundir los tres conceptos.)
 - Quién asigna badges (team_leader/admin) — hoy `profiles.badges` existe en el esquema pero nada lo escribe todavía; la pestaña Profile solo lo muestra.
 - Todas las pestañas originales ya se rediseñaron con backend real (`Profile`, `Projects`, `Team`, `Tasks`) — no queda ninguna en mock. `Calendar` ya no es una pestaña: es una vista dentro de `Tasks`.
