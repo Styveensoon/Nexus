@@ -460,3 +460,215 @@ create policy "project_teams_delete_owner" on project_teams
       where o.owner_id = auth.uid()
     )
   );
+
+-- ----------------------------------------------------------------------------
+-- tasks: unidad de trabajo dentro de un proyecto. Se asigna a UNA persona o a
+-- UN equipo (nunca ambos), y solo puede crearla/editarla/borrarla el líder de
+-- ese proyecto (projects.leader_id) o el owner de la organización — un member
+-- normal no puede crear tasks. El asignado (la persona, o cualquier
+-- integrante si se asignó a un equipo) solo puede tocar el status; el trigger
+-- de abajo es lo que impide que además cambie título/descripción/asignación.
+-- Igual que projects/teams, cualquier miembro de la organización puede VER
+-- la lista de tasks (solo se restringe quién muta y quién comenta).
+-- ----------------------------------------------------------------------------
+create table if not exists tasks (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects(id) on delete cascade,
+  title text not null,
+  description text,
+  status text not null default 'pending' check (status in ('pending', 'in_progress', 'blocked', 'completed')),
+  assigned_user_id uuid references auth.users(id) on delete set null,
+  assigned_team_id uuid references teams(id) on delete set null,
+  created_by uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  constraint tasks_assignee_xor check (
+    (assigned_user_id is not null and assigned_team_id is null)
+    or (assigned_user_id is null and assigned_team_id is not null)
+  )
+);
+
+alter table tasks enable row level security;
+
+drop policy if exists "tasks_select_org" on tasks;
+create policy "tasks_select_org" on tasks
+  for select to authenticated
+  using (project_id in (select id from projects where organization_id in (select my_organization_ids())));
+
+-- Solo el líder del proyecto o el owner de la organización crean tasks, y
+-- solo pueden asignarlas a alguien realmente involucrado en ese proyecto:
+-- el propio líder, un integrante agregado directo (project_members, flujo
+-- Semillero) o un integrante de algún equipo ya asignado (project_teams).
+drop policy if exists "tasks_insert_leader_owner" on tasks;
+create policy "tasks_insert_leader_owner" on tasks
+  for insert to authenticated
+  with check (
+    auth.uid() = created_by
+    and exists (
+      select 1 from projects p
+      join organizations o on o.id = p.organization_id
+      where p.id = project_id and (p.leader_id = auth.uid() or o.owner_id = auth.uid())
+    )
+    and (
+      (
+        assigned_user_id is not null
+        and (
+          assigned_user_id = (select leader_id from projects where id = project_id)
+          or exists (select 1 from project_members pm where pm.project_id = project_id and pm.user_id = assigned_user_id)
+          or exists (
+            select 1 from project_teams pt
+            join team_members tm on tm.team_id = pt.team_id
+            where pt.project_id = project_id and tm.user_id = assigned_user_id
+          )
+        )
+      )
+      or (
+        assigned_team_id is not null
+        and exists (select 1 from project_teams pt where pt.project_id = project_id and pt.team_id = assigned_team_id)
+      )
+    )
+  );
+
+-- Fila visible/actualizable tanto para líder+owner (edición completa) como
+-- para el asignado (solo para poder cambiar el status) — la restricción de
+-- QUÉ columnas puede tocar cada quién vive en el trigger de abajo, no acá.
+drop policy if exists "tasks_update_involved" on tasks;
+create policy "tasks_update_involved" on tasks
+  for update to authenticated
+  using (
+    exists (
+      select 1 from projects p
+      join organizations o on o.id = p.organization_id
+      where p.id = project_id and (p.leader_id = auth.uid() or o.owner_id = auth.uid())
+    )
+    or assigned_user_id = auth.uid()
+    or (assigned_team_id is not null and exists (select 1 from team_members tm where tm.team_id = assigned_team_id and tm.user_id = auth.uid()))
+  )
+  with check (
+    exists (
+      select 1 from projects p
+      join organizations o on o.id = p.organization_id
+      where p.id = project_id and (p.leader_id = auth.uid() or o.owner_id = auth.uid())
+    )
+    or assigned_user_id = auth.uid()
+    or (assigned_team_id is not null and exists (select 1 from team_members tm where tm.team_id = assigned_team_id and tm.user_id = auth.uid()))
+  );
+
+drop policy if exists "tasks_delete_leader_owner" on tasks;
+create policy "tasks_delete_leader_owner" on tasks
+  for delete to authenticated
+  using (
+    exists (
+      select 1 from projects p
+      join organizations o on o.id = p.organization_id
+      where p.id = project_id and (p.leader_id = auth.uid() or o.owner_id = auth.uid())
+    )
+  );
+
+-- Enforcement a nivel de columna: si quien actualiza NO es líder/owner del
+-- proyecto, solo puede tocar `status` — cualquier otro cambio se rechaza.
+-- La policy de arriba ya deja pasar la fila; esto es lo que de verdad impide
+-- que el asignado reescriba título/descripción/asignación.
+create or replace function enforce_task_update_permissions()
+returns trigger
+language plpgsql
+security definer
+as $$
+declare
+  is_privileged boolean;
+begin
+  select exists (
+    select 1 from projects p
+    join organizations o on o.id = p.organization_id
+    where p.id = new.project_id and (p.leader_id = auth.uid() or o.owner_id = auth.uid())
+  ) into is_privileged;
+
+  if is_privileged then
+    return new;
+  end if;
+
+  if new.title <> old.title
+    or new.description is distinct from old.description
+    or new.project_id <> old.project_id
+    or new.assigned_user_id is distinct from old.assigned_user_id
+    or new.assigned_team_id is distinct from old.assigned_team_id
+    or new.created_by <> old.created_by then
+    raise exception 'Solo el líder del proyecto o el owner pueden editar esta task, el asignado solo puede cambiar el status';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists tasks_enforce_update_permissions on tasks;
+create trigger tasks_enforce_update_permissions
+  before update on tasks
+  for each row execute function enforce_task_update_permissions();
+
+-- ----------------------------------------------------------------------------
+-- task_comments: chat de una task. A diferencia de projects/teams, NO es
+-- visible para toda la organización — solo para quien está involucrado
+-- (líder del proyecto, owner de la organización, o el asignado: la persona o
+-- cualquier integrante del equipo asignado). Es un chat de trabajo, no un
+-- feed público.
+-- ----------------------------------------------------------------------------
+create or replace function task_is_involved(target_task_id uuid)
+returns boolean
+language sql security definer stable
+as $$
+  select exists (
+    select 1 from tasks t
+    join projects p on p.id = t.project_id
+    join organizations o on o.id = p.organization_id
+    where t.id = target_task_id
+      and (
+        p.leader_id = auth.uid()
+        or o.owner_id = auth.uid()
+        or t.assigned_user_id = auth.uid()
+        or (t.assigned_team_id is not null and exists (select 1 from team_members tm where tm.team_id = t.assigned_team_id and tm.user_id = auth.uid()))
+      )
+  )
+$$;
+
+create table if not exists task_comments (
+  id uuid primary key default gen_random_uuid(),
+  task_id uuid not null references tasks(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  content text not null,
+  created_at timestamptz not null default now()
+);
+
+-- Responder a otro comentario del mismo chat (opcional, muestra una cita
+-- arriba del mensaje). attachment_type: 'image'/'file' suben al bucket
+-- `avatars` (ver icons.ts) y attachment_url es esa URL de Storage; 'link'
+-- guarda la URL pegada tal cual en attachment_url; 'date' guarda una fecha
+-- ISO (yyyy-mm-dd) en attachment_url — no es una URL real, se reusa la
+-- misma columna para no crear una tabla de adjuntos aparte para 4 casos tan
+-- simples. attachment_name es el nombre original del archivo (solo aplica
+-- a 'file').
+-- Van como `alter table` (no dentro del `create table` de arriba) porque
+-- `create table if not exists` es un no-op si la tabla ya existía de una
+-- corrida previa del schema — sin esto las columnas nunca se crean.
+alter table task_comments
+  add column if not exists reply_to_id uuid references task_comments(id) on delete set null,
+  add column if not exists attachment_url text,
+  add column if not exists attachment_type text,
+  add column if not exists attachment_name text;
+
+-- 'link'/'date' se agregaron después de 'image'/'file' — drop+add en vez de
+-- un DO $$ IF NOT EXISTS $$ porque acá sí necesitamos que se actualice el
+-- constraint si ya existía con la lista vieja de valores.
+alter table task_comments drop constraint if exists task_comments_attachment_type_check;
+alter table task_comments
+  add constraint task_comments_attachment_type_check check (attachment_type in ('image', 'file', 'link', 'date'));
+
+alter table task_comments enable row level security;
+
+drop policy if exists "task_comments_select_involved" on task_comments;
+create policy "task_comments_select_involved" on task_comments
+  for select to authenticated
+  using (task_is_involved(task_id));
+
+drop policy if exists "task_comments_insert_involved" on task_comments;
+create policy "task_comments_insert_involved" on task_comments
+  for insert to authenticated
+  with check (auth.uid() = user_id and task_is_involved(task_id));

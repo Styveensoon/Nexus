@@ -1,158 +1,30 @@
 @AGENTS.md
+@docs/ESTADO.md
+@docs/PATRONES.md
+@docs/TRAMPAS.md
+@docs/ARQUITECTURA.md
+@docs/BASE_DE_DATOS.md
+@docs/SETUP.md
 
 # NEXUS — Contexto del proyecto
 
 ## Qué es
 Plataforma de gestión de proyectos con IA local, self-hosted, multiplataforma (iOS, Android, Web) con un solo código en Expo + React Native.
 
-**Diferenciador de negocio principal:** los datos nunca salen de la red del cliente. En producción, la IA correría 100% local vía Ollama en un Raspberry Pi 5 — sin esto no hay venta a empresas como T-Systems, bancos o gobierno. **Nota: esto es visión de producto, todavía no hay ninguna infraestructura de IA construida (ver "Estado actual" abajo).**
+**Diferenciador de negocio principal:** los datos nunca salen de la red del cliente. En producción, la IA correría 100% local vía Ollama en un Raspberry Pi 5 — sin esto no hay venta a empresas como T-Systems, bancos o gobierno. **Nota: esto es visión de producto, todavía no hay ninguna infraestructura de IA construida (ver `docs/ESTADO.md`).**
 
-## Estado actual (leer esto antes de asumir que algo existe)
-Lo real y funcional hoy:
-- **Auth completo con Supabase:** registro, login, verificación de correo, sign out. Ver `src/context/AuthContext.tsx` (`useAuth()`) y `src/lib/supabase.ts`.
-- **Organizaciones (= "workspace" de la visión, pero simplificado):** crear organización con nombre/color/logo personalizables, o unirse por código de invitación. Ver `src/lib/organizations.ts` y `supabase/schema.sql`.
-- **Pantallas "premium" ya rediseñadas** (identidad visual consistente, ver sección de abajo): `LandingScreen`, `LoginScreen`, `RegisterScreen`, `WorkspaceSetupScreen`, `JoinWorkspaceScreen`, `SemilleroScreen`, `DashboardScreen`, `BottomTabs`, `ProfileSetupScreen`, `ProfileScreen`, `ProjectsScreen`, `TeamScreen`.
-- **Dashboard/home** rediseñado para la vista del admin/creador de la organización: fondo con el color de marca de la org, tarjeta con código de invitación, sección "El Semillero" (solo visible para el owner), tile de Equipos con conteo real (navega a `TeamScreen`), tile de Proyectos con conteo real, tiles de Badges/Clientes (todavía informativos, sin backend), nav propia responsive (barra arriba en desktop ≥768px, abajo en móvil).
-- **Perfil de colaborador completo:** tras crear/unirse a organización, `ProfileSetupScreen` obliga a pasar por un onboarding de perfil (todos los campos opcionales) antes del Dashboard. La pestaña `Profile` real (ya no mock) tiene modo vista + modo edición (ícono de tuerca) usando el mismo formulario compartido `src/components/ProfileEditorForm.tsx`. Campos: mote, bio corta, foto (8 avatares prediseñados o subida real con drag-and-drop en web / picker nativo en mobile a Supabase Storage), color de card, zona horaria, rol/cargo, idiomas con nivel CEFR (A1–C2), habilidades con nivel 1-10 (arrastrable, componente `LevelDots`). Badges/Equipos/Proyectos se muestran en la pestaña Profile pero son de solo lectura con estado vacío honesto (ver abajo).
-- **El Semillero con IA real conectada:** `SemilleroScreen` es un chat (panel de conversaciones previas a la izquierda para retomarlas, mensajes a la derecha). El owner describe una idea, la IA (Groq, vía la Edge Function `supabase/functions/semillero-chat`) hace preguntas para pulirla y, cuando tiene contexto suficiente, sugiere equipo + líder + primeros pasos usando el roster real de la organización (skills, idiomas **y zona horaria** — evita sugerir equipos con husos horarios incompatibles cuando hay alternativas). La sugerencia se guarda estructurada (`semillero_messages.team_suggestion`) para no tener que volver a llamar a la IA al reabrir el chat. La tarjeta de sugerencia tiene dos botones: **"Crear proyecto"** (`createProjectFromSuggestion`, con miembros individuales vía `project_members`) y **"Crear equipo"** (`createTeamFromSuggestion`, crea un `Team` real vía `src/lib/teams.ts`) — ambos validan primero con `findMissingSuggestionMembers` que la gente sugerida siga en la organización (ver trampa abajo), y una vez creado el botón cambia a "Ver proyecto"/"Ver equipo" (estado persistido en `team_suggestion`, no en memoria). Solo el owner de la organización puede usar el Semillero (RLS + chequeo en la Edge Function). Gestión de chats completa: renombrar inline (lápiz), borrar con confirmación inline (nunca `Alert.alert`, ver trampa abajo), regenerar la última respuesta del asistente. Ver `src/lib/semillero.ts`. Para pruebas con datos variados (roles, skills, idiomas, husos horarios), ver `supabase/seed_users.sql`.
-- **Proyectos con backend real:** `ProjectsScreen` (rediseñada, ya no mock) lista los proyectos reales de la organización con búsqueda, filtro por status y stats reales (nada inventado). El owner puede crear proyectos a mano (modal con nombre, descripción, metas, áreas, ícono/color personalizado vía `IconColorPicker` y uno o más equipos ya existentes) o dejar que se creen desde una sugerencia de El Semillero (líder + equipo individual + `first_steps` precargados, sin equipos formales). Los miembros de un proyecto mostrados en cada tarjeta son la unión (deduplicada) de `project_members` directos + los integrantes de cada equipo asignado vía `project_teams`. Cualquier miembro ve la lista (RLS `projects_select_org`); solo el owner puede crear/borrar/cambiar status (tocar el badge de status lo cicla). Ver `src/lib/projects.ts` y tablas `projects`/`project_members`/`project_teams` en `schema.sql`. Pendiente: pantalla de detalle de proyecto (hoy solo hay lista/tarjetas) y que tareas/comentarios se conecten a un proyecto real.
-- **Equipos (Teams) con backend real:** `TeamScreen` (antes mock, ahora la sección real de Equipos que se enlaza desde el tile "Equipos" del Dashboard) permite crear/editar/borrar equipos de la organización: nombre, descripción, ícono/color (mismo `IconColorPicker` que Proyectos), encargado (`leader_id`) e integrantes elegidos del roster real de la organización (`listOrganizationMembers` en `src/lib/organizations.ts`), cada uno con un rol de un abanico de 6 comunes (`TEAM_ROLE_OPTIONS` en `src/lib/teams.ts`) + "Otro" personalizado. El encargado se marca aparte con la corona y no usa el picker de rol (su rol siempre es "Encargado/a"). El botón de lápiz en cada tarjeta abre el mismo modal de creación pero pre-llenado (`openEditModal`) y llama a `updateTeam` + `setTeamMembers` (reemplaza la lista completa de integrantes) en vez de `createTeam`. Un equipo puede estar asignado a uno o más proyectos (`project_teams`). Solo el owner crea/edita/borra equipos; cualquier miembro de la organización puede verlos (RLS `teams_select_org`). Ver `src/lib/teams.ts` y tablas `teams`/`team_members` en `schema.sql`.
-
-Lo que **NO** existe todavía, aunque el resto de este documento lo describa como visión:
-- Ollama (producción) sigue sin ninguna infraestructura construida. Groq (dev) ya está conectado, pero solo para el chat del Semillero — ver arriba.
-- Tablas de `tasks`, `issues`, `comments` — **no existen en la base de datos.** Las tablas reales son `profiles`, `organizations`, `organization_members`, `semillero_chats`, `semillero_messages`, `projects`, `project_members`, `teams`, `team_members`, `project_teams` (más el bucket de Storage `avatars`, reusado también para íconos de equipos/proyectos).
-- Roles ricos (`team_leader`, `client`) a nivel de **organización** — hoy `organization_members.role` solo es `'owner' | 'member'`. (Sí existe un "encargado" a nivel de **equipo**: `teams.leader_id`, ver bullet de Equipos arriba — no confundir los dos conceptos.)
-- Quién asigna badges (team_leader/admin) — hoy `profiles.badges` existe en el esquema pero nada lo escribe todavía; la pestaña Profile solo lo muestra.
-- Las pestañas **Tasks/Calendar siguen con datos de ejemplo (mock)**, usan `@expo/vector-icons` en vez de `lucide-react-native`, y no llaman a `useAuth()`. Redecidir/rediseñar cada una es trabajo pendiente, una por una. (`Profile`, `Projects` y `Team` ya se rediseñaron, ver arriba.)
-- Nada de infraestructura de Raspberry Pi / Docker / Cloudflare Tunnel.
-
-## Patrones de código ya establecidos (reusar, no reinventar)
-- **Paleta local por pantalla** (no hay theme file compartido para las pantallas nuevas): cada componente calcula sus propios `bg`, `cardBg`, `border`, `textPrimary`, `textSecondary`, `primaryColor = "#2563EB"`, `inputBg` a partir de `isDark` (de `useTheme()`). Copiar el bloque tal cual de cualquier pantalla ya rediseñada en vez de crear una paleta nueva.
-- **Sombra:** patrón `ultraShadow` vía `Platform.select({ web: { boxShadow, backdropFilter: "blur(12px)" }, default: { shadowColor/Offset/Opacity/Radius, elevation } })`.
-- **Responsive:** `const isMobile = useWindowDimensions().width < 768` en cada pantalla — no hay breakpoints centralizados. Contenido en desktop va dentro de un contenedor `maxWidth` centrado (960–1280 según la pantalla).
-- **Íconos:** `lucide-react-native` en todo lo nuevo/rediseñado. Las pantallas viejas sin rediseñar (Tasks/Calendar) todavía usan `@expo/vector-icons` — no mezclar los dos sistemas al tocar una pantalla, migrar a lucide si se rediseña.
-- **Ícono + color personalizado de una entidad (equipo/proyecto):** `IconColorPicker.tsx` tiene dos secciones rotuladas ("Imagen" / "Color"), no una sola fila apretada. "Imagen": preview y `AvatarUploadZone` (drag-and-drop en web / picker nativo) del mismo tamaño (`AVATAR_TILE_SIZE`, 84px) lado a lado, con el input de URL pegada ocupando el ancho completo debajo (confirma con Enter, el botón de flecha, **o al perder el foco** — pegar y hacer clic afuera debe aplicar igual). Sube a través de `uploadIconFile` en `src/lib/icons.ts` (reusa el bucket `avatars`, ver trampa abajo). Si no hay ícono, se cae a un ícono de lucide (`fallbackIcon`) coloreado con el color elegido. "Color": 5 muestras rápidas (`PRESET_COLORS`) + un círculo punteado para personalizar (`ColorPickerModal`), con el hex mostrado debajo — no un solo swatch-pill con chevron.
-- **Elegir integrantes de la organización (picker con buscador):** en vez de una lista de chips, `TeamScreen` muestra el roster disponible como tarjetas (avatar + nombre + rol) con un buscador arriba; tocar una tarjeta abre `MemberProfileModal.tsx` (perfil de solo lectura reusando la misma info que `ProfileScreen`: bio, zona horaria, habilidades, idiomas) con un botón de acción contextual ("Agregar al equipo" / "Quitar del equipo"). Mismo componente sirve para ver el perfil de alguien ya agregado, tocando su card en la lista de integrantes del borrador.
-- **Botones primarios:** píldora (`borderRadius: 999`).
-- **Filosofía anti-fake:** nunca simular que algo funciona cuando no hay backend. Si no hay feature real, se muestra un estado vacío honesto o un aviso tipo "esto estará disponible pronto" — nunca un spinner falso ni un botón que aparenta éxito. (Ver las secciones Badges/Equipos de `ProfileScreen.tsx`, o `ProjectsScreen.tsx`, que muestra un banner de error honesto en vez de ocultar un fallo de red.)
-- **Formularios reusables:** la edición de perfil vive en `src/components/ProfileEditorForm.tsx` (self-contained: hace su propio fetch/save) y la usan tanto `ProfileSetupScreen` (onboarding, sin botón cancelar) como `ProfileScreen` en modo edición (con cancelar) — pasarle `onCancel` o no cambia el layout del botón de guardar.
-- **Modales tipo picker:** `ColorPickerModal` (hue bar + hex) y `TimezoneModal` (búsqueda + lista) comparten el mismo overlay/card. Para inputs "arrastrables" (slider discreto), ver `LevelDots.tsx` (usa `PanResponder`, igual que la hue bar del color picker; acepta `disabled` para modo solo-lectura).
-- **Código específico de plataforma:** cuando algo necesita DOM real en web (ej. `AvatarUploadZone` con drag-and-drop), usar el patrón `Componente.tsx` (nativo) + `Componente.web.tsx` (web) — Metro resuelve el archivo correcto por plataforma solo con el nombre.
-
-## Trampas conocidas (para no perder tiempo redescubriéndolas)
-- **`src/navigation/AppNavigator.tsx` está muerto.** No compila (importa `@react-navigation/native-stack`, que no está instalado) y no se usa en ningún lado. El navegador raíz real es `App.tsx` (cargado vía `index.ts`), envuelto en `ThemeProvider > AuthProvider > NavigationContainer`. Si `tsc` marca un error ahí, es preexistente y se ignora.
-- **Confirmación de correo activada en Supabase:** `signUp` no da sesión inmediata. Por eso `RegisterScreen` guarda `pending_account_type`/`pending_org_name`/`pending_invite_code` en los metadatos del usuario — así `LoginScreen` puede retomar el onboarding (crear o unirse a organización) después de que el usuario confirme su correo y vuelva a entrar.
-- **`organization_members` y `profiles` ya permiten ver a todo tu equipo, no solo tu propia fila** (`organization_members_select_org` / `profiles_select_org_members`, vía la función `my_organization_ids()`). Se habilitó para que el Semillero pueda evaluar skills/idiomas/badges de todos los miembros al sugerir equipo. El Dashboard todavía no usa esto para mostrar conteo real de miembros, pero ya podría (antes daba 1 siempre con `organization_members_select_own`).
-- **Nunca poner la `secret`/`service_role` key de Supabase en `.env`** (solo la `anon`/`publishable`, que va al cliente). Ya pasó una vez en este proyecto.
-- **`AGENTS.md` dice Expo SDK 56, pero lo instalado es SDK 54** (`~54.0.0` en `package.json`/`app.json`). Si hace falta consultar docs versionadas de Expo, usar v54, no v56.
-- **Las políticas de Postgres (`create policy`) no son idempotentes** (no existe `if not exists` para políticas). Por eso `schema.sql` hace `drop policy if exists "..." on tabla;` antes de cada `create policy` — así es seguro re-correr el archivo completo cada vez que se le agrega algo, en vez de tener que copiar solo el bloque nuevo.
-- **`assets/images/avatares/` se ha vaciado solo más de una vez** (parece un problema de sincronización de OneDrive, no de git — la carpeta ni siquiera está trackeada). `src/lib/profiles.ts` hace `require()` estático de cada archivo en `DEFAULT_AVATARS`; si falta uno solo, Metro no arma el bundle y **toda la app queda en blanco** (no solo la pantalla de perfil). Si la app se ve en blanco sin razón aparente, revisar esta carpeta antes que nada.
-- **En web, `height: "100vh"` en la pantalla raíz NO es suficiente para acotar un layout con footer fijo (composer/sticky bar).** El wrapper de pantalla interno de `@react-navigation/stack` tiene `min-height: 100%` pero **no** `flex: 1`, así que crece con el contenido en vez de quedar acotado al viewport — un `ScrollView` interno con contenido largo puede empujar todo hacia abajo sin que haya forma de hacer scroll (le pasó a `SemilleroScreen`). La solución que funciona es anclar la pantalla directo al viewport con `position: "fixed", top:0, left:0, right:0, bottom:0` (solo en web; en nativo `flex:1` normal). Ver `rootStyle` en `SemilleroScreen.tsx`.
-- **`Alert.alert()` de React Native es un no-op completo en web** (`react-native-web/src/exports/Alert/index.js` literalmente no hace nada — ni diálogo ni callbacks). Nunca usarlo para confirmaciones que deban funcionar en el navegador (ej. "¿borrar esto?"); usar un estado local + UI inline (o modal propio) que funcione igual en los 3 targets. Ver el patrón de confirmación de borrado en `SemilleroScreen.tsx`.
-- **Los íconos de equipos/proyectos se suben al bucket de Storage `avatars`** (no hay un bucket `icons` separado) bajo la carpeta del usuario que los sube (`${userId}/icon-<timestamp>.<ext>`), porque las políticas de ese bucket ya permiten a cualquier autenticado escribir en su propia carpeta y leer cualquier archivo público — crear un bucket nuevo hubiera sido infraestructura redundante. Ver `src/lib/icons.ts`.
-- **Un `TextInput` de "pega una URL" necesita confirmar también en `onBlur`, no solo en `onSubmitEditing`/botón.** Sin eso, pegar la URL y hacer clic en otro campo (el gesto más natural) perdía el valor silenciosamente — pasó con el ícono de `IconColorPicker.tsx`. Cualquier input de "pega esto y sigue" nuevo debería confirmar en los 3 momentos (submit, botón, blur).
-- **`App.tsx` decide la pantalla inicial según si ya hay sesión (`RootNavigator`, dentro de `AuthProvider`), no un `initialRouteName="Landing"` fijo.** Antes, recargar la página en web (F5) siempre mandaba a Landing sin importar que hubiera sesión activa, porque nadie redirigía a "Main" al restaurar la sesión. Ahora `RootNavigator` muestra un splash mientras `useAuth().loading` es `true` y luego decide `initialRouteName={session ? 'Main' : 'Landing'}` — si se toca este archivo, no volver a un `Stack.Navigator` con ruta inicial fija sin pasar primero por ese gate.
-- **Las pantallas dentro de `BottomTabs` (Dashboard/Projects/Team) deben usar `useFocusEffect` de `@react-navigation/native` para cargar datos, no `useEffect` a secas.** Los tabs quedan montados al cambiar de pestaña (no se desmontan), así que un `useEffect(() => fetch(), [organization])` solo corre una vez al montar — crear un proyecto y volver al home no reflejaba nada hasta recargar toda la página. `useFocusEffect(useCallback(() => fetch(), [...]))` sí se dispara cada vez que la pantalla vuelve a tener foco.
-- **Las sugerencias del Semillero (`team_suggestion`) pueden quedar obsoletas** si los usuarios que sugirió la IA cambiaron de organización o se borraron después de generarse (p. ej. limpieza de `seed_users.sql`). Insertar directo revienta con un error de foreign key críptico (`projects_leader_id_fkey` / `teams_leader_id_fkey`). Por eso `SemilleroScreen.tsx` valida con `findMissingSuggestionMembers` (compara contra `listOrganizationMembers` actual) ANTES de llamar a `createProjectFromSuggestion`/`createTeamFromSuggestion`, y muestra los nombres exactos que ya no pertenecen en vez de dejar pasar el error de Postgres.
-- **"Ver proyecto"/"Ver equipo" (evitar re-crear al reintentar) se guarda en la BD, no en estado local.** `team_suggestion.createdProjectId`/`createdTeamId` (ver `TeamSuggestion` en `lib/semillero.ts`) se actualiza vía `updateMessageTeamSuggestion` justo después de crear con éxito. Antes esto vivía solo en un `useState` del componente — al navegar a Proyectos/Equipos tras crear y volver al Semillero, `SemilleroScreen` se remonta, ese estado se perdía, y un segundo clic en el mismo botón intentaba crear todo de nuevo (y a veces fallaba). Requiere la policy `semillero_messages_update_own` (RLS) para poder hacer ese `update`.
-
-## Jerarquía y roles (visión objetivo, no implementada aún)
-- **Jerarquía objetivo:** Workspace → Proyecto → Equipo → Task/Issue → Reportes
-- **Roles objetivo:** `admin` (workspace), `team_leader`, `member`, `client`
-- **Hoy solo existe:** Organización → miembros con rol `owner`/`member`. Todo lo demás de la jerarquía es roadmap.
-
-## Diferenciadores clave (visión de producto, no perder de vista al implementar)
-- **Semillero IA:** admin escribe una idea → IA analiza perfiles reales del workspace → arma equipo ideal + roadmap + primeras tareas. *(Implementado como chat con Groq vía Edge Function — ver "Estado actual" arriba. "Crear proyecto" y "Crear equipo" ya crean el registro real correspondiente. Pendiente: que los "primeros pasos" se conviertan en tasks reales, no solo texto guardado en `projects.first_steps`.)*
-- **Perfiles tipo LinkedIn** con habilidades y nivel de experiencia (alimentan al Semillero IA). *(Implementado: mote, bio, avatar/foto, color, zona horaria, rol, idiomas con nivel CEFR, habilidades con nivel 1-10 — ver `ProfileEditorForm.tsx`. Falta que el Semillero realmente los use.)*
-- **Badges** discretos, gestionados por team leaders/admins con sugerencias de IA. *(Columna `profiles.badges` y sección de solo lectura en `ProfileScreen` ya existen; falta el mecanismo de quién los otorga.)*
-- **Workspaces con marca propia:** logo, color primario/secundario, modo claro/oscuro por workspace. *(Implementado: nombre/color/logo por organización vía `WorkspaceSetupScreen` y su `ColorPickerModal`.)*
-- **Client Room:** vista curada para clientes externos, construida por el admin. *(Hoy: tile "Clientes" informativo en el Dashboard, sin pantalla propia todavía.)*
-- **Chat/comentarios** en cada task, issue, equipo y proyecto (archivos, fotos, links). *(No implementado — no hay tasks/issues todavía.)*
-- **Múltiples vistas:** Kanban, Lista, Timeline/Gantt, Dashboard (con switch). *(No implementado.)*
-- **Reportes automáticos con IA** en lenguaje natural. *(No implementado.)*
-
-## Stack técnico
-| Capa | Tecnología | Estado |
-|---|---|---|
-| Frontend | Expo SDK 54 + React Native (iOS, Android, Web — un solo código, `react-native-web`) | ✅ en uso |
-| Navegación | React Navigation (`@react-navigation/stack` en `App.tsx` raíz + `@react-navigation/bottom-tabs` custom en `BottomTabs.tsx`) | ✅ en uso |
-| Base de datos (dev) | Supabase Cloud | ✅ en uso (`profiles`/`organizations`/`organization_members` + Storage `avatars`) |
-| Base de datos (prod) | Supabase self-hosted en Docker (en el Pi) | ⏳ roadmap, no empezado |
-| IA (dev) | Groq API (`llama-3.3-70b-versatile` por defecto, configurable con el secreto `GROQ_MODEL`) vía Edge Function `semillero-chat` | ✅ en uso (solo Semillero) |
-| IA (prod) | Ollama con Mistral 7B o Llama 3.2, local en el Pi 5 | ⏳ roadmap, no empezado |
-| Infra (prod) | Raspberry Pi 5 8GB + Cloudflare Tunnel | ⏳ roadmap, no empezado |
-| Repo | `github.com/Styveensoon/Nexus` — ramas `main` y `dev` | ✅ |
-
-### Decisiones de arquitectura (contexto, no las cuestiones sin razón)
-- **PostgreSQL con JSONB en vez de NoSQL:** da flexibilidad tipo NoSQL + Row Level Security nativo para aislar workspaces + Realtime para chat sin config extra + Storage para archivos.
-- **Ollama nunca en Docker en producción:** necesita acceso directo al hardware del Pi. Se instala directo en el SO.
-- **Supabase self-hosted sí va en Docker** en producción.
-
-## Modelo de negocio (para priorizar features)
-- **Plan Cloud:** startups/universidades, Groq/Claude en nube, suscripción mensual.
-- **Plan Enterprise Self-Hosted:** corporativos, Ollama en su propio servidor, licencia anual 5-10x más cara. Este plan es el que justifica todo el trabajo de self-hosting.
-
-## Base de datos — esquema real hoy
-Fuente de verdad: `supabase/schema.sql`. Correr ahí, no adivinar.
-
-- **`profiles`** (`id` → `auth.users.id`, `full_name`, `email`, `created_at`, se crea sola vía trigger `handle_new_user` al registrarse) + columnas de perfil: `avatar_url` (`null` | `"default:<archivo>.png"` | URL subida), `avatar_color`, `nickname`, `bio`, `timezone`, `role`, `custom_role`, `skills` (`text[]`), `skill_levels` (`jsonb`, `{nombre: 1-10}`), `languages` (`text[]`), `language_levels` (`jsonb`, `{nombre: "A1"-"C2"}`), `badges` (`jsonb`, `[{id,name,color}]`, no editable desde el cliente).
-- **`organizations`** (`id`, `name`, `color`, `logo_url`, `invite_code` único, `owner_id`, `created_at`).
-- **`organization_members`** (`id`, `organization_id`, `user_id`, `role` `'owner'|'member'`, `created_at`, único por `(organization_id, user_id)`).
-- **`semillero_chats`** (`id`, `organization_id`, `user_id`, `title`, `created_at`, `updated_at`) — un chat de ideación por hilo, solo lo puede crear el owner de la organización.
-- **`semillero_messages`** (`id`, `chat_id`, `role` `'user'|'assistant'`, `content`, `team_suggestion` `jsonb | null`, `created_at`) — `team_suggestion` guarda `{projectName, leader, team[], firstSteps[], createdProjectId?, createdTeamId?}` cuando la IA ya sugirió equipo; los dos últimos campos se llenan después de crear el proyecto/equipo real desde esa sugerencia (permite policy `update`, ver abajo).
-- **`projects`** (`id`, `organization_id`, `name`, `description`, `color`, `icon_url`, `status` `'planning'|'active'|'on_hold'|'completed'`, `leader_id`, `first_steps` `text[]`, `goals` `text[]`, `areas` `text[]`, `created_by`, `created_at`) — creado a mano (con metas/áreas/equipos) o desde una `team_suggestion` del Semillero (sin metas/áreas/equipos, solo `leader_id`/`first_steps`).
-- **`project_members`** (`id`, `project_id`, `user_id`, `role_in_team`, `created_at`, único por `(project_id, user_id)`) — miembros individuales; hoy solo los usa el flujo del Semillero (incluye al líder con `role_in_team = 'Líder'`).
-- **`teams`** (`id`, `organization_id`, `name`, `description`, `color`, `icon_url`, `leader_id`, `created_by`, `created_at`) — equipos reales de la organización, creados a mano desde `TeamScreen`.
-- **`team_members`** (`id`, `team_id`, `user_id`, `role_in_team`, `created_at`, único por `(team_id, user_id)`) — el encargado también queda como fila acá con `role_in_team = 'Encargado/a'` (constante `TEAM_LEADER_ROLE_LABEL`), además de estar marcado en `teams.leader_id`.
-- **`project_teams`** (`id`, `project_id`, `team_id`, `created_at`, único por `(project_id, team_id)`) — qué equipos (ya formados) participan en un proyecto creado a mano; los miembros que se muestran en la tarjeta de un proyecto son la unión de `project_members` directos + los `team_members` de cada equipo asignado acá.
-- **Storage bucket `avatars`** (público): fotos de perfil subidas (una carpeta por `user_id`) e íconos de equipos/proyectos (ver trampa arriba). Políticas: lectura pública, escritura solo en la carpeta propia.
-- RLS activo en todas las tablas. `organization_members`/`profiles` permiten ver a todo tu equipo vía `my_organization_ids()` (ver trampa arriba); `semillero_*` dejan ver/insertar/actualizar/borrar lo propio (incluye `delete` en `semillero_messages` para "Regenerar respuesta", y `update` en `semillero_messages` para persistir `createdProjectId`/`createdTeamId`), y el insert de `semillero_chats` además verifica que seas el owner de esa organización. `projects`/`project_members`/`teams`/`team_members`/`project_teams` siguen todos el mismo criterio owner-gated para insert/update/delete (cualquier miembro de la organización puede hacer select).
-
-## Variables de entorno (dev)
-Cliente (`.env`, plantilla en `.env.example`):
-```
-EXPO_PUBLIC_SUPABASE_URL=
-EXPO_PUBLIC_SUPABASE_ANON_KEY=   # la "anon"/"publishable" key, NUNCA la "secret"/"service_role"
-```
-Servidor (secretos de la Edge Function `semillero-chat`, **nunca en `.env` del cliente**):
-```
-GROQ_API_KEY=      # obligatorio
-GROQ_MODEL=        # opcional, default llama-3.3-70b-versatile
-```
-`SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` ya los inyecta Supabase automáticamente en runtime de Edge Functions, no hay que configurarlos a mano. Nunca hardcodear ninguna de estas keys en el código ni loguearlas.
-
-## Setup de desarrollo
-- Copiar `.env.example` a `.env` y completar con las credenciales del proyecto de Supabase (Project Settings → API).
-- Correr el contenido de `supabase/schema.sql` en el SQL Editor del proyecto de Supabase.
-- `npx expo start --web` (o sin `--web` para nativo/Expo Go). Usar `-c` después de cambiar `.env` para limpiar caché.
-- Para que el Semillero funcione, además: instalar el [Supabase CLI](https://supabase.com/docs/guides/cli), `supabase login`, `supabase link --project-ref <tu-project-ref>`, luego `supabase functions deploy semillero-chat` y `supabase secrets set GROQ_API_KEY=tu-key` (conseguir la key en [console.groq.com](https://console.groq.com)). Sin esto desplegado, el chat del Semillero muestra el error honesto "No se pudo conectar con la IA" en vez de fallar en silencio.
-- Para probar el Semillero con un roster variado (roles, skills, idiomas, husos horarios distintos a propósito, varios hablantes de árabe en husos distintos para probar el trade-off idioma-vs-huso), correr `supabase/seed_users.sql` en el SQL Editor (hay que poner tu invite_code, instrucciones dentro del archivo). Crea usuarios falsos directo en `auth.users` — no sirven para iniciar sesión de verdad, son solo roster de prueba. Tiene un `DELETE` comentado al final para limpiar todo después.
-
-## Setup de producción (Pi 5) — roadmap, no empezado
-- Ollama instalado directo en el SO del Pi (Windows/Linux) — nunca en Docker
-- Supabase self-hosted en Docker
-- Cloudflare Tunnel para exponer el Pi con HTTPS sin abrir puertos
-- Deploy vía SSH + FileZilla
+## Cómo está organizada esta documentación
+Este archivo es solo el índice. El contenido real vive en `docs/` (importado arriba, así que siempre está disponible en contexto):
+- **`docs/ESTADO.md`** — qué existe de verdad hoy vs. visión, y el changelog de las últimas rondas de trabajo. Leer primero, antes de asumir que algo existe o no.
+- **`docs/PATRONES.md`** — patrones de código ya establecidos (paletas, sombras, responsive, pickers, subida de archivos). Reusar, no reinventar.
+- **`docs/TRAMPAS.md`** — bugs/gotchas ya resueltos, para no perder tiempo redescubriéndolos.
+- **`docs/ARQUITECTURA.md`** — jerarquía/roles objetivo, diferenciadores de producto, stack técnico, decisiones de arquitectura, modelo de negocio.
+- **`docs/BASE_DE_DATOS.md`** — esquema real de Supabase, tabla por tabla, con RLS.
+- **`docs/SETUP.md`** — variables de entorno, setup de desarrollo, y roadmap de setup de producción (Pi 5).
 
 ## Convenciones de trabajo
 - Priorizar RLS (Row Level Security) en cualquier query o tabla nueva — el aislamiento por organización es requisito de seguridad, no opcional.
 - Al tocar código de IA, tener en cuenta que dev usa Groq (`llama-3.3-70b-versatile`, no Mixtral — Groq lo descontinuó) y prod usaría Ollama/Mistral-Llama — no asumir que el prompt/formato de respuesta es idéntico entre ambos sin probar. El parseo del bloque `<<<TEAM>>>...<<<END_TEAM>>>` en `supabase/functions/semillero-chat/index.ts` es específico del prompt actual; si se cambia de modelo o proveedor, probar que el modelo nuevo sigue respetando ese formato.
 - Componentes deben funcionar en los 3 targets (iOS, Android, Web) salvo que se indique lo contrario explícitamente.
 - Preferir archivos completos al proponer cambios, no snippets parciales.
-- Antes de tocar esquema de base de datos, confirmar impacto en RLS policies existentes.
-
-## Estado actual / foco
-**Última actualización:** ronda de bugfixes + pulido de diseño sobre Equipos/Proyectos/Semillero, encontrados probando todo en real contra Supabase (no solo con datos mock):
-- **Edición completa de equipos:** botón de lápiz en cada tarjeta de `TeamScreen` (antes solo crear/borrar) — abre el mismo modal pre-llenado (`openEditModal`) y guarda con `updateTeam` + `setTeamMembers`.
-- **`IconColorPicker.tsx` rediseñado:** dos secciones claras "Imagen"/"Color" (antes una fila apretada), preview y dropzone del mismo tamaño, 5 colores rápidos + personalizado. Además tenía un bug real: pegar una URL y hacer clic afuera (sin Enter) no la aplicaba — le faltaba `onBlur`, ya arreglado.
-- **Reload en web mandaba siempre a Landing** aunque hubiera sesión activa — `App.tsx` no tenía ninguna lógica que decidiera la ruta inicial según la sesión. Ahora `RootNavigator` espera a `useAuth().loading` y elige `Main` o `Landing`. Ver trampa arriba antes de tocar `App.tsx`.
-- **Dashboard/Proyectos/Equipos no se refrescaban al volver de otra pestaña** (`useEffect` solo corre al montar, y los tabs no se desmontan) — cambiados a `useFocusEffect`. Ver trampa arriba.
-- **"Crear proyecto"/"Crear equipo" del Semillero reventaban con un error de foreign key** cuando la sugerencia guardada referenciaba gente que ya no estaba en la organización (datos de prueba borrados/movidos). Se agregó `findMissingSuggestionMembers` (valida contra el roster actual antes de insertar) y se agregó un botón "Crear equipo" nuevo junto a "Crear proyecto" (antes solo existía el de proyecto). También se detectó y arregló que el estado "ya se creó" vivía solo en memoria — se perdía al navegar fuera y volver, causando un segundo intento de creación; ahora se persiste en `team_suggestion.createdProjectId`/`createdTeamId` (requiere la policy `semillero_messages_update_own`, nueva).
-
-**Antes de eso** (misma sesión larga): agregué Equipos (Teams) como entidad real completa y extendí Proyectos para no depender solo de El Semillero — tablas `teams`/`team_members`/`project_teams`, columnas `goals`/`areas`/`icon_url` en `projects`, `src/lib/teams.ts`, `listOrganizationMembers` en `src/lib/organizations.ts`, `src/lib/icons.ts`, y los componentes `IconColorPicker.tsx`/`MemberProfileModal.tsx` (picker de integrantes con buscador + tarjetas + perfil de solo lectura). El modal "Nuevo proyecto" de `ProjectsScreen` pide metas, áreas, ícono/color y uno o más equipos ya existentes. El Dashboard muestra conteos reales de equipos y proyectos.
-
-**Antes de eso:** rediseño completo de `ProjectsScreen` (era 100% mock) con el primer backend real de proyectos (`projects`/`project_members`), y conexión del Semillero a IA real (Groq) con chat completo (`semillero_chats`/`semillero_messages`, renombrar/borrar/regenerar). Bugs de esa etapa ya documentados como trampas arriba: `height:"100vh"` no acota en web (usar `position:"fixed"`), burbujas de chat con `alignSelf` fijo, `Alert.alert()` no-op en web.
-
-**Falta correr la migración más reciente de `schema.sql` en el SQL Editor de Supabase** (es idempotente, seguro re-correr completo) — incluye la policy `semillero_messages_update_own` nueva, además de todo lo de Teams/Projects de la ronda anterior.
-
-Pendiente: construir la vista de miembro no-admin del Dashboard, definir quién asigna badges, pantalla de detalle de proyecto y de equipo (hoy solo hay listas/tarjetas), y las pestañas de Tasks/Calendar siguen con datos de ejemplo (mock) sin tocar.
+- Antes de tocar esquema de base de datos, confirmar impacto en RLS policies existentes, y avisar explícitamente que hay que re-correr `schema.sql` en Supabase.
