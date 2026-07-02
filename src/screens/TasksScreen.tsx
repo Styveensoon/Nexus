@@ -44,7 +44,8 @@ import {
 
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
-import { listProjects, Project } from "../lib/projects";
+import { listProjects, setProjectTeams, Project } from "../lib/projects";
+import { listTeams, Team } from "../lib/teams";
 import ChatAttachmentButtons from "../components/ChatAttachmentButtons";
 import DatePickerModal from "../components/DatePickerModal";
 import TaskCalendarView from "../components/TaskCalendarView";
@@ -182,6 +183,7 @@ export default function TasksScreen({ navigation }: any) {
   });
 
   const [projects, setProjects] = useState<Project[]>([]);
+  const [orgTeams, setOrgTeams] = useState<Team[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -256,6 +258,9 @@ export default function TasksScreen({ navigation }: any) {
       prev && (prev === ALL_PROJECTS || projectRows.some((p) => p.id === prev)) ? prev : projectRows[0]?.id ?? null
     );
 
+    const { data: teamRows, error: teamsError } = await listTeams(organization.id);
+    if (!teamsError) setOrgTeams(teamRows);
+
     const { data: taskRows, error: tasksError } = await listTasksForProjects(projectRows.map((p) => p.id));
     if (tasksError) setErrorText("No se pudieron cargar las tareas.");
     setTasks(taskRows);
@@ -286,6 +291,30 @@ export default function TasksScreen({ navigation }: any) {
     });
     return Array.from(map.values());
   }, [selectedProject]);
+
+  // Solo el owner de la organización puede vincular equipos nuevos a un
+  // proyecto (project_teams_insert_owner en schema.sql) — un líder de
+  // proyecto que no es owner puede crear tasks pero no puede agregar
+  // equipos que el proyecto todavía no tiene.
+  const canLinkTeamsToProject = organization?.owner_id === user?.id;
+
+  // El picker de "Un equipo" mostraba solo project.teams (equipos YA
+  // vinculados vía project_teams), así que un proyecto sin ningún equipo
+  // vinculado parecía no tener equipos aunque la organización sí los tenga.
+  // Mostramos todos los equipos de la organización, con los ya vinculados
+  // primero; elegir uno no vinculado lo vincula al proyecto de una vez (ver
+  // handleCreate/saveEditTask), solo si quien asigna puede hacerlo.
+  const assignableTeamsForProject = useCallback(
+    (project: Project | null): Team[] => {
+      if (!project) return [];
+      const linkedIds = new Set(project.teams.map((t) => t.id));
+      const others = orgTeams.filter((t) => !linkedIds.has(t.id));
+      return [...project.teams, ...others];
+    },
+    [orgTeams]
+  );
+
+  const createPickerTeams = useMemo(() => assignableTeamsForProject(selectedProject), [assignableTeamsForProject, selectedProject]);
 
   const isInvolvedInTask = useCallback(
     (task: Task, project: Project | null) => {
@@ -408,6 +437,22 @@ export default function TasksScreen({ navigation }: any) {
     }
     setCreating(true);
     setCreateError(null);
+    if (assignedTeamId && !selectedProject.teams.some((t) => t.id === assignedTeamId)) {
+      if (!canLinkTeamsToProject) {
+        setCreating(false);
+        setCreateError("Ese equipo no está vinculado a este proyecto. Pedile al dueño de la organización que lo agregue desde Proyectos, o elegí un equipo ya vinculado.");
+        return;
+      }
+      const { error: linkError } = await setProjectTeams(selectedProject.id, [
+        ...selectedProject.teams.map((t) => t.id),
+        assignedTeamId,
+      ]);
+      if (linkError) {
+        setCreating(false);
+        setCreateError("No se pudo vincular el equipo al proyecto.");
+        return;
+      }
+    }
     const { data: taskRow, error } = await createTask({
       projectId: selectedProject.id,
       createdBy: user.id,
@@ -528,6 +573,22 @@ export default function TasksScreen({ navigation }: any) {
     }
     setSavingEdit(true);
     setEditError(null);
+    if (assignedTeamId && selectedTaskProject && !selectedTaskProject.teams.some((t) => t.id === assignedTeamId)) {
+      if (!canLinkTeamsToProject) {
+        setSavingEdit(false);
+        setEditError("Ese equipo no está vinculado a este proyecto. Pedile al dueño de la organización que lo agregue desde Proyectos, o elegí un equipo ya vinculado.");
+        return;
+      }
+      const { error: linkError } = await setProjectTeams(selectedTaskProject.id, [
+        ...selectedTaskProject.teams.map((t) => t.id),
+        assignedTeamId,
+      ]);
+      if (linkError) {
+        setSavingEdit(false);
+        setEditError("No se pudo vincular el equipo al proyecto.");
+        return;
+      }
+    }
     const { error } = await updateTask(selectedTask.id, {
       title: editTitle.trim(),
       description: editDescription.trim() || null,
@@ -541,6 +602,10 @@ export default function TasksScreen({ navigation }: any) {
     if (error) {
       setEditError("No se pudo guardar la task.");
       return;
+    }
+    if (organization) {
+      const { data: projectRows } = await listProjects(organization.id);
+      setProjects(projectRows);
     }
     const { data: taskRows } = await listTasksForProjects(projects.map((p) => p.id));
     setTasks(taskRows);
@@ -657,6 +722,7 @@ export default function TasksScreen({ navigation }: any) {
   const selectedTaskProject = selectedTask ? projects.find((p) => p.id === selectedTask.projectId) ?? null : null;
   const selectedTaskInvolved = selectedTask ? isInvolvedInTask(selectedTask, selectedTaskProject) : false;
   const selectedTaskCanEdit = selectedTaskProject ? isProjectLeaderOrOwner(selectedTaskProject) : false;
+  const editPickerTeams = assignableTeamsForProject(selectedTaskProject);
 
   const renderTaskCard = (task: Task) => {
     if (confirmDeleteId === task.id) {
@@ -1070,26 +1136,30 @@ export default function TasksScreen({ navigation }: any) {
                         })}
                       </View>
                     )
-                  ) : (selectedProject?.teams.length ?? 0) === 0 ? (
+                  ) : createPickerTeams.length === 0 ? (
                     <Text style={{ color: textSecondary, fontSize: 13, marginTop: 12 }}>
-                      Este proyecto todavía no tiene equipos asignados.
+                      Esta organización todavía no tiene equipos. Creá uno primero en la pestaña Equipos.
                     </Text>
                   ) : (
                     <View style={{ flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
-                      {selectedProject?.teams.map((team) => {
+                      {createPickerTeams.map((team) => {
                         const selected = selectedAssigneeTeamId === team.id;
+                        const isLinked = !!selectedProject?.teams.some((t) => t.id === team.id);
+                        const disabled = !isLinked && !canLinkTeamsToProject;
                         return (
                           <TouchableOpacity
                             key={team.id}
-                            activeOpacity={0.85}
+                            activeOpacity={disabled ? 1 : 0.85}
+                            disabled={disabled}
                             onPress={() => setSelectedAssigneeTeamId(team.id)}
-                            style={[styles.listItemRow, { backgroundColor: inputBg, borderColor: selected ? primaryColor : border }, !isMobile && styles.listItemRowHalf]}
+                            style={[styles.listItemRow, { backgroundColor: inputBg, borderColor: selected ? primaryColor : border, opacity: disabled ? 0.45 : 1 }, !isMobile && styles.listItemRowHalf]}
                           >
                             <View style={[styles.avatarMini, { backgroundColor: team.color }]}>
                               <Users size={13} color="#FFF" />
                             </View>
                             <Text style={{ color: textPrimary, fontSize: 13, fontWeight: "600", flex: 1 }} numberOfLines={1}>
                               {team.name}
+                              {!isLinked ? (disabled ? " · No vinculado" : " · Se vinculará al proyecto") : ""}
                             </Text>
                             {selected && <Check size={15} color={primaryColor} />}
                           </TouchableOpacity>
@@ -1326,22 +1396,30 @@ export default function TasksScreen({ navigation }: any) {
                               );
                             })}
                           </View>
+                        ) : editPickerTeams.length === 0 ? (
+                          <Text style={{ color: textSecondary, fontSize: 13, marginTop: 12 }}>
+                            Esta organización todavía no tiene equipos. Creá uno primero en la pestaña Equipos.
+                          </Text>
                         ) : (
                           <View style={{ flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
-                            {selectedTaskProject?.teams.map((team) => {
+                            {editPickerTeams.map((team) => {
                               const selected = editSelectedAssigneeTeamId === team.id;
+                              const isLinked = !!selectedTaskProject?.teams.some((t) => t.id === team.id);
+                              const disabled = !isLinked && !canLinkTeamsToProject;
                               return (
                                 <TouchableOpacity
                                   key={team.id}
-                                  activeOpacity={0.85}
+                                  activeOpacity={disabled ? 1 : 0.85}
+                                  disabled={disabled}
                                   onPress={() => setEditSelectedAssigneeTeamId(team.id)}
-                                  style={[styles.listItemRow, { backgroundColor: cardBg, borderColor: selected ? primaryColor : border }, !isMobile && styles.listItemRowHalf]}
+                                  style={[styles.listItemRow, { backgroundColor: cardBg, borderColor: selected ? primaryColor : border, opacity: disabled ? 0.45 : 1 }, !isMobile && styles.listItemRowHalf]}
                                 >
                                   <View style={[styles.avatarMini, { backgroundColor: team.color }]}>
                                     <Users size={13} color="#FFF" />
                                   </View>
                                   <Text style={{ color: textPrimary, fontSize: 13, fontWeight: "600", flex: 1 }} numberOfLines={1}>
                                     {team.name}
+                                    {!isLinked ? (disabled ? " · No vinculado" : " · Se vinculará al proyecto") : ""}
                                   </Text>
                                   {selected && <Check size={15} color={primaryColor} />}
                                 </TouchableOpacity>
