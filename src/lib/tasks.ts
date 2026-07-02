@@ -13,6 +13,24 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
 
 export const TASK_STATUS_ORDER: TaskStatus[] = ["pending", "in_progress", "blocked", "completed"];
 
+export type TaskPriority = "low" | "medium" | "high" | "urgent";
+
+export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
+  low: "Baja",
+  medium: "Media",
+  high: "Alta",
+  urgent: "Urgente",
+};
+
+export const TASK_PRIORITY_COLORS: Record<TaskPriority, string> = {
+  low: "#94A3B8",
+  medium: "#2563EB",
+  high: "#F97316",
+  urgent: "#EF4444",
+};
+
+export const TASK_PRIORITY_ORDER: TaskPriority[] = ["low", "medium", "high", "urgent"];
+
 export type TaskAssignee =
   | { type: "user"; userId: string; name: string; avatarUrl: string | null; avatarColor: string }
   | { type: "team"; teamId: string; name: string; color: string; iconUrl: string | null };
@@ -23,6 +41,9 @@ export type Task = {
   title: string;
   description: string | null;
   status: TaskStatus;
+  priority: TaskPriority;
+  startDate: string | null;
+  dueDate: string | null;
   createdBy: string;
   createdAt: string;
   assignee: TaskAssignee;
@@ -34,6 +55,9 @@ type TaskRow = {
   title: string;
   description: string | null;
   status: TaskStatus;
+  priority: TaskPriority;
+  start_date: string | null;
+  due_date: string | null;
   assigned_user_id: string | null;
   assigned_team_id: string | null;
   created_by: string;
@@ -88,6 +112,9 @@ async function hydrateTasks(taskRows: TaskRow[]) {
       title: row.title,
       description: row.description,
       status: row.status,
+      priority: row.priority,
+      startDate: row.start_date,
+      dueDate: row.due_date,
       createdBy: row.created_by,
       createdAt: row.created_at,
       assignee,
@@ -98,12 +125,15 @@ async function hydrateTasks(taskRows: TaskRow[]) {
   return { data: tasks, error: null };
 }
 
+const TASK_COLUMNS =
+  "id, project_id, title, description, status, priority, start_date, due_date, assigned_user_id, assigned_team_id, created_by, created_at";
+
 export async function listTasksForProjects(projectIds: string[]) {
   if (!projectIds.length) return { data: [] as Task[], error: null };
 
   const { data: taskRows, error } = await supabase
     .from("tasks")
-    .select("id, project_id, title, description, status, assigned_user_id, assigned_team_id, created_by, created_at")
+    .select(TASK_COLUMNS)
     .in("project_id", projectIds)
     .order("created_at", { ascending: false });
 
@@ -118,6 +148,9 @@ export async function createTask(params: {
   description?: string | null;
   assignedUserId?: string | null;
   assignedTeamId?: string | null;
+  priority?: TaskPriority;
+  startDate?: string | null;
+  dueDate?: string | null;
 }) {
   const { data, error } = await supabase
     .from("tasks")
@@ -128,6 +161,9 @@ export async function createTask(params: {
       description: params.description ?? null,
       assigned_user_id: params.assignedUserId ?? null,
       assigned_team_id: params.assignedTeamId ?? null,
+      priority: params.priority ?? "medium",
+      start_date: params.startDate ?? null,
+      due_date: params.dueDate ?? null,
     })
     .select("id")
     .single();
@@ -147,6 +183,9 @@ export async function updateTask(
     description: string | null;
     assignedUserId: string | null;
     assignedTeamId: string | null;
+    priority: TaskPriority;
+    startDate: string | null;
+    dueDate: string | null;
   }>
 ) {
   const { error } = await supabase
@@ -156,6 +195,9 @@ export async function updateTask(
       ...(updates.description !== undefined && { description: updates.description }),
       ...(updates.assignedUserId !== undefined && { assigned_user_id: updates.assignedUserId, assigned_team_id: null }),
       ...(updates.assignedTeamId !== undefined && { assigned_team_id: updates.assignedTeamId, assigned_user_id: null }),
+      ...(updates.priority !== undefined && { priority: updates.priority }),
+      ...(updates.startDate !== undefined && { start_date: updates.startDate }),
+      ...(updates.dueDate !== undefined && { due_date: updates.dueDate }),
     })
     .eq("id", taskId);
 
@@ -258,4 +300,9 @@ export async function addTaskComment(params: {
 
 export async function uploadTaskAttachment(ownerUserId: string, data: ArrayBuffer | File, contentType: string, ext: string) {
   return uploadFile(ownerUserId, data, contentType, ext, "task-attachment");
+}
+
+export async function deleteTaskComment(commentId: string) {
+  const { error } = await supabase.from("task_comments").delete().eq("id", commentId);
+  return { error };
 }

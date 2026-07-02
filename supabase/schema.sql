@@ -467,9 +467,10 @@ create policy "project_teams_delete_owner" on project_teams
 -- ese proyecto (projects.leader_id) o el owner de la organización — un member
 -- normal no puede crear tasks. El asignado (la persona, o cualquier
 -- integrante si se asignó a un equipo) solo puede tocar el status; el trigger
--- de abajo es lo que impide que además cambie título/descripción/asignación.
--- Igual que projects/teams, cualquier miembro de la organización puede VER
--- la lista de tasks (solo se restringe quién muta y quién comenta).
+-- de abajo es lo que impide que además cambie título/descripción/asignación/
+-- fechas/prioridad. Igual que projects/teams, cualquier miembro de la
+-- organización puede VER la lista de tasks (solo se restringe quién muta y
+-- quién comenta).
 -- ----------------------------------------------------------------------------
 create table if not exists tasks (
   id uuid primary key default gen_random_uuid(),
@@ -486,6 +487,23 @@ create table if not exists tasks (
     or (assigned_user_id is null and assigned_team_id is not null)
   )
 );
+
+-- Fechas de planificación (para el Calendar) y prioridad, agregadas después
+-- del `create table` original. Van como `alter table` por la misma razón que
+-- en task_comments más abajo: `create table if not exists` es un no-op si la
+-- tabla ya existía de una corrida previa del schema.
+alter table tasks
+  add column if not exists start_date date,
+  add column if not exists due_date date,
+  add column if not exists priority text not null default 'medium';
+
+alter table tasks drop constraint if exists tasks_priority_check;
+alter table tasks
+  add constraint tasks_priority_check check (priority in ('low', 'medium', 'high', 'urgent'));
+
+alter table tasks drop constraint if exists tasks_dates_order_check;
+alter table tasks
+  add constraint tasks_dates_order_check check (start_date is null or due_date is null or due_date >= start_date);
 
 alter table tasks enable row level security;
 
@@ -591,6 +609,9 @@ begin
     or new.project_id <> old.project_id
     or new.assigned_user_id is distinct from old.assigned_user_id
     or new.assigned_team_id is distinct from old.assigned_team_id
+    or new.start_date is distinct from old.start_date
+    or new.due_date is distinct from old.due_date
+    or new.priority <> old.priority
     or new.created_by <> old.created_by then
     raise exception 'Solo el líder del proyecto o el owner pueden editar esta task, el asignado solo puede cambiar el status';
   end if;
@@ -669,6 +690,14 @@ create policy "task_comments_select_involved" on task_comments
   using (task_is_involved(task_id));
 
 drop policy if exists "task_comments_insert_involved" on task_comments;
+
 create policy "task_comments_insert_involved" on task_comments
   for insert to authenticated
   with check (auth.uid() = user_id and task_is_involved(task_id));
+
+-- Solo el autor puede borrar su propio comentario (no el líder/owner sobre
+-- comentarios ajenos — es un chat, no un feed moderado).
+drop policy if exists "task_comments_delete_own" on task_comments;
+create policy "task_comments_delete_own" on task_comments
+  for delete to authenticated
+  using (auth.uid() = user_id);

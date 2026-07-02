@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Image,
   Linking,
@@ -19,9 +19,11 @@ import {
   CircleCheckBig,
   Crown,
   FileText,
+  Flag,
   Folder,
   Link2,
   MessageSquare,
+  Pencil,
   Plus,
   Reply,
   Send,
@@ -40,14 +42,20 @@ import {
   addTaskComment,
   createTask,
   deleteTask,
+  deleteTaskComment,
   listTaskComments,
   listTasksForProjects,
   Task,
   TaskComment,
   TaskCommentAttachment,
+  TaskPriority,
   TaskStatus,
+  TASK_PRIORITY_COLORS,
+  TASK_PRIORITY_LABELS,
+  TASK_PRIORITY_ORDER,
   TASK_STATUS_LABELS,
   TASK_STATUS_ORDER,
+  updateTask,
   updateTaskStatus,
   uploadTaskAttachment,
 } from "../lib/tasks";
@@ -65,6 +73,29 @@ function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "?";
   return parts.slice(0, 2).map((p) => p[0]?.toUpperCase()).join("");
+}
+
+function formatShortDate(iso: string) {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+}
+
+function isOverdue(task: Task) {
+  if (!task.dueDate || task.status === "completed") return false;
+  return task.dueDate < new Date().toISOString().slice(0, 10);
+}
+
+const DUE_SOON_DAYS = 2;
+// Violeta a propósito, no ámbar/naranja: la prioridad "Alta" ya usa naranja
+// (#F97316) y un ámbar quedaba demasiado parecido a simple vista — con la
+// bandera vs. el ícono de calendario ya alcanza para distinguir el tipo de
+// chip, pero el color no debía competir con la escala de prioridad.
+const DUE_SOON_COLOR = "#8B5CF6";
+
+function isDueSoon(task: Task) {
+  if (!task.dueDate || task.status === "completed" || isOverdue(task)) return false;
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const limitIso = new Date(Date.now() + DUE_SOON_DAYS * 86400000).toISOString().slice(0, 10);
+  return task.dueDate >= todayIso && task.dueDate <= limitIso;
 }
 
 function nextStatus(status: TaskStatus): TaskStatus {
@@ -100,7 +131,7 @@ function renderLinkifiedText(text: string, linkColor: string) {
 
 type AssignableUser = { userId: string; name: string; avatarUrl: string | null; avatarColor: string };
 
-export default function TasksScreen({ navigation }: any) {
+export default function TasksScreen({ navigation, route }: any) {
   const { isDark } = useTheme();
   const { user, organization, loading: authLoading } = useAuth();
   const { width } = useWindowDimensions();
@@ -138,6 +169,9 @@ export default function TasksScreen({ navigation }: any) {
   const [errorText, setErrorText] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [filterOnlyMine, setFilterOnlyMine] = useState(false);
+  const [filterOverdueOnly, setFilterOverdueOnly] = useState(false);
+  const [filterPriorities, setFilterPriorities] = useState<Set<TaskPriority>>(new Set());
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -147,6 +181,11 @@ export default function TasksScreen({ navigation }: any) {
   const [assigneeMode, setAssigneeMode] = useState<"user" | "team">("user");
   const [selectedAssigneeUserId, setSelectedAssigneeUserId] = useState<string | null>(null);
   const [selectedAssigneeTeamId, setSelectedAssigneeTeamId] = useState<string | null>(null);
+  const [newPriority, setNewPriority] = useState<TaskPriority>("medium");
+  const [newStartDate, setNewStartDate] = useState<string | null>(null);
+  const [newDueDate, setNewDueDate] = useState<string | null>(null);
+  const [showNewStartDatePicker, setShowNewStartDatePicker] = useState(false);
+  const [showNewDueDatePicker, setShowNewDueDatePicker] = useState(false);
   const [newAttachments, setNewAttachments] = useState<TaskCommentAttachment[]>([]);
   const [uploadingCreateAttachment, setUploadingCreateAttachment] = useState(false);
   const [createAttachError, setCreateAttachError] = useState<string | null>(null);
@@ -155,6 +194,19 @@ export default function TasksScreen({ navigation }: any) {
   const [createLinkInputValue, setCreateLinkInputValue] = useState("");
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [editingTask, setEditingTask] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editAssigneeMode, setEditAssigneeMode] = useState<"user" | "team">("user");
+  const [editSelectedAssigneeUserId, setEditSelectedAssigneeUserId] = useState<string | null>(null);
+  const [editSelectedAssigneeTeamId, setEditSelectedAssigneeTeamId] = useState<string | null>(null);
+  const [editPriority, setEditPriority] = useState<TaskPriority>("medium");
+  const [editStartDate, setEditStartDate] = useState<string | null>(null);
+  const [editDueDate, setEditDueDate] = useState<string | null>(null);
+  const [showEditStartDatePicker, setShowEditStartDatePicker] = useState(false);
+  const [showEditDueDatePicker, setShowEditDueDatePicker] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
   const [commentInput, setCommentInput] = useState("");
@@ -166,6 +218,7 @@ export default function TasksScreen({ navigation }: any) {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [linkInputValue, setLinkInputValue] = useState("");
+  const [confirmDeleteCommentId, setConfirmDeleteCommentId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!organization) return;
@@ -229,7 +282,36 @@ export default function TasksScreen({ navigation }: any) {
     [isInvolvedInTask, projects]
   );
 
-  const projectTasks = selectedProjectId ? tasks.filter((t) => t.projectId === selectedProjectId) : [];
+  // A diferencia de isInvolvedInTask (que da true al líder/owner sobre CUALQUIER
+  // task, porque pueden gestionarla), esto es solo "esta task es mía" para el
+  // filtro "Solo mías" — sin el atajo de líder/owner.
+  const isAssignedToMe = useCallback(
+    (task: Task) => {
+      if (!user) return false;
+      const assignee = task.assignee;
+      if (assignee.type === "user") return assignee.userId === user.id;
+      const project = projects.find((p) => p.id === task.projectId);
+      const team = project?.teams.find((t) => t.id === assignee.teamId);
+      return !!team?.members.some((m) => m.userId === user.id);
+    },
+    [user, projects]
+  );
+
+  const togglePriorityFilter = (priority: TaskPriority) => {
+    setFilterPriorities((prev) => {
+      const next = new Set(prev);
+      if (next.has(priority)) next.delete(priority);
+      else next.add(priority);
+      return next;
+    });
+  };
+
+  const overdueCount = tasks.filter(isOverdue).length;
+
+  let projectTasks = selectedProjectId ? tasks.filter((t) => t.projectId === selectedProjectId) : [];
+  if (filterOnlyMine) projectTasks = projectTasks.filter(isAssignedToMe);
+  if (filterOverdueOnly) projectTasks = projectTasks.filter(isOverdue);
+  if (filterPriorities.size > 0) projectTasks = projectTasks.filter((t) => filterPriorities.has(t.priority));
 
   const openCreateModal = () => {
     setNewTitle("");
@@ -237,6 +319,9 @@ export default function TasksScreen({ navigation }: any) {
     setAssigneeMode("user");
     setSelectedAssigneeUserId(selectedProject?.leaderId ?? null);
     setSelectedAssigneeTeamId(null);
+    setNewPriority("medium");
+    setNewStartDate(null);
+    setNewDueDate(null);
     setCreateError(null);
     setNewAttachments([]);
     setCreateAttachError(null);
@@ -290,6 +375,10 @@ export default function TasksScreen({ navigation }: any) {
       setCreateError("Elige a quién se le asigna la task.");
       return;
     }
+    if (newStartDate && newDueDate && newDueDate < newStartDate) {
+      setCreateError("La fecha límite no puede ser antes que la de inicio.");
+      return;
+    }
     setCreating(true);
     setCreateError(null);
     const { data: taskRow, error } = await createTask({
@@ -299,6 +388,9 @@ export default function TasksScreen({ navigation }: any) {
       description: newDescription.trim() || null,
       assignedUserId,
       assignedTeamId,
+      priority: newPriority,
+      startDate: newStartDate,
+      dueDate: newDueDate,
     });
     if (error || !taskRow) {
       setCreating(false);
@@ -346,6 +438,7 @@ export default function TasksScreen({ navigation }: any) {
 
   const openTaskDetail = async (task: Task) => {
     setSelectedTask(task);
+    setEditingTask(false);
     setCommentInput("");
     setComments([]);
     setReplyingTo(null);
@@ -353,6 +446,7 @@ export default function TasksScreen({ navigation }: any) {
     setCommentError(null);
     setShowLinkInput(false);
     setLinkInputValue("");
+    setConfirmDeleteCommentId(null);
     if (!isInvolvedInTask(task, projects.find((p) => p.id === task.projectId) ?? null)) return;
     setLoadingComments(true);
     const { data, error } = await listTaskComments(task.id);
@@ -363,11 +457,67 @@ export default function TasksScreen({ navigation }: any) {
 
   const closeTaskDetail = () => {
     setSelectedTask(null);
+    setEditingTask(false);
     setReplyingTo(null);
     setPendingAttachment(null);
     setCommentError(null);
     setShowLinkInput(false);
     setLinkInputValue("");
+    setConfirmDeleteCommentId(null);
+  };
+
+  const startEditTask = () => {
+    if (!selectedTask) return;
+    setEditTitle(selectedTask.title);
+    setEditDescription(selectedTask.description ?? "");
+    setEditAssigneeMode(selectedTask.assignee.type);
+    setEditSelectedAssigneeUserId(selectedTask.assignee.type === "user" ? selectedTask.assignee.userId : null);
+    setEditSelectedAssigneeTeamId(selectedTask.assignee.type === "team" ? selectedTask.assignee.teamId : null);
+    setEditPriority(selectedTask.priority);
+    setEditStartDate(selectedTask.startDate);
+    setEditDueDate(selectedTask.dueDate);
+    setEditError(null);
+    setEditingTask(true);
+  };
+
+  const cancelEditTask = () => {
+    setEditingTask(false);
+    setEditError(null);
+  };
+
+  const saveEditTask = async () => {
+    if (!selectedTask || !editTitle.trim()) return;
+    const assignedUserId = editAssigneeMode === "user" ? editSelectedAssigneeUserId : null;
+    const assignedTeamId = editAssigneeMode === "team" ? editSelectedAssigneeTeamId : null;
+    if (!assignedUserId && !assignedTeamId) {
+      setEditError("Elige a quién se le asigna la task.");
+      return;
+    }
+    if (editStartDate && editDueDate && editDueDate < editStartDate) {
+      setEditError("La fecha límite no puede ser antes que la de inicio.");
+      return;
+    }
+    setSavingEdit(true);
+    setEditError(null);
+    const { error } = await updateTask(selectedTask.id, {
+      title: editTitle.trim(),
+      description: editDescription.trim() || null,
+      assignedUserId,
+      assignedTeamId,
+      priority: editPriority,
+      startDate: editStartDate,
+      dueDate: editDueDate,
+    });
+    setSavingEdit(false);
+    if (error) {
+      setEditError("No se pudo guardar la task.");
+      return;
+    }
+    const { data: taskRows } = await listTasksForProjects(projects.map((p) => p.id));
+    setTasks(taskRows);
+    const updated = taskRows.find((t) => t.id === selectedTask.id) ?? null;
+    setSelectedTask(updated);
+    setEditingTask(false);
   };
 
   const handlePickDate = (isoDate: string) => {
@@ -430,6 +580,34 @@ export default function TasksScreen({ navigation }: any) {
     setComments(data);
   };
 
+  const handleDeleteComment = async (commentId: string) => {
+    if (!selectedTask) return;
+    setConfirmDeleteCommentId(null);
+    const { error } = await deleteTaskComment(commentId);
+    if (error) {
+      setCommentError("No se pudo borrar el comentario.");
+      return;
+    }
+    const { data } = await listTaskComments(selectedTask.id);
+    setComments(data);
+  };
+
+  // Deep link desde el Calendario: navigation.navigate("Tasks", { projectId, taskId })
+  // preselecciona el proyecto y abre el detalle de esa task en cuanto termina de
+  // cargar. Se limpian los params después de usarlos para que no se repita el
+  // salto si el usuario vuelve a esta pestaña sin params nuevos.
+  useEffect(() => {
+    const routeProjectId = route?.params?.projectId as string | undefined;
+    const routeTaskId = route?.params?.taskId as string | undefined;
+    if (!routeProjectId || loadingData) return;
+    if (projects.some((p) => p.id === routeProjectId)) setSelectedProjectId(routeProjectId);
+    if (routeTaskId) {
+      const task = tasks.find((t) => t.id === routeTaskId);
+      if (task) openTaskDetail(task);
+    }
+    navigation.setParams?.({ projectId: undefined, taskId: undefined });
+  }, [route?.params?.projectId, route?.params?.taskId, loadingData, projects, tasks]);
+
   if (authLoading) {
     return (
       <View style={[styles.container, { backgroundColor: bg, alignItems: "center", justifyContent: "center" }]}>
@@ -482,6 +660,28 @@ export default function TasksScreen({ navigation }: any) {
           <Text style={[styles.taskDescription, { color: textSecondary }]} numberOfLines={2}>
             {task.description}
           </Text>
+        )}
+
+        {(task.priority !== "medium" || task.dueDate) && (
+          <View style={styles.taskMetaRow}>
+            {task.priority !== "medium" && (
+              <View style={[styles.metaChip, { backgroundColor: TASK_PRIORITY_COLORS[task.priority] + "20" }]}>
+                <Flag size={11} color={TASK_PRIORITY_COLORS[task.priority]} />
+                <Text style={{ color: TASK_PRIORITY_COLORS[task.priority], fontWeight: "700", fontSize: 11 }}>
+                  {TASK_PRIORITY_LABELS[task.priority]}
+                </Text>
+              </View>
+            )}
+            {task.dueDate && (() => {
+              const dueColor = isOverdue(task) ? dangerColor : isDueSoon(task) ? DUE_SOON_COLOR : textSecondary;
+              return (
+                <View style={[styles.metaChip, { backgroundColor: dueColor === textSecondary ? inputBg : dueColor + "20" }]}>
+                  <Calendar size={11} color={dueColor} />
+                  <Text style={{ color: dueColor, fontWeight: "700", fontSize: 11 }}>{formatShortDate(task.dueDate)}</Text>
+                </View>
+              );
+            })()}
+          </View>
         )}
 
         <View style={styles.taskFooter}>
@@ -546,7 +746,17 @@ export default function TasksScreen({ navigation }: any) {
           <View style={styles.header}>
             <View>
               <Text style={[styles.subtitle, { color: textSecondary }]}>{organization?.name ?? "Workspace"}</Text>
-              <Text style={[styles.title, { color: textPrimary }]}>Tareas</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <Text style={[styles.title, { color: textPrimary }]}>Tareas</Text>
+                {overdueCount > 0 && (
+                  <View style={[styles.metaChip, { backgroundColor: "#EF444420" }]}>
+                    <Calendar size={11} color={dangerColor} />
+                    <Text style={{ color: dangerColor, fontWeight: "700", fontSize: 11.5 }}>
+                      {overdueCount} vencida{overdueCount === 1 ? "" : "s"}
+                    </Text>
+                  </View>
+                )}
+              </View>
             </View>
 
             {isProjectLeaderOrOwner(selectedProject) && selectedProject && (
@@ -598,6 +808,59 @@ export default function TasksScreen({ navigation }: any) {
                 })}
               </ScrollView>
 
+              <View style={styles.filterRow}>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => setFilterOnlyMine((v) => !v)}
+                  style={[styles.filterChip, { backgroundColor: filterOnlyMine ? primaryColor : inputBg, borderColor: filterOnlyMine ? primaryColor : border }]}
+                >
+                  <User size={12} color={filterOnlyMine ? "#FFF" : textSecondary} />
+                  <Text style={{ color: filterOnlyMine ? "#FFF" : textPrimary, fontWeight: "700", fontSize: 12 }}>Solo mías</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => setFilterOverdueOnly((v) => !v)}
+                  style={[styles.filterChip, { backgroundColor: filterOverdueOnly ? dangerColor : inputBg, borderColor: filterOverdueOnly ? dangerColor : border }]}
+                >
+                  <Calendar size={12} color={filterOverdueOnly ? "#FFF" : textSecondary} />
+                  <Text style={{ color: filterOverdueOnly ? "#FFF" : textPrimary, fontWeight: "700", fontSize: 12 }}>Vencidas</Text>
+                </TouchableOpacity>
+
+                <View style={styles.filterDivider} />
+
+                {TASK_PRIORITY_ORDER.map((priority) => {
+                  const active = filterPriorities.has(priority);
+                  const color = TASK_PRIORITY_COLORS[priority];
+                  return (
+                    <TouchableOpacity
+                      key={priority}
+                      activeOpacity={0.85}
+                      onPress={() => togglePriorityFilter(priority)}
+                      style={[styles.filterChip, { backgroundColor: active ? color : inputBg, borderColor: active ? color : border }]}
+                    >
+                      <Flag size={12} color={active ? "#FFF" : color} />
+                      <Text style={{ color: active ? "#FFF" : textPrimary, fontWeight: "700", fontSize: 12 }}>{TASK_PRIORITY_LABELS[priority]}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+
+                {(filterOnlyMine || filterOverdueOnly || filterPriorities.size > 0) && (
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      setFilterOnlyMine(false);
+                      setFilterOverdueOnly(false);
+                      setFilterPriorities(new Set());
+                    }}
+                    style={styles.filterClear}
+                  >
+                    <X size={12} color={textSecondary} />
+                    <Text style={{ color: textSecondary, fontWeight: "700", fontSize: 12 }}>Limpiar</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
               {errorText && <Text style={[styles.errorText, { color: dangerColor }]}>{errorText}</Text>}
 
               {selectedProject &&
@@ -637,178 +900,240 @@ export default function TasksScreen({ navigation }: any) {
                 </TouchableOpacity>
               </View>
 
-              <View style={[styles.taskFormCard, { backgroundColor: inputBg, borderColor: border }]}>
-                <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 0 }]}>Título</Text>
-                <TextInput
-                  value={newTitle}
-                  onChangeText={setNewTitle}
-                  placeholder="Ej. Maquetar la landing"
-                  placeholderTextColor={textSecondary}
-                  style={[styles.taskFormTitleInput, { color: textPrimary }, isWeb && styles.noOutline]}
-                />
+              <View style={!isMobile && styles.formLayout}>
+                <View style={!isMobile ? styles.formMain : undefined}>
+                  <View style={[styles.taskFormCard, { backgroundColor: inputBg, borderColor: border }]}>
+                    <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 0 }]}>Título</Text>
+                    <TextInput
+                      value={newTitle}
+                      onChangeText={setNewTitle}
+                      placeholder="Ej. Maquetar la landing"
+                      placeholderTextColor={textSecondary}
+                      style={[styles.taskFormTitleInput, { color: textPrimary }, isWeb && styles.noOutline]}
+                    />
 
-                <View style={[styles.divider, { backgroundColor: border, marginVertical: 12 }]} />
+                    <View style={[styles.divider, { backgroundColor: border, marginVertical: 12 }]} />
 
-                <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 0 }]}>Descripción (opcional)</Text>
-                <TextInput
-                  value={newDescription}
-                  onChangeText={setNewDescription}
-                  placeholder="¿Qué hay que hacer exactamente?"
-                  placeholderTextColor={textSecondary}
-                  multiline
-                  style={[styles.taskFormDescInput, { color: textPrimary }, isWeb && styles.noOutline]}
-                />
-              </View>
+                    <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 0 }]}>Descripción (opcional)</Text>
+                    <TextInput
+                      value={newDescription}
+                      onChangeText={setNewDescription}
+                      placeholder="¿Qué hay que hacer exactamente?"
+                      placeholderTextColor={textSecondary}
+                      multiline
+                      style={[styles.taskFormDescInput, { color: textPrimary }, isWeb && styles.noOutline]}
+                    />
+                  </View>
 
-              <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Asignar a</Text>
-              <View style={{ flexDirection: "row", gap: 8 }}>
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={() => setAssigneeMode("user")}
-                  style={[styles.modeChip, { backgroundColor: assigneeMode === "user" ? primaryColor : inputBg, borderColor: assigneeMode === "user" ? primaryColor : border }]}
-                >
-                  <User size={13} color={assigneeMode === "user" ? "#FFF" : textSecondary} />
-                  <Text style={{ color: assigneeMode === "user" ? "#FFF" : textPrimary, fontWeight: "700", fontSize: 12.5 }}>Una persona</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={() => setAssigneeMode("team")}
-                  style={[styles.modeChip, { backgroundColor: assigneeMode === "team" ? primaryColor : inputBg, borderColor: assigneeMode === "team" ? primaryColor : border }]}
-                >
-                  <Users size={13} color={assigneeMode === "team" ? "#FFF" : textSecondary} />
-                  <Text style={{ color: assigneeMode === "team" ? "#FFF" : textPrimary, fontWeight: "700", fontSize: 12.5 }}>Un equipo</Text>
-                </TouchableOpacity>
-              </View>
+                  <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Asignar a</Text>
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => setAssigneeMode("user")}
+                      style={[styles.modeChip, { backgroundColor: assigneeMode === "user" ? primaryColor : inputBg, borderColor: assigneeMode === "user" ? primaryColor : border }]}
+                    >
+                      <User size={13} color={assigneeMode === "user" ? "#FFF" : textSecondary} />
+                      <Text style={{ color: assigneeMode === "user" ? "#FFF" : textPrimary, fontWeight: "700", fontSize: 12.5 }}>Una persona</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => setAssigneeMode("team")}
+                      style={[styles.modeChip, { backgroundColor: assigneeMode === "team" ? primaryColor : inputBg, borderColor: assigneeMode === "team" ? primaryColor : border }]}
+                    >
+                      <Users size={13} color={assigneeMode === "team" ? "#FFF" : textSecondary} />
+                      <Text style={{ color: assigneeMode === "team" ? "#FFF" : textPrimary, fontWeight: "700", fontSize: 12.5 }}>Un equipo</Text>
+                    </TouchableOpacity>
+                  </View>
 
-              {assigneeMode === "user" ? (
-                assignableUsers.length === 0 ? (
-                  <Text style={{ color: textSecondary, fontSize: 13, marginTop: 12 }}>
-                    Este proyecto todavía no tiene gente asignada.
-                  </Text>
-                ) : (
-                  <View style={{ flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
-                    {assignableUsers.map((person) => {
-                      const selected = selectedAssigneeUserId === person.userId;
-                      const isLeader = selectedProject?.leaderId === person.userId;
+                  {assigneeMode === "user" ? (
+                    assignableUsers.length === 0 ? (
+                      <Text style={{ color: textSecondary, fontSize: 13, marginTop: 12 }}>
+                        Este proyecto todavía no tiene gente asignada.
+                      </Text>
+                    ) : (
+                      <View style={{ flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
+                        {assignableUsers.map((person) => {
+                          const selected = selectedAssigneeUserId === person.userId;
+                          const isLeader = selectedProject?.leaderId === person.userId;
+                          return (
+                            <TouchableOpacity
+                              key={person.userId}
+                              activeOpacity={0.85}
+                              onPress={() => setSelectedAssigneeUserId(person.userId)}
+                              style={[styles.listItemRow, { backgroundColor: inputBg, borderColor: selected ? primaryColor : border }, !isMobile && styles.listItemRowHalf]}
+                            >
+                              <View style={[styles.avatarMini, { backgroundColor: person.avatarColor }]}>
+                                <Text style={styles.avatarMiniText}>{initials(person.name)}</Text>
+                              </View>
+                              <Text style={{ color: textPrimary, fontSize: 13, fontWeight: "600", flex: 1 }} numberOfLines={1}>
+                                {person.name}{isLeader ? " · Líder" : ""}
+                              </Text>
+                              {selected && <Check size={15} color={primaryColor} />}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    )
+                  ) : (selectedProject?.teams.length ?? 0) === 0 ? (
+                    <Text style={{ color: textSecondary, fontSize: 13, marginTop: 12 }}>
+                      Este proyecto todavía no tiene equipos asignados.
+                    </Text>
+                  ) : (
+                    <View style={{ flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
+                      {selectedProject?.teams.map((team) => {
+                        const selected = selectedAssigneeTeamId === team.id;
+                        return (
+                          <TouchableOpacity
+                            key={team.id}
+                            activeOpacity={0.85}
+                            onPress={() => setSelectedAssigneeTeamId(team.id)}
+                            style={[styles.listItemRow, { backgroundColor: inputBg, borderColor: selected ? primaryColor : border }, !isMobile && styles.listItemRowHalf]}
+                          >
+                            <View style={[styles.avatarMini, { backgroundColor: team.color }]}>
+                              <Users size={13} color="#FFF" />
+                            </View>
+                            <Text style={{ color: textPrimary, fontSize: 13, fontWeight: "600", flex: 1 }} numberOfLines={1}>
+                              {team.name}
+                            </Text>
+                            {selected && <Check size={15} color={primaryColor} />}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+
+                <View style={!isMobile ? styles.formSide : undefined}>
+                  <Text style={[styles.modalLabel, { color: textSecondary, marginTop: isMobile ? 20 : 0 }]}>Prioridad</Text>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                    {TASK_PRIORITY_ORDER.map((priority) => {
+                      const selected = newPriority === priority;
+                      const color = TASK_PRIORITY_COLORS[priority];
                       return (
                         <TouchableOpacity
-                          key={person.userId}
+                          key={priority}
                           activeOpacity={0.85}
-                          onPress={() => setSelectedAssigneeUserId(person.userId)}
-                          style={[styles.listItemRow, { backgroundColor: inputBg, borderColor: selected ? primaryColor : border }, !isMobile && styles.listItemRowHalf]}
+                          onPress={() => setNewPriority(priority)}
+                          style={[styles.statusPill, { backgroundColor: selected ? color : inputBg, borderColor: selected ? color : border, flexDirection: "row", alignItems: "center", gap: 6 }]}
                         >
-                          <View style={[styles.avatarMini, { backgroundColor: person.avatarColor }]}>
-                            <Text style={styles.avatarMiniText}>{initials(person.name)}</Text>
-                          </View>
-                          <Text style={{ color: textPrimary, fontSize: 13, fontWeight: "600", flex: 1 }} numberOfLines={1}>
-                            {person.name}{isLeader ? " · Líder" : ""}
-                          </Text>
-                          {selected && <Check size={15} color={primaryColor} />}
+                          <Flag size={12} color={selected ? "#FFF" : color} />
+                          <Text style={{ color: selected ? "#FFF" : textPrimary, fontWeight: "700", fontSize: 12 }}>{TASK_PRIORITY_LABELS[priority]}</Text>
                         </TouchableOpacity>
                       );
                     })}
                   </View>
-                )
-              ) : (selectedProject?.teams.length ?? 0) === 0 ? (
-                <Text style={{ color: textSecondary, fontSize: 13, marginTop: 12 }}>
-                  Este proyecto todavía no tiene equipos asignados.
-                </Text>
-              ) : (
-                <View style={{ flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
-                  {selectedProject?.teams.map((team) => {
-                    const selected = selectedAssigneeTeamId === team.id;
-                    return (
-                      <TouchableOpacity
-                        key={team.id}
-                        activeOpacity={0.85}
-                        onPress={() => setSelectedAssigneeTeamId(team.id)}
-                        style={[styles.listItemRow, { backgroundColor: inputBg, borderColor: selected ? primaryColor : border }, !isMobile && styles.listItemRowHalf]}
-                      >
-                        <View style={[styles.avatarMini, { backgroundColor: team.color }]}>
-                          <Users size={13} color="#FFF" />
-                        </View>
-                        <Text style={{ color: textPrimary, fontSize: 13, fontWeight: "600", flex: 1 }} numberOfLines={1}>
-                          {team.name}
-                        </Text>
-                        {selected && <Check size={15} color={primaryColor} />}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
 
-              <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Adjuntos (opcional)</Text>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
-                <ChatAttachmentButtons color={primaryColor} disabled={uploadingCreateAttachment} onAttachmentReady={handleCreateAttachmentReady} onError={setCreateAttachError} />
-                <TouchableOpacity hitSlop={8} onPress={() => setShowCreateDatePicker(true)} style={styles.composerIconBtn}>
-                  <Calendar size={18} color={primaryColor} />
-                </TouchableOpacity>
-                <TouchableOpacity hitSlop={8} onPress={() => setShowCreateLinkInput(true)} style={styles.composerIconBtn}>
-                  <Link2 size={18} color={primaryColor} />
-                </TouchableOpacity>
-                {uploadingCreateAttachment && <Text style={{ color: textSecondary, fontSize: 12 }}>Subiendo…</Text>}
-              </View>
-
-              {showCreateLinkInput && (
-                <View style={[styles.inlineBar, { backgroundColor: inputBg, borderColor: border, marginTop: 10 }]}>
-                  <Link2 size={16} color={primaryColor} />
-                  <TextInput
-                    value={createLinkInputValue}
-                    onChangeText={setCreateLinkInputValue}
-                    onSubmitEditing={confirmCreateLinkInput}
-                    onBlur={confirmCreateLinkInput}
-                    autoFocus
-                    placeholder="Pega un enlace…"
-                    placeholderTextColor={textSecondary}
-                    style={[{ flex: 1, fontSize: 13, color: textPrimary }, isWeb && styles.noOutline]}
-                  />
-                  <TouchableOpacity
-                    hitSlop={8}
-                    onPress={() => {
-                      setShowCreateLinkInput(false);
-                      setCreateLinkInputValue("");
-                    }}
-                  >
-                    <X size={14} color={textSecondary} />
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {createAttachError && <Text style={[styles.errorText, { color: dangerColor }]}>{createAttachError}</Text>}
-
-              {newAttachments.length > 0 && (
-                <View style={{ flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
-                  {newAttachments.map((att, idx) => (
-                    <View key={idx} style={[styles.listItemRow, { backgroundColor: inputBg, borderColor: border }, !isMobile && styles.listItemRowHalf]}>
-                      {att.type === "image" ? (
-                        <Image source={{ uri: att.url }} style={styles.attachmentPreviewThumb} />
-                      ) : att.type === "link" ? (
-                        <Link2 size={16} color={primaryColor} />
-                      ) : att.type === "date" ? (
-                        <Calendar size={16} color={primaryColor} />
-                      ) : (
-                        <FileText size={16} color={primaryColor} />
-                      )}
-                      <Text
-                        style={{ color: textPrimary, fontSize: 12.5, fontWeight: "600", flex: 1, textTransform: att.type === "date" ? "capitalize" : "none" }}
-                        numberOfLines={1}
-                      >
-                        {attachmentLabel(att)}
+                  <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Fechas (opcional)</Text>
+                  <View style={{ gap: 10 }}>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => setShowNewStartDatePicker(true)}
+                      style={[styles.listItemRow, { backgroundColor: inputBg, borderColor: border }]}
+                    >
+                      <Calendar size={15} color={primaryColor} />
+                      <Text style={{ color: newStartDate ? textPrimary : textSecondary, fontSize: 13, fontWeight: "600", flex: 1 }}>
+                        {newStartDate ? `Inicio: ${formatShortDate(newStartDate)}` : "Elegir fecha de inicio"}
                       </Text>
-                      <TouchableOpacity hitSlop={8} onPress={() => removeNewAttachment(idx)}>
+                      {newStartDate && (
+                        <TouchableOpacity hitSlop={8} onPress={() => setNewStartDate(null)}>
+                          <X size={14} color={textSecondary} />
+                        </TouchableOpacity>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => setShowNewDueDatePicker(true)}
+                      style={[styles.listItemRow, { backgroundColor: inputBg, borderColor: border }]}
+                    >
+                      <Calendar size={15} color={primaryColor} />
+                      <Text style={{ color: newDueDate ? textPrimary : textSecondary, fontSize: 13, fontWeight: "600", flex: 1 }}>
+                        {newDueDate ? `Límite: ${formatShortDate(newDueDate)}` : "Elegir fecha límite"}
+                      </Text>
+                      {newDueDate && (
+                        <TouchableOpacity hitSlop={8} onPress={() => setNewDueDate(null)}>
+                          <X size={14} color={textSecondary} />
+                        </TouchableOpacity>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                  {newStartDate && newDueDate && newDueDate < newStartDate && (
+                    <Text style={[styles.errorText, { color: dangerColor, marginTop: 8 }]}>La fecha límite no puede ser antes que la de inicio.</Text>
+                  )}
+
+                  <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Adjuntos (opcional)</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+                    <ChatAttachmentButtons color={primaryColor} disabled={uploadingCreateAttachment} onAttachmentReady={handleCreateAttachmentReady} onError={setCreateAttachError} />
+                    <TouchableOpacity hitSlop={8} onPress={() => setShowCreateDatePicker(true)} style={styles.composerIconBtn}>
+                      <Calendar size={18} color={primaryColor} />
+                    </TouchableOpacity>
+                    <TouchableOpacity hitSlop={8} onPress={() => setShowCreateLinkInput(true)} style={styles.composerIconBtn}>
+                      <Link2 size={18} color={primaryColor} />
+                    </TouchableOpacity>
+                    {uploadingCreateAttachment && <Text style={{ color: textSecondary, fontSize: 12 }}>Subiendo…</Text>}
+                  </View>
+
+                  {showCreateLinkInput && (
+                    <View style={[styles.inlineBar, { backgroundColor: inputBg, borderColor: border, marginTop: 10 }]}>
+                      <Link2 size={16} color={primaryColor} />
+                      <TextInput
+                        value={createLinkInputValue}
+                        onChangeText={setCreateLinkInputValue}
+                        onSubmitEditing={confirmCreateLinkInput}
+                        onBlur={confirmCreateLinkInput}
+                        autoFocus
+                        placeholder="Pega un enlace…"
+                        placeholderTextColor={textSecondary}
+                        style={[{ flex: 1, fontSize: 13, color: textPrimary }, isWeb && styles.noOutline]}
+                      />
+                      <TouchableOpacity
+                        hitSlop={8}
+                        onPress={() => {
+                          setShowCreateLinkInput(false);
+                          setCreateLinkInputValue("");
+                        }}
+                      >
                         <X size={14} color={textSecondary} />
                       </TouchableOpacity>
                     </View>
-                  ))}
-                </View>
-              )}
+                  )}
 
-              {createError && <Text style={[styles.errorText, { color: dangerColor }]}>{createError}</Text>}
+                  {createAttachError && <Text style={[styles.errorText, { color: dangerColor }]}>{createAttachError}</Text>}
+
+                  {newAttachments.length > 0 && (
+                    <View style={{ gap: 10, marginTop: 12 }}>
+                      {newAttachments.map((att, idx) => (
+                        <View key={idx} style={[styles.listItemRow, { backgroundColor: inputBg, borderColor: border }]}>
+                          {att.type === "image" ? (
+                            <Image source={{ uri: att.url }} style={styles.attachmentPreviewThumb} />
+                          ) : att.type === "link" ? (
+                            <Link2 size={16} color={primaryColor} />
+                          ) : att.type === "date" ? (
+                            <Calendar size={16} color={primaryColor} />
+                          ) : (
+                            <FileText size={16} color={primaryColor} />
+                          )}
+                          <Text
+                            style={{ color: textPrimary, fontSize: 12.5, fontWeight: "600", flex: 1, textTransform: att.type === "date" ? "capitalize" : "none" }}
+                            numberOfLines={1}
+                          >
+                            {attachmentLabel(att)}
+                          </Text>
+                          <TouchableOpacity hitSlop={8} onPress={() => removeNewAttachment(idx)}>
+                            <X size={14} color={textSecondary} />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              {createError && <Text style={[styles.errorText, { color: dangerColor, marginTop: 16 }]}>{createError}</Text>}
 
               <TouchableOpacity
                 activeOpacity={0.85}
                 disabled={!newTitle.trim() || creating}
-                style={[styles.createBtn, { backgroundColor: primaryColor, opacity: !newTitle.trim() || creating ? 0.5 : 1 }]}
+                style={[styles.createBtn, { backgroundColor: primaryColor, opacity: !newTitle.trim() || creating ? 0.5 : 1, marginTop: 20 }]}
                 onPress={handleCreate}
               >
                 <CircleCheckBig size={16} color="#FFF" />
@@ -825,78 +1150,287 @@ export default function TasksScreen({ navigation }: any) {
           <ScrollView contentContainerStyle={styles.overlayScroll} showsVerticalScrollIndicator={false}>
             {selectedTask && (
               <View style={[styles.modalCard, { backgroundColor: isDark ? "#0F172A" : "#FFFFFF", borderColor: border }, !isMobile && styles.modalCardWide]}>
-                <View style={[styles.modalHeader, { justifyContent: "flex-end", marginBottom: 12 }]}>
+                <View style={[styles.modalHeader, { justifyContent: "flex-end", marginBottom: 12, gap: 16 }]}>
+                  {selectedTaskCanEdit && !editingTask && (
+                    <TouchableOpacity onPress={startEditTask} hitSlop={8}>
+                      <Pencil size={18} color={textSecondary} />
+                    </TouchableOpacity>
+                  )}
                   <TouchableOpacity onPress={closeTaskDetail} hitSlop={8}>
                     <X size={20} color={textSecondary} />
                   </TouchableOpacity>
                 </View>
 
-                <View style={[styles.taskInfoCard, { backgroundColor: inputBg, borderColor: border }]}>
-                  <Text style={[styles.taskInfoTitle, { color: textPrimary }]}>{selectedTask.title}</Text>
-                  <Text style={[styles.taskInfoDescription, { color: textSecondary }]}>
-                    {selectedTask.description || "Sin descripción."}
-                  </Text>
-                </View>
+                {editingTask ? (
+                  <View style={{ marginBottom: 16 }}>
+                    <View style={!isMobile && styles.formLayout}>
+                      <View style={!isMobile ? styles.formMain : undefined}>
+                        <View style={[styles.taskFormCard, { backgroundColor: inputBg, borderColor: border }]}>
+                          <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 0 }]}>Título</Text>
+                          <TextInput
+                            value={editTitle}
+                            onChangeText={setEditTitle}
+                            placeholderTextColor={textSecondary}
+                            style={[styles.taskFormTitleInput, { color: textPrimary }, isWeb && styles.noOutline]}
+                          />
 
-                <View style={[styles.listItemRow, { backgroundColor: inputBg, borderColor: border, marginBottom: 16 }]}>
-                  {selectedTask.assignee.type === "user" ? (
-                    <>
-                      <View style={[styles.avatarMini, { backgroundColor: selectedTask.assignee.avatarColor }]}>
-                        <Text style={styles.avatarMiniText}>{initials(selectedTask.assignee.name)}</Text>
-                      </View>
-                      <Text style={{ color: textPrimary, fontSize: 13, fontWeight: "600" }}>
-                        Asignada a {selectedTask.assignee.name}
-                      </Text>
-                      {selectedTaskProject?.leaderId === selectedTask.assignee.userId && <Crown size={13} color={primaryColor} />}
-                    </>
-                  ) : (
-                    <>
-                      <View style={[styles.avatarMini, { backgroundColor: selectedTask.assignee.color }]}>
-                        <Users size={13} color="#FFF" />
-                      </View>
-                      <Text style={{ color: textPrimary, fontSize: 13, fontWeight: "600" }}>
-                        Asignada al equipo {selectedTask.assignee.name}
-                      </Text>
-                    </>
-                  )}
-                </View>
+                          <View style={[styles.divider, { backgroundColor: border, marginVertical: 12 }]} />
 
-                <Text style={[styles.modalLabel, { color: textSecondary }]}>Status</Text>
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
-                  {TASK_STATUS_ORDER.map((status) => {
-                    const selected = selectedTask.status === status;
-                    return (
+                          <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 0 }]}>Descripción (opcional)</Text>
+                          <TextInput
+                            value={editDescription}
+                            onChangeText={setEditDescription}
+                            placeholder="¿Qué hay que hacer exactamente?"
+                            placeholderTextColor={textSecondary}
+                            multiline
+                            style={[styles.taskFormDescInput, { color: textPrimary }, isWeb && styles.noOutline]}
+                          />
+                        </View>
+
+                        <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Asignar a</Text>
+                        <View style={{ flexDirection: "row", gap: 8 }}>
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() => setEditAssigneeMode("user")}
+                            style={[styles.modeChip, { backgroundColor: editAssigneeMode === "user" ? primaryColor : cardBg, borderColor: editAssigneeMode === "user" ? primaryColor : border }]}
+                          >
+                            <User size={13} color={editAssigneeMode === "user" ? "#FFF" : textSecondary} />
+                            <Text style={{ color: editAssigneeMode === "user" ? "#FFF" : textPrimary, fontWeight: "700", fontSize: 12.5 }}>Una persona</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() => setEditAssigneeMode("team")}
+                            style={[styles.modeChip, { backgroundColor: editAssigneeMode === "team" ? primaryColor : cardBg, borderColor: editAssigneeMode === "team" ? primaryColor : border }]}
+                          >
+                            <Users size={13} color={editAssigneeMode === "team" ? "#FFF" : textSecondary} />
+                            <Text style={{ color: editAssigneeMode === "team" ? "#FFF" : textPrimary, fontWeight: "700", fontSize: 12.5 }}>Un equipo</Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        {editAssigneeMode === "user" ? (
+                          <View style={{ flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
+                            {assignableUsers.map((person) => {
+                              const selected = editSelectedAssigneeUserId === person.userId;
+                              const isLeader = selectedTaskProject?.leaderId === person.userId;
+                              return (
+                                <TouchableOpacity
+                                  key={person.userId}
+                                  activeOpacity={0.85}
+                                  onPress={() => setEditSelectedAssigneeUserId(person.userId)}
+                                  style={[styles.listItemRow, { backgroundColor: cardBg, borderColor: selected ? primaryColor : border }, !isMobile && styles.listItemRowHalf]}
+                                >
+                                  <View style={[styles.avatarMini, { backgroundColor: person.avatarColor }]}>
+                                    <Text style={styles.avatarMiniText}>{initials(person.name)}</Text>
+                                  </View>
+                                  <Text style={{ color: textPrimary, fontSize: 13, fontWeight: "600", flex: 1 }} numberOfLines={1}>
+                                    {person.name}{isLeader ? " · Líder" : ""}
+                                  </Text>
+                                  {selected && <Check size={15} color={primaryColor} />}
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        ) : (
+                          <View style={{ flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
+                            {selectedTaskProject?.teams.map((team) => {
+                              const selected = editSelectedAssigneeTeamId === team.id;
+                              return (
+                                <TouchableOpacity
+                                  key={team.id}
+                                  activeOpacity={0.85}
+                                  onPress={() => setEditSelectedAssigneeTeamId(team.id)}
+                                  style={[styles.listItemRow, { backgroundColor: cardBg, borderColor: selected ? primaryColor : border }, !isMobile && styles.listItemRowHalf]}
+                                >
+                                  <View style={[styles.avatarMini, { backgroundColor: team.color }]}>
+                                    <Users size={13} color="#FFF" />
+                                  </View>
+                                  <Text style={{ color: textPrimary, fontSize: 13, fontWeight: "600", flex: 1 }} numberOfLines={1}>
+                                    {team.name}
+                                  </Text>
+                                  {selected && <Check size={15} color={primaryColor} />}
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        )}
+                      </View>
+
+                      <View style={!isMobile ? styles.formSide : undefined}>
+                        <Text style={[styles.modalLabel, { color: textSecondary, marginTop: isMobile ? 20 : 0 }]}>Prioridad</Text>
+                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                          {TASK_PRIORITY_ORDER.map((priority) => {
+                            const selected = editPriority === priority;
+                            const color = TASK_PRIORITY_COLORS[priority];
+                            return (
+                              <TouchableOpacity
+                                key={priority}
+                                activeOpacity={0.85}
+                                onPress={() => setEditPriority(priority)}
+                                style={[styles.statusPill, { backgroundColor: selected ? color : cardBg, borderColor: selected ? color : border, flexDirection: "row", alignItems: "center", gap: 6 }]}
+                              >
+                                <Flag size={12} color={selected ? "#FFF" : color} />
+                                <Text style={{ color: selected ? "#FFF" : textPrimary, fontWeight: "700", fontSize: 12 }}>{TASK_PRIORITY_LABELS[priority]}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+
+                        <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Fechas (opcional)</Text>
+                        <View style={{ gap: 10 }}>
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() => setShowEditStartDatePicker(true)}
+                            style={[styles.listItemRow, { backgroundColor: cardBg, borderColor: border }]}
+                          >
+                            <Calendar size={15} color={primaryColor} />
+                            <Text style={{ color: editStartDate ? textPrimary : textSecondary, fontSize: 13, fontWeight: "600", flex: 1 }}>
+                              {editStartDate ? `Inicio: ${formatShortDate(editStartDate)}` : "Elegir fecha de inicio"}
+                            </Text>
+                            {editStartDate && (
+                              <TouchableOpacity hitSlop={8} onPress={() => setEditStartDate(null)}>
+                                <X size={14} color={textSecondary} />
+                              </TouchableOpacity>
+                            )}
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={() => setShowEditDueDatePicker(true)}
+                            style={[styles.listItemRow, { backgroundColor: cardBg, borderColor: border }]}
+                          >
+                            <Calendar size={15} color={primaryColor} />
+                            <Text style={{ color: editDueDate ? textPrimary : textSecondary, fontSize: 13, fontWeight: "600", flex: 1 }}>
+                              {editDueDate ? `Límite: ${formatShortDate(editDueDate)}` : "Elegir fecha límite"}
+                            </Text>
+                            {editDueDate && (
+                              <TouchableOpacity hitSlop={8} onPress={() => setEditDueDate(null)}>
+                                <X size={14} color={textSecondary} />
+                              </TouchableOpacity>
+                            )}
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </View>
+
+                    {editError && <Text style={[styles.errorText, { color: dangerColor, marginTop: 16 }]}>{editError}</Text>}
+
+                    <View style={{ flexDirection: "row", gap: 10, marginTop: 18 }}>
                       <TouchableOpacity
-                        key={status}
-                        activeOpacity={canChangeStatus(selectedTask) ? 0.85 : 1}
-                        disabled={!canChangeStatus(selectedTask)}
-                        onPress={() => handleSetStatus(selectedTask, status)}
-                        style={[
-                          styles.statusPill,
-                          {
-                            backgroundColor: selected ? STATUS_COLORS[status] : inputBg,
-                            borderColor: selected ? STATUS_COLORS[status] : border,
-                          },
-                        ]}
+                        activeOpacity={0.85}
+                        disabled={savingEdit}
+                        style={[styles.confirmBtn, { backgroundColor: primaryColor, flex: 1, justifyContent: "center", opacity: savingEdit ? 0.6 : 1 }]}
+                        onPress={saveEditTask}
                       >
-                        <Text style={{ color: selected ? "#FFF" : textPrimary, fontWeight: "700", fontSize: 12 }}>
-                          {TASK_STATUS_LABELS[status]}
-                        </Text>
+                        <Check size={14} color="#FFF" />
+                        <Text style={styles.confirmBtnText}>{savingEdit ? "Guardando…" : "Guardar cambios"}</Text>
                       </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                {!canChangeStatus(selectedTask) && (
-                  <Text style={{ color: textSecondary, fontSize: 11.5, marginTop: -14, marginBottom: 16 }}>
-                    Solo el líder del proyecto, el owner, o quien tiene asignada esta task pueden cambiar el status.
-                  </Text>
-                )}
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        style={[styles.confirmBtn, { backgroundColor: cardBg, borderWidth: 1, borderColor: border, flex: 1, justifyContent: "center" }]}
+                        onPress={cancelEditTask}
+                      >
+                        <X size={14} color={textPrimary} />
+                        <Text style={[styles.confirmBtnText, { color: textPrimary }]}>Cancelar</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={[!isMobile && styles.formLayout, { marginBottom: 20 }]}>
+                    <View style={!isMobile ? styles.formMain : undefined}>
+                      <View style={[styles.taskInfoCard, { backgroundColor: inputBg, borderColor: border, marginBottom: isMobile ? 16 : 0 }]}>
+                        <Text style={[styles.taskInfoTitle, { color: textPrimary }]}>{selectedTask.title}</Text>
+                        <Text style={[styles.taskInfoDescription, { color: textSecondary }]}>
+                          {selectedTask.description || "Sin descripción."}
+                        </Text>
+                      </View>
+                    </View>
 
-                {selectedTaskCanEdit && (
-                  <TouchableOpacity activeOpacity={0.7} onPress={() => setConfirmDeleteId(selectedTask.id)} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 20 }}>
-                    <Trash2 size={13} color={dangerColor} />
-                    <Text style={{ color: dangerColor, fontSize: 12.5, fontWeight: "700" }}>Borrar task</Text>
-                  </TouchableOpacity>
+                    <View style={!isMobile ? styles.formSide : undefined}>
+                      <View style={[styles.listItemRow, { backgroundColor: inputBg, borderColor: border, marginTop: isMobile ? 0 : 0 }]}>
+                        {selectedTask.assignee.type === "user" ? (
+                          <>
+                            <View style={[styles.avatarMini, { backgroundColor: selectedTask.assignee.avatarColor }]}>
+                              <Text style={styles.avatarMiniText}>{initials(selectedTask.assignee.name)}</Text>
+                            </View>
+                            <Text style={{ color: textPrimary, fontSize: 13, fontWeight: "600", flex: 1 }} numberOfLines={1}>
+                              Asignada a {selectedTask.assignee.name}
+                            </Text>
+                            {selectedTaskProject?.leaderId === selectedTask.assignee.userId && <Crown size={13} color={primaryColor} />}
+                          </>
+                        ) : (
+                          <>
+                            <View style={[styles.avatarMini, { backgroundColor: selectedTask.assignee.color }]}>
+                              <Users size={13} color="#FFF" />
+                            </View>
+                            <Text style={{ color: textPrimary, fontSize: 13, fontWeight: "600", flex: 1 }} numberOfLines={1}>
+                              Asignada al equipo {selectedTask.assignee.name}
+                            </Text>
+                          </>
+                        )}
+                      </View>
+
+                      <View style={[styles.taskMetaRow, { marginTop: 12 }]}>
+                        <View style={[styles.metaChip, { backgroundColor: TASK_PRIORITY_COLORS[selectedTask.priority] + "20" }]}>
+                          <Flag size={11} color={TASK_PRIORITY_COLORS[selectedTask.priority]} />
+                          <Text style={{ color: TASK_PRIORITY_COLORS[selectedTask.priority], fontWeight: "700", fontSize: 11 }}>
+                            Prioridad {TASK_PRIORITY_LABELS[selectedTask.priority].toLowerCase()}
+                          </Text>
+                        </View>
+                        {selectedTask.startDate && (
+                          <View style={[styles.metaChip, { backgroundColor: cardBg }]}>
+                            <Calendar size={11} color={textSecondary} />
+                            <Text style={{ color: textSecondary, fontWeight: "700", fontSize: 11 }}>Inicio {formatShortDate(selectedTask.startDate)}</Text>
+                          </View>
+                        )}
+                        {selectedTask.dueDate && (() => {
+                          const dueColor = isOverdue(selectedTask) ? dangerColor : isDueSoon(selectedTask) ? DUE_SOON_COLOR : textSecondary;
+                          return (
+                            <View style={[styles.metaChip, { backgroundColor: dueColor === textSecondary ? cardBg : dueColor + "20" }]}>
+                              <Calendar size={11} color={dueColor} />
+                              <Text style={{ color: dueColor, fontWeight: "700", fontSize: 11 }}>Límite {formatShortDate(selectedTask.dueDate)}</Text>
+                            </View>
+                          );
+                        })()}
+                      </View>
+
+                      <Text style={[styles.modalLabel, { color: textSecondary }]}>Status</Text>
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                        {TASK_STATUS_ORDER.map((status) => {
+                          const selected = selectedTask.status === status;
+                          return (
+                            <TouchableOpacity
+                              key={status}
+                              activeOpacity={canChangeStatus(selectedTask) ? 0.85 : 1}
+                              disabled={!canChangeStatus(selectedTask)}
+                              onPress={() => handleSetStatus(selectedTask, status)}
+                              style={[
+                                styles.statusPill,
+                                {
+                                  backgroundColor: selected ? STATUS_COLORS[status] : inputBg,
+                                  borderColor: selected ? STATUS_COLORS[status] : border,
+                                },
+                              ]}
+                            >
+                              <Text style={{ color: selected ? "#FFF" : textPrimary, fontWeight: "700", fontSize: 12 }}>
+                                {TASK_STATUS_LABELS[status]}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                      {!canChangeStatus(selectedTask) && (
+                        <Text style={{ color: textSecondary, fontSize: 11.5, marginTop: 8 }}>
+                          Solo el líder del proyecto, el owner, o quien tiene asignada esta task pueden cambiar el status.
+                        </Text>
+                      )}
+
+                      {selectedTaskCanEdit && (
+                        <TouchableOpacity activeOpacity={0.7} onPress={() => setConfirmDeleteId(selectedTask.id)} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 16 }}>
+                          <Trash2 size={13} color={dangerColor} />
+                          <Text style={{ color: dangerColor, fontSize: 12.5, fontWeight: "700" }}>Borrar task</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
                 )}
 
                 <View style={[styles.divider, { backgroundColor: border }]} />
@@ -986,10 +1520,30 @@ export default function TasksScreen({ navigation }: any) {
                                     </TouchableOpacity>
                                   ))}
 
-                                <TouchableOpacity activeOpacity={0.7} onPress={() => setReplyingTo(c)} style={styles.replyLink}>
-                                  <Reply size={11} color={textSecondary} />
-                                  <Text style={{ color: textSecondary, fontSize: 11, fontWeight: "700" }}>Responder</Text>
-                                </TouchableOpacity>
+                                {confirmDeleteCommentId === c.id ? (
+                                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6 }}>
+                                    <Text style={{ color: textSecondary, fontSize: 11 }}>¿Borrar comentario?</Text>
+                                    <TouchableOpacity activeOpacity={0.7} onPress={() => handleDeleteComment(c.id)}>
+                                      <Text style={{ color: dangerColor, fontSize: 11, fontWeight: "700" }}>Sí, borrar</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity activeOpacity={0.7} onPress={() => setConfirmDeleteCommentId(null)}>
+                                      <Text style={{ color: textSecondary, fontSize: 11, fontWeight: "700" }}>Cancelar</Text>
+                                    </TouchableOpacity>
+                                  </View>
+                                ) : (
+                                  <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+                                    <TouchableOpacity activeOpacity={0.7} onPress={() => setReplyingTo(c)} style={styles.replyLink}>
+                                      <Reply size={11} color={textSecondary} />
+                                      <Text style={{ color: textSecondary, fontSize: 11, fontWeight: "700" }}>Responder</Text>
+                                    </TouchableOpacity>
+                                    {c.userId === user?.id && (
+                                      <TouchableOpacity activeOpacity={0.7} onPress={() => setConfirmDeleteCommentId(c.id)} style={styles.replyLink}>
+                                        <Trash2 size={11} color={textSecondary} />
+                                        <Text style={{ color: textSecondary, fontSize: 11, fontWeight: "700" }}>Borrar</Text>
+                                      </TouchableOpacity>
+                                    )}
+                                  </View>
+                                )}
                               </View>
                             </View>
                           ))
@@ -1124,6 +1678,50 @@ export default function TasksScreen({ navigation }: any) {
         onClose={() => setShowCreateDatePicker(false)}
         onConfirm={handleCreatePickDate}
       />
+
+      <DatePickerModal
+        visible={showNewStartDatePicker}
+        initialDate={newStartDate}
+        isDark={isDark}
+        onClose={() => setShowNewStartDatePicker(false)}
+        onConfirm={(isoDate) => {
+          setNewStartDate(isoDate);
+          setShowNewStartDatePicker(false);
+        }}
+      />
+
+      <DatePickerModal
+        visible={showNewDueDatePicker}
+        initialDate={newDueDate}
+        isDark={isDark}
+        onClose={() => setShowNewDueDatePicker(false)}
+        onConfirm={(isoDate) => {
+          setNewDueDate(isoDate);
+          setShowNewDueDatePicker(false);
+        }}
+      />
+
+      <DatePickerModal
+        visible={showEditStartDatePicker}
+        initialDate={editStartDate}
+        isDark={isDark}
+        onClose={() => setShowEditStartDatePicker(false)}
+        onConfirm={(isoDate) => {
+          setEditStartDate(isoDate);
+          setShowEditStartDatePicker(false);
+        }}
+      />
+
+      <DatePickerModal
+        visible={showEditDueDatePicker}
+        initialDate={editDueDate}
+        isDark={isDark}
+        onClose={() => setShowEditDueDatePicker(false)}
+        onConfirm={(isoDate) => {
+          setEditDueDate(isoDate);
+          setShowEditDueDatePicker(false);
+        }}
+      />
     </View>
   );
 }
@@ -1138,6 +1736,10 @@ const styles = StyleSheet.create({
   newBtnText: { color: "#FFF", fontWeight: "700", fontSize: 13 },
 
   projectScroll: { marginTop: 20 },
+  filterRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 14 },
+  filterChip: { flexDirection: "row", alignItems: "center", gap: 5, borderWidth: 1, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 7 },
+  filterDivider: { width: 1, height: 16, backgroundColor: "rgba(148, 163, 184, 0.4)" },
+  filterClear: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 7 },
   projectChip: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9, marginRight: 10, maxWidth: 200 },
 
   errorText: { marginTop: 16, fontSize: 13, fontWeight: "600" },
@@ -1156,6 +1758,8 @@ const styles = StyleSheet.create({
   taskDescription: { fontSize: 12.5, lineHeight: 18, marginTop: 6 },
   taskFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 14 },
   assigneeRow: { flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 1 },
+  taskMetaRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 },
+  metaChip: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
 
   avatarMini: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center" },
   avatarMiniText: { color: "#FFF", fontSize: 10.5, fontWeight: "800" },
@@ -1174,13 +1778,21 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(2, 6, 23, 0.6)", alignItems: "center", justifyContent: "center", padding: 20 },
   overlayScroll: { flexGrow: 1, alignItems: "center", justifyContent: "center", width: "100%" },
   modalCard: { width: "100%", maxWidth: 460, borderRadius: 24, borderWidth: 1, padding: 24 },
-  modalCardWide: { maxWidth: 860, padding: 36 },
+  modalCardWide: { maxWidth: 1080, padding: 40 },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20, gap: 10 },
   modalTitle: { fontSize: 18, fontWeight: "800" },
   modalLabel: { fontSize: 12, fontWeight: "700", marginBottom: 8, marginTop: 14 },
   modalInput: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14 },
   modalTextarea: { minHeight: 80, textAlignVertical: "top" },
   noOutline: { outlineStyle: "none" } as any,
+
+  // Layout de dos columnas para los modales de task en desktop: contenido
+  // principal (título/descripción/asignación o comentarios) a la izquierda,
+  // panel angosto de metadata (prioridad/fechas/adjuntos o status) a la
+  // derecha — en vez de todo apilado en una sola columna angosta.
+  formLayout: { flexDirection: "row", gap: 28, alignItems: "flex-start" },
+  formMain: { flex: 1.5, minWidth: 0 },
+  formSide: { width: 300 },
 
   taskInfoCard: { borderWidth: 1, borderRadius: 18, padding: 18, marginBottom: 16 },
   taskInfoTitle: { fontSize: 19, fontWeight: "800", letterSpacing: -0.3, marginBottom: 8 },
