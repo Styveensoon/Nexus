@@ -30,7 +30,7 @@ import {
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { countTeams } from "../lib/teams";
-import { countProjects } from "../lib/projects";
+import { listProjects, Project, ProjectStatus, STATUS_LABELS } from "../lib/projects";
 import { countOrgBadges } from "../lib/badges";
 import { listActivity, ActivityEntry } from "../lib/activity";
 import ActivityRow from "../components/ActivityRow";
@@ -39,6 +39,15 @@ import ActivityRow from "../components/ActivityRow";
 // El color de la organización (organization.color) sigue siendo el que manda en el
 // hero card y el avatar, esa es una feature de branding por workspace aparte.
 const AZURE_DEEP = "#2C7BD1";
+
+// Mismo mapa que ProjectsScreen.tsx — color funcional por status, no se toca con el
+// acento de marca (ver docs/PATRONES.md, "primaryColor vs orgColor").
+const STATUS_COLORS: Record<ProjectStatus, string> = {
+  planning: "#F59E0B",
+  active: "#10B981",
+  on_hold: "#94A3B8",
+  completed: "#2563EB",
+};
 
 const WELCOME_PHRASES: Array<(name: string) => string> = [
   (n) => `¡Qué bueno verte, ${n}! 👋`,
@@ -90,7 +99,7 @@ export default function DashboardScreen({ navigation }: any) {
   // Se elige una vez por montaje: cambia cada sesión / cada refresh, se mantiene estable mientras se navega dentro de la app.
   const [phraseIndex] = useState(() => Math.floor(Math.random() * WELCOME_PHRASES.length));
   const [teamCount, setTeamCount] = useState<number | null>(null);
-  const [projectCount, setProjectCount] = useState<number | null>(null);
+  const [projects, setProjects] = useState<Project[] | null>(null);
   const [badgeCount, setBadgeCount] = useState<number | null>(null);
   const [recentActivity, setRecentActivity] = useState<ActivityEntry[]>([]);
 
@@ -101,7 +110,7 @@ export default function DashboardScreen({ navigation }: any) {
     useCallback(() => {
       if (!organization) return;
       countTeams(organization.id).then(({ count }) => setTeamCount(count));
-      countProjects(organization.id).then(({ count }) => setProjectCount(count));
+      listProjects(organization.id).then(({ data }) => setProjects(data));
       countOrgBadges(organization.id).then(({ count }) => setBadgeCount(count));
       listActivity({ organizationId: organization.id, limit: 5 }).then(({ data }) => setRecentActivity(data));
     }, [organization])
@@ -332,22 +341,64 @@ export default function DashboardScreen({ navigation }: any) {
               <View style={[styles.sectionsRow, { flexDirection: isMobile ? "column" : "row" }]}>
                 <View style={{ width: isMobile ? "100%" : "48%" }}>
                   <Text style={[styles.sectionTitle, { color: textPrimary }]}>Proyectos</Text>
-                  <View style={[styles.emptyCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}>
-                    <Folder size={30} color={textSecondary} strokeWidth={2} />
-                    <Text style={[styles.emptyTitle, { color: textPrimary }]}>
-                      {!projectCount
-                        ? "No tienes ningún proyecto"
-                        : `${projectCount} ${projectCount === 1 ? "proyecto" : "proyectos"} en tu organización`}
-                    </Text>
-                    <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("Projects")}>
-                      <Text style={[styles.emptyLink, { color: primaryColor }]}>Ver proyectos</Text>
-                    </TouchableOpacity>
-                    {!projectCount && organization.owner_id === user?.id && (
-                      <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("Semillero")}>
-                        <Text style={[styles.emptyLink, { color: primaryColor }]}>¿Tienes alguna idea? Concrétala.</Text>
+                  {!projects || projects.length <= 1 ? (
+                    <View style={[styles.emptyCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}>
+                      <Folder size={30} color={textSecondary} strokeWidth={2} />
+                      <Text style={[styles.emptyTitle, { color: textPrimary }]}>
+                        {projects === null
+                          ? "Cargando…"
+                          : projects.length === 0
+                          ? "No tienes ningún proyecto"
+                          : "1 proyecto en tu organización"}
+                      </Text>
+                      {projects !== null && (
+                        <>
+                          <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("Projects")}>
+                            <Text style={[styles.emptyLink, { color: primaryColor }]}>Ver proyectos</Text>
+                          </TouchableOpacity>
+                          {projects.length === 0 && organization.owner_id === user?.id && (
+                            <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("Semillero")}>
+                              <Text style={[styles.emptyLink, { color: primaryColor }]}>¿Tienes alguna idea? Concrétala.</Text>
+                            </TouchableOpacity>
+                          )}
+                        </>
+                      )}
+                    </View>
+                  ) : (
+                    <>
+                      <View style={styles.projectsMiniGrid}>
+                        {projects.slice(0, 4).map((project) => (
+                          <TouchableOpacity
+                            key={project.id}
+                            activeOpacity={0.85}
+                            style={[styles.projectMiniCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}
+                            onPress={() => navigation.navigate("Projects")}
+                          >
+                            <View style={[styles.projectMiniIcon, { backgroundColor: project.color + "20" }]}>
+                              {project.iconUrl ? (
+                                <Image source={{ uri: project.iconUrl }} style={styles.projectMiniIconImage} />
+                              ) : (
+                                <Folder size={16} color={project.color} strokeWidth={2.2} />
+                              )}
+                            </View>
+                            <Text style={[styles.projectMiniTitle, { color: textPrimary }]} numberOfLines={1}>
+                              {project.name}
+                            </Text>
+                            <View style={[styles.projectMiniStatus, { backgroundColor: STATUS_COLORS[project.status] + "20" }]}>
+                              <Text style={{ color: STATUS_COLORS[project.status], fontWeight: "700", fontSize: 10 }} numberOfLines={1}>
+                                {STATUS_LABELS[project.status]}
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                      <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("Projects")}>
+                        <Text style={[styles.emptyLink, { color: primaryColor, marginTop: 12 }]}>
+                          {projects.length > 4 ? `Ver los ${projects.length} proyectos` : "Ver proyectos"}
+                        </Text>
                       </TouchableOpacity>
-                    )}
-                  </View>
+                    </>
+                  )}
                 </View>
 
                 <View style={{ width: isMobile ? "100%" : "48%" }}>
@@ -447,6 +498,12 @@ const styles = StyleSheet.create({
   sectionsRow: { gap: 28, marginTop: 4 },
 
   card: { borderRadius: 24, borderWidth: 1, padding: 24 },
+  projectsMiniGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  projectMiniCard: { width: "48%", borderRadius: 18, borderWidth: 1, padding: 14 },
+  projectMiniIcon: { width: 30, height: 30, borderRadius: 11, justifyContent: "center", alignItems: "center", marginBottom: 10, overflow: "hidden" },
+  projectMiniIconImage: { width: 30, height: 30 },
+  projectMiniTitle: { fontSize: 13, fontWeight: "600", marginBottom: 8 },
+  projectMiniStatus: { alignSelf: "flex-start", borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
   sectionTitle: { fontSize: 18, fontWeight: "600", marginTop: 28, marginBottom: 12, letterSpacing: -0.2 },
   emptyCard: { borderRadius: 24, borderWidth: 1, padding: 28, alignItems: "center", gap: 8 },
   activityCard: { borderRadius: 24, borderWidth: 1, padding: 18 },

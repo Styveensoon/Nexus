@@ -16,35 +16,30 @@ interface NavbarProps {
   logoUri?: ImageSourcePropType;
 }
 
+// Paleta de marca de Nexus (azure) — acento único, moderado, no cubre áreas grandes.
+const AZURE_DEEP = "#2C7BD1";
+
 export default function Navbar({ navigation, isDark, logoUri }: NavbarProps) {
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
 
-  const bg            = isDark ? "#111827" : "#FFFFFF";
-  const border        = isDark ? "#374151" : "#E5E7EB";
-  const textPrimary   = isDark ? "#FFFFFF" : "#111827";
-  const textSecondary = isDark ? "#9CA3AF" : "#6B7280";
-  const shadowBase    = isDark ? "#000000" : "#000000";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
 
   const paddingH = isMobile ? 24 : "5%";
 
   return (
-    <View style={[
-      styles.navContainer, 
-      { 
-        backgroundColor: bg, 
-        borderBottomColor: border,
-        shadowColor: shadowBase,
-      }
-    ]}>
-      {/* Aplicamos el mismo margen dinámico del Landing y quitamos el límite de ancho */}
+    // Sin fondo/sombra propios a propósito: el wrapper translúcido con blur que envuelve
+    // este componente en LandingScreen.tsx (navWrapper) es el vidrio real — pintar un fondo
+    // opaco acá encima lo taparía por completo.
+    <View style={styles.navContainer}>
       <View style={[styles.navContent, { paddingHorizontal: paddingH }]}>
         <TouchableOpacity style={styles.logoRow} onPress={() => navigation.navigate("Landing")}>
           {logoUri ? (
             <Image source={logoUri} style={styles.logoImage} resizeMode="contain" />
           ) : (
-            <View style={styles.logoIcon}>
-              <Sparkles size={16} color="#FFFFFF" />
+            <View style={[styles.logoIcon, { backgroundColor: AZURE_DEEP }]}>
+              <Sparkles size={16} color="#FFFFFF" strokeWidth={2.3} />
             </View>
           )}
           <Text style={[styles.logoText, { color: textPrimary }]}>Nexus</Text>
@@ -66,8 +61,8 @@ export default function Navbar({ navigation, isDark, logoUri }: NavbarProps) {
               <Text style={[styles.linkBtn, { color: textSecondary }]}>Iniciar sesión</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity 
-            style={[styles.btnPrimary, { shadowColor: '#2563EB' }]}
+          <TouchableOpacity
+            style={[styles.btnPrimary, { backgroundColor: AZURE_DEEP, shadowColor: AZURE_DEEP }]}
             onPress={() => navigation.navigate("Register")}
           >
             <Text style={styles.btnPrimaryText}>
@@ -83,11 +78,6 @@ export default function Navbar({ navigation, isDark, logoUri }: NavbarProps) {
 const styles = StyleSheet.create({
   navContainer: {
     width: "100%",
-    borderBottomWidth: 1,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 4,
     zIndex: 50,
   },
   navContent: {
@@ -95,24 +85,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingVertical: 16,
-    width: "100%", // Sin maxWidth para que fluya
+    width: "100%",
   },
   logoRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  logoIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: "#2563EB", justifyContent: "center", alignItems: "center" },
-  logoImage: { width: 32, height: 32, borderRadius: 8 },
+  logoIcon: { width: 32, height: 32, borderRadius: 10, justifyContent: "center", alignItems: "center" },
+  logoImage: { width: 32, height: 32, borderRadius: 10 },
   logoText: { fontSize: 20, fontWeight: "700", letterSpacing: -0.5 },
   links: { flexDirection: "row", gap: 32, alignItems: "center" },
   link: { fontSize: 15, fontWeight: "500" },
   actions: { flexDirection: "row", alignItems: "center", gap: 20 },
   linkBtn: { fontSize: 15, fontWeight: "600" },
-  btnPrimary: { 
-    backgroundColor: "#2563EB", 
-    paddingHorizontal: 20, 
-    paddingVertical: 10, 
+  btnPrimary: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     borderRadius: 999,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
     elevation: 3,
   },
   btnPrimaryText: { color: "#FFFFFF", fontSize: 14, fontWeight: "600" },
