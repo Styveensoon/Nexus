@@ -5,6 +5,8 @@ import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import ProfileEditorForm from "../components/ProfileEditorForm";
 import LevelDots from "../components/LevelDots";
+import BadgePill from "../components/BadgePill";
+import BadgeDetailModal from "../components/BadgeDetailModal";
 import {
   CUSTOM_ROLE_VALUE,
   DEFAULT_LANGUAGE_LEVEL,
@@ -16,6 +18,7 @@ import {
   getTimezoneLabel,
   isUploadedAvatar,
 } from "../lib/profiles";
+import { ProfileBadge, listProfileBadges, getBadgeDefinition } from "../lib/badges";
 
 function SectionCard({
   icon,
@@ -47,12 +50,14 @@ function SectionCard({
 
 export default function ProfileScreen({ navigation }: any) {
   const { isDark } = useTheme();
-  const { user, signOut } = useAuth();
+  const { user, organization, signOut } = useAuth();
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
   const isWeb = Platform.OS === "web";
 
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [badges, setBadges] = useState<ProfileBadge[]>([]);
+  const [detailBadge, setDetailBadge] = useState<ProfileBadge | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
 
@@ -60,8 +65,12 @@ export default function ProfileScreen({ navigation }: any) {
     if (!user) return;
     const { data } = await getProfile(user.id);
     setProfile(data);
+    if (organization) {
+      const { data: badgeData } = await listProfileBadges(organization.id, user.id);
+      setBadges(badgeData);
+    }
     setLoading(false);
-  }, [user]);
+  }, [user, organization]);
 
   useEffect(() => {
     loadProfile();
@@ -246,17 +255,17 @@ export default function ProfileScreen({ navigation }: any) {
             textPrimary={textPrimary}
             ultraShadow={ultraShadow}
           >
-            {profile?.badges?.length ? (
+            {badges.length ? (
               <View style={styles.chipsRow}>
-                {profile.badges.map((badge) => (
-                  <View key={badge.id} style={[styles.badgePill, { backgroundColor: badge.color }]}>
-                    <Text style={[styles.badgePillText, { color: getContrastTextColor(badge.color) }]}>{badge.name}</Text>
-                  </View>
-                ))}
+                {badges.map((badge) => {
+                  const definition = getBadgeDefinition(badge.badgeKey);
+                  if (!definition) return null;
+                  return <BadgePill key={badge.id} badge={definition} onPress={() => setDetailBadge(badge)} />;
+                })}
               </View>
             ) : (
               <Text style={[styles.emptyText, { color: textSecondary }]}>
-                Aún no tienes badges. Cuando definamos quién puede otorgarlos, los vas a ver aquí.
+                Aún no tienes ningún badge. El owner de tu organización o el encargado de tu equipo pueden otorgarte uno.
               </Text>
             )}
           </SectionCard>
@@ -293,6 +302,8 @@ export default function ProfileScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <BadgeDetailModal visible={!!detailBadge} badge={detailBadge} isDark={isDark} onClose={() => setDetailBadge(null)} />
     </View>
   );
 }
@@ -339,8 +350,6 @@ const styles = StyleSheet.create({
   langPillText: { fontSize: 13, fontWeight: "700" },
   langLevelBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
   langLevelText: { color: "#FFF", fontSize: 10, fontWeight: "800" },
-  badgePill: { borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9 },
-  badgePillText: { fontSize: 13, fontWeight: "700" },
   signOutRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 20,
   },

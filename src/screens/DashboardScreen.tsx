@@ -31,6 +31,7 @@ import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { countTeams } from "../lib/teams";
 import { countProjects } from "../lib/projects";
+import { countOrgBadges } from "../lib/badges";
 
 const WELCOME_PHRASES: Array<(name: string) => string> = [
   (n) => `¡Qué bueno verte, ${n}! 👋`,
@@ -83,6 +84,7 @@ export default function DashboardScreen({ navigation }: any) {
   const [phraseIndex] = useState(() => Math.floor(Math.random() * WELCOME_PHRASES.length));
   const [teamCount, setTeamCount] = useState<number | null>(null);
   const [projectCount, setProjectCount] = useState<number | null>(null);
+  const [badgeCount, setBadgeCount] = useState<number | null>(null);
 
   // useFocusEffect (no useEffect) para que los conteos se refresquen cada vez
   // que se vuelve a esta pestaña (p. ej. después de crear un proyecto en otra
@@ -92,6 +94,7 @@ export default function DashboardScreen({ navigation }: any) {
       if (!organization) return;
       countTeams(organization.id).then(({ count }) => setTeamCount(count));
       countProjects(organization.id).then(({ count }) => setProjectCount(count));
+      countOrgBadges(organization.id).then(({ count }) => setBadgeCount(count));
     }, [organization])
   );
 
@@ -277,13 +280,23 @@ export default function DashboardScreen({ navigation }: any) {
                   </Text>
                 </TouchableOpacity>
 
-                <View style={[styles.tile, { backgroundColor: inputBg, borderColor: border, width: isMobile ? "100%" : "32%" }, ultraShadow]}>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[styles.tile, { backgroundColor: inputBg, borderColor: border, width: isMobile ? "100%" : "32%" }, ultraShadow]}
+                  onPress={() => navigation.navigate("Badges")}
+                >
                   <View style={[styles.tileIcon, { backgroundColor: isDark ? "rgba(37,99,235,0.15)" : "#EFF6FF" }]}>
                     <BadgeCheck size={18} color={primaryColor} />
                   </View>
                   <Text style={[styles.tileTitle, { color: textPrimary }]}>Badges</Text>
-                  <Text style={[styles.tileStatus, { color: textSecondary }]}>Aún no hay badges otorgados</Text>
-                </View>
+                  <Text style={[styles.tileStatus, { color: textSecondary }]}>
+                    {badgeCount === null
+                      ? "Cargando…"
+                      : badgeCount === 0
+                      ? "Aún no hay badges otorgados"
+                      : `${badgeCount} ${badgeCount === 1 ? "badge otorgado" : "badges otorgados"}`}
+                  </Text>
+                </TouchableOpacity>
 
                 <View style={[styles.tile, { backgroundColor: inputBg, borderColor: border, width: isMobile ? "100%" : "32%" }, ultraShadow]}>
                   <View style={[styles.tileIcon, { backgroundColor: isDark ? "rgba(37,99,235,0.15)" : "#EFF6FF" }]}>

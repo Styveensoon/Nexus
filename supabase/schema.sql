@@ -39,8 +39,11 @@ alter table profiles
   add column if not exists skill_levels jsonb not null default '{}'::jsonb,
   add column if not exists languages text[] not null default '{}',
   add column if not exists language_levels jsonb not null default '{}'::jsonb,
-  -- badges: [{ id, name, color }] — no editable desde el cliente todavía;
-  -- quién los otorga (team leaders/admins) es trabajo pendiente.
+  -- badges: [{ id, name, color }] — legacy, nunca se escribió desde el
+  -- cliente ni se lee ya desde ningún lado (ProfileScreen, MemberProfileModal
+  -- y la Edge Function semillero-chat ya usan la tabla relacional
+  -- `profile_badges` en su lugar). Se deja la columna sin dropear por ahora
+  -- para no forzar una migración de limpieza sin necesidad real.
   add column if not exists badges jsonb not null default '[]'::jsonb;
 
 -- Crea automáticamente el profile cuando se registra un usuario en auth.users
@@ -751,3 +754,56 @@ drop policy if exists "task_comment_reactions_delete_own" on task_comment_reacti
 create policy "task_comment_reactions_delete_own" on task_comment_reactions
   for delete to authenticated
   using (auth.uid() = user_id);
+
+-- ----------------------------------------------------------------------------
+-- profile_badges: reconocimientos otorgados a un colaborador (Líder Nato,
+-- Team Player, Mentor, etc.). El catálogo de tipos es fijo, vive en código
+-- (BADGE_CATALOG en src/lib/badges.ts) — no hay tabla de tipos porque hoy no
+-- son personalizables. Solo puede otorgar/quitar un badge el owner de la
+-- organización, o el encargado (teams.leader_id) de algún equipo donde esa
+-- persona sea integrante — "manager" en este esquema se mapea a encargado de
+-- equipo, no a líder de proyecto. Cualquier miembro de la organización puede
+-- VER los badges de sus compañeros (mismo criterio que profiles_select_org_members).
+-- ----------------------------------------------------------------------------
+create table if not exists profile_badges (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  profile_id uuid not null references auth.users(id) on delete cascade,
+  badge_key text not null,
+  granted_by uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (organization_id, profile_id, badge_key)
+);
+
+alter table profile_badges enable row level security;
+
+-- true si auth.uid() puede otorgar/quitar badges a target_profile_id dentro
+-- de organization_id: es el owner de esa organización, o es encargado de
+-- algún equipo de esa organización del que target_profile_id es integrante.
+create or replace function is_badge_manager_for(org_id uuid, target_profile_id uuid)
+returns boolean
+language sql security definer stable
+as $$
+  select
+    exists (select 1 from organizations o where o.id = org_id and o.owner_id = auth.uid())
+    or exists (
+      select 1 from teams t
+      join team_members tm on tm.team_id = t.id
+      where t.organization_id = org_id and t.leader_id = auth.uid() and tm.user_id = target_profile_id
+    )
+$$;
+
+drop policy if exists "profile_badges_select_org" on profile_badges;
+create policy "profile_badges_select_org" on profile_badges
+  for select to authenticated
+  using (organization_id in (select my_organization_ids()));
+
+drop policy if exists "profile_badges_insert_manager" on profile_badges;
+create policy "profile_badges_insert_manager" on profile_badges
+  for insert to authenticated
+  with check (auth.uid() = granted_by and is_badge_manager_for(organization_id, profile_id));
+
+drop policy if exists "profile_badges_delete_manager" on profile_badges;
+create policy "profile_badges_delete_manager" on profile_badges
+  for delete to authenticated
+  using (is_badge_manager_for(organization_id, profile_id));

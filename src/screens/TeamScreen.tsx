@@ -669,6 +669,7 @@ export default function TeamScreen() {
       <MemberProfileModal
         visible={!!profileModalTarget}
         userId={profileModalTarget?.userId ?? null}
+        organizationId={organization?.id ?? null}
         fallbackName={profileModalMember?.name}
         isDark={isDark}
         onClose={() => setProfileModalTarget(null)}

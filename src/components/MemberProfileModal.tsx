@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { Image, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Clock, User, X } from "lucide-react-native";
 import LevelDots from "./LevelDots";
+import BadgePill from "./BadgePill";
+import BadgeDetailModal from "./BadgeDetailModal";
 import {
   CUSTOM_ROLE_VALUE,
   DEFAULT_LANGUAGE_LEVEL,
@@ -13,10 +15,12 @@ import {
   getTimezoneLabel,
   isUploadedAvatar,
 } from "../lib/profiles";
+import { ProfileBadge, getBadgeDefinition, listProfileBadges } from "../lib/badges";
 
 type Props = {
   visible: boolean;
   userId: string | null;
+  organizationId?: string | null;
   fallbackName?: string;
   isDark: boolean;
   onClose: () => void;
@@ -25,8 +29,10 @@ type Props = {
   actionDanger?: boolean;
 };
 
-export default function MemberProfileModal({ visible, userId, fallbackName, isDark, onClose, actionLabel, onAction, actionDanger }: Props) {
+export default function MemberProfileModal({ visible, userId, organizationId, fallbackName, isDark, onClose, actionLabel, onAction, actionDanger }: Props) {
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [badges, setBadges] = useState<ProfileBadge[]>([]);
+  const [detailBadge, setDetailBadge] = useState<ProfileBadge | null>(null);
   const [loading, setLoading] = useState(false);
   const [fetchErrorMsg, setFetchErrorMsg] = useState<string | null>(null);
 
@@ -42,13 +48,18 @@ export default function MemberProfileModal({ visible, userId, fallbackName, isDa
     if (!visible || !userId) return;
     setLoading(true);
     setProfile(null);
+    setBadges([]);
+    setDetailBadge(null);
     setFetchErrorMsg(null);
     getProfile(userId).then(({ data, error }) => {
       setProfile(data);
       setFetchErrorMsg(error?.message ?? null);
       setLoading(false);
     });
-  }, [visible, userId]);
+    if (organizationId) {
+      listProfileBadges(organizationId, userId).then(({ data }) => setBadges(data));
+    }
+  }, [visible, userId, organizationId]);
 
   const avatarColor = profile?.avatar_color ?? primaryColor;
   const previewTextColor = getContrastTextColor(avatarColor);
@@ -141,6 +152,19 @@ export default function MemberProfileModal({ visible, userId, fallbackName, isDa
                 ) : (
                   <Text style={[styles.emptyText, { color: textSecondary }]}>Aún no agregó idiomas.</Text>
                 )}
+
+                <Text style={[styles.sectionLabel, { color: textSecondary }]}>Badges</Text>
+                {badges.length ? (
+                  <View style={[styles.chipsRow, { marginBottom: 4 }]}>
+                    {badges.map((badge) => {
+                      const definition = getBadgeDefinition(badge.badgeKey);
+                      if (!definition) return null;
+                      return <BadgePill key={badge.id} badge={definition} size="sm" onPress={() => setDetailBadge(badge)} />;
+                    })}
+                  </View>
+                ) : (
+                  <Text style={[styles.emptyText, { color: textSecondary, marginBottom: 4 }]}>Todavía no tiene ningún badge.</Text>
+                )}
               </>
             )}
 
@@ -156,6 +180,8 @@ export default function MemberProfileModal({ visible, userId, fallbackName, isDa
           </View>
         </ScrollView>
       </View>
+
+      <BadgeDetailModal visible={!!detailBadge} badge={detailBadge} isDark={isDark} onClose={() => setDetailBadge(null)} />
     </Modal>
   );
 }
