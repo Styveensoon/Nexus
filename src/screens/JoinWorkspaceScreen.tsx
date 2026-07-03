@@ -11,7 +11,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { ArrowLeft, ArrowRight, Building2, CircleX, Hash, Sparkles } from "lucide-react-native";
+import { ArrowLeft, ArrowRight, Building2, CircleX, Hash } from "lucide-react-native";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { getOrganizationByCode, joinOrganization, Organization } from "../lib/organizations";
@@ -137,9 +137,7 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
         <View style={{ width: "100%", maxWidth: 440 }}>
 
           <View style={styles.logoRow}>
-            <View style={styles.logoIcon}>
-              <Sparkles size={18} color="#FFF" />
-            </View>
+            <Image source={require("../../assets/images/nexus-logo.png")} style={styles.logoIcon} resizeMode="contain" />
             <Text style={[styles.logoText, { color: textPrimary }]}>Nexus</Text>
           </View>
 

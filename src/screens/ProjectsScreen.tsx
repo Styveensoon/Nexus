@@ -35,6 +35,7 @@ import {
   deleteProject,
   listProjects,
   Project,
+  PROJECT_AREA_OPTIONS,
   ProjectStatus,
   setProjectTeams,
   STATUS_LABELS,
@@ -222,6 +223,14 @@ export default function ProjectsScreen({ navigation }: any) {
 
   const removeArea = (area: string) => {
     setNewAreas((prev) => prev.filter((a) => a !== area));
+  };
+
+  const toggleAreaOption = (area: string) => {
+    setNewAreas((prev) =>
+      prev.some((a) => a.toLowerCase() === area.toLowerCase())
+        ? prev.filter((a) => a.toLowerCase() !== area.toLowerCase())
+        : [...prev, area]
+    );
   };
 
   const toggleTeamSelection = (teamId: string) => {
@@ -634,6 +643,26 @@ export default function ProjectsScreen({ navigation }: any) {
                 )}
 
                 <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Áreas involucradas</Text>
+                <View style={styles.chipsWrapRow}>
+                  {PROJECT_AREA_OPTIONS.map((area) => {
+                    const selected = newAreas.some((a) => a.toLowerCase() === area.toLowerCase());
+                    return (
+                      <TouchableOpacity
+                        key={area}
+                        activeOpacity={0.85}
+                        onPress={() => toggleAreaOption(area)}
+                        style={[
+                          styles.removableChip,
+                          { borderColor: selected ? primaryColor : border, backgroundColor: selected ? primaryColor + "20" : inputBg },
+                        ]}
+                      >
+                        {selected && <Check size={12} color={primaryColor} />}
+                        <Text style={{ color: selected ? primaryColor : textPrimary, fontSize: 12.5, fontWeight: "600" }}>{area}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <Text style={[styles.modalHint, { color: textSecondary }]}>¿Otra que no está en la lista? Agrégala acá:</Text>
                 <View style={[styles.chipInputRow, { backgroundColor: inputBg, borderColor: border }]}>
                   <TextInput
                     value={newAreaInput}
@@ -647,16 +676,20 @@ export default function ProjectsScreen({ navigation }: any) {
                     <Plus size={18} color={primaryColor} />
                   </TouchableOpacity>
                 </View>
-                {newAreas.length > 0 && (
+                {/* Solo las áreas personalizadas (las del abanico ya muestran su propio
+                    estado de selección arriba, sin necesidad de repetirlas acá). */}
+                {newAreas.filter((a) => !PROJECT_AREA_OPTIONS.some((opt) => opt.toLowerCase() === a.toLowerCase())).length > 0 && (
                   <View style={styles.chipsWrapRow}>
-                    {newAreas.map((area) => (
-                      <View key={area} style={[styles.removableChip, { borderColor: border, backgroundColor: inputBg }]}>
-                        <Text style={{ color: textPrimary, fontSize: 12.5, fontWeight: "600" }}>{area}</Text>
-                        <TouchableOpacity onPress={() => removeArea(area)} hitSlop={8}>
-                          <X size={12} color={textSecondary} />
-                        </TouchableOpacity>
-                      </View>
-                    ))}
+                    {newAreas
+                      .filter((a) => !PROJECT_AREA_OPTIONS.some((opt) => opt.toLowerCase() === a.toLowerCase()))
+                      .map((area) => (
+                        <View key={area} style={[styles.removableChip, { borderColor: border, backgroundColor: inputBg }]}>
+                          <Text style={{ color: textPrimary, fontSize: 12.5, fontWeight: "600" }}>{area}</Text>
+                          <TouchableOpacity onPress={() => removeArea(area)} hitSlop={8}>
+                            <X size={12} color={textSecondary} />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
                   </View>
                 )}
 
@@ -817,6 +850,7 @@ const styles = StyleSheet.create({
   formSide: { width: 300 },
   modalTitle: { fontSize: 18, fontWeight: "800" },
   modalLabel: { fontSize: 12, fontWeight: "700", marginBottom: 8, marginTop: 14 },
+  modalHint: { fontSize: 11.5, marginTop: 10, marginBottom: 8 },
   modalInput: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14 },
   modalTextarea: { minHeight: 80, textAlignVertical: "top" },
   colorSwatch: { width: 22, height: 22, borderRadius: 11 },

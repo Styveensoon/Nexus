@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import type { TeamSuggestion } from "./semillero";
 import { getTeamsByIds, Team } from "./teams";
+import { logActivity } from "./activity";
 
 export type ProjectStatus = "planning" | "active" | "on_hold" | "completed";
 
@@ -12,6 +13,11 @@ export const STATUS_LABELS: Record<ProjectStatus, string> = {
 };
 
 export const STATUS_ORDER: ProjectStatus[] = ["planning", "active", "on_hold", "completed"];
+
+// Abanico de áreas comunes para el picker rápido de "Áreas involucradas" al
+// crear/editar un proyecto (ver ProjectsScreen.tsx) — no es una lista cerrada,
+// el input de texto libre sigue existiendo para cualquier área que no esté acá.
+export const PROJECT_AREA_OPTIONS = ["Diseño", "Desarrollo", "Marketing", "Ventas", "Soporte / Operaciones"];
 
 export type ProjectMemberProfile = {
   userId: string;
@@ -155,6 +161,16 @@ export async function createProject(params: {
     if (teamsError) return { data: project, error: teamsError };
   }
 
+  await logActivity({
+    organizationId: params.organizationId,
+    actorId: params.createdBy,
+    action: "project_created",
+    entityType: "project",
+    entityName: params.name,
+    entityId: project.id,
+    projectId: project.id,
+  });
+
   return { data: project, error: null };
 }
 
@@ -192,11 +208,41 @@ export async function createProjectFromSuggestion(
   const { error: membersError } = await supabase.from("project_members").insert(members);
   if (membersError) return { data: project, error: membersError };
 
+  await logActivity({
+    organizationId,
+    actorId: createdBy,
+    action: "project_created",
+    entityType: "project",
+    entityName: suggestion.projectName,
+    entityId: project.id,
+    projectId: project.id,
+  });
+
   return { data: project, error: null };
 }
 
 export async function updateProjectStatus(projectId: string, status: ProjectStatus) {
+  const { data: before } = await supabase.from("projects").select("organization_id, name").eq("id", projectId).maybeSingle();
   const { error } = await supabase.from("projects").update({ status }).eq("id", projectId);
+
+  if (!error && before) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user) {
+      await logActivity({
+        organizationId: before.organization_id,
+        actorId: user.id,
+        action: "project_status_changed",
+        entityType: "project",
+        entityName: before.name,
+        entityId: projectId,
+        projectId,
+        metadata: { toStatus: status, toLabel: STATUS_LABELS[status] },
+      });
+    }
+  }
+
   return { error };
 }
 
@@ -241,7 +287,27 @@ export async function setProjectTeams(projectId: string, teamIds: string[]) {
 }
 
 export async function deleteProject(projectId: string) {
+  const { data: before } = await supabase.from("projects").select("organization_id, name").eq("id", projectId).maybeSingle();
   const { error } = await supabase.from("projects").delete().eq("id", projectId);
+
+  if (!error && before) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user) {
+      // Sin project_id: la fila del proyecto ya no existe, y esa columna es
+      // una FK real (on delete set null) — insertar un id inexistente ahí
+      // violaría la constraint.
+      await logActivity({
+        organizationId: before.organization_id,
+        actorId: user.id,
+        action: "project_deleted",
+        entityType: "project",
+        entityName: before.name,
+      });
+    }
+  }
+
   return { error };
 }
 

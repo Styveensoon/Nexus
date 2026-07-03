@@ -13,6 +13,7 @@ import { ArrowRight, Briefcase, Check, ChevronDown, Clock, Globe, Palette, Plus,
 import ColorPickerModal from "./ColorPickerModal";
 import AvatarUploadZone from "./AvatarUploadZone";
 import TimezoneModal from "./TimezoneModal";
+import LanguageModal from "./LanguageModal";
 import LevelDots from "./LevelDots";
 import {
   AVATAR_TILE_SIZE,
@@ -23,7 +24,6 @@ import {
   DEFAULT_LANGUAGE_LEVEL,
   DEFAULT_SKILL_LEVEL,
   LANGUAGE_LEVELS,
-  LANGUAGE_OPTIONS,
   ROLE_OPTIONS,
   detectDeviceTimezone,
   getContrastTextColor,
@@ -63,10 +63,10 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
   const [skillInput, setSkillInput] = useState("");
   const [languages, setLanguages] = useState<string[]>([]);
   const [languageLevels, setLanguageLevels] = useState<Record<string, string>>({});
-  const [languageInput, setLanguageInput] = useState("");
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showTimezoneModal, setShowTimezoneModal] = useState(false);
+  const [showLanguageModal, setShowLanguageModal] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -183,18 +183,6 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
 
   const setLanguageLevel = (lang: string, level: string) => {
     setLanguageLevels({ ...languageLevels, [lang]: level });
-  };
-
-  const addCustomLanguage = () => {
-    const value = languageInput.trim();
-    if (!value) return;
-    if (languages.some((l) => l.toLowerCase() === value.toLowerCase())) {
-      setLanguageInput("");
-      return;
-    }
-    setLanguages([...languages, value]);
-    setLanguageLevels({ ...languageLevels, [value]: DEFAULT_LANGUAGE_LEVEL });
-    setLanguageInput("");
   };
 
   const handleSave = async () => {
@@ -390,37 +378,17 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
       )}
 
       <Text style={[styles.label, { color: textSecondary, marginTop: 4 }]}>Idiomas que hablas</Text>
-      <View style={styles.chipsRow}>
-        {LANGUAGE_OPTIONS.map((lang) => {
-          const active = languages.includes(lang);
-          return (
-            <TouchableOpacity
-              key={lang}
-              activeOpacity={0.85}
-              onPress={() => toggleLanguage(lang)}
-              style={[styles.chip, { borderColor: active ? primaryColor : border, backgroundColor: active ? primaryColor : inputBg }]}
-            >
-              <Text style={[styles.chipText, { color: active ? previewTextColor : textPrimary }]}>{lang}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-      <View style={[styles.inputWrapper, { backgroundColor: inputBg, borderColor: focusedField === "language" ? primaryColor : border }]}>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => setShowLanguageModal(true)}
+        style={[styles.selectorBtn, { backgroundColor: inputBg, borderColor: border, marginBottom: languages.length > 0 ? 12 : 24 }]}
+      >
         <Globe size={18} color={textSecondary} />
-        <TextInput
-          placeholder="Otro idioma"
-          placeholderTextColor={textSecondary}
-          value={languageInput}
-          onChangeText={setLanguageInput}
-          onSubmitEditing={addCustomLanguage}
-          onFocus={() => setFocusedField("language")}
-          onBlur={() => setFocusedField(null)}
-          style={[styles.input, { color: textPrimary }, isWeb && styles.inputNoOutline]}
-        />
-        <TouchableOpacity onPress={addCustomLanguage} hitSlop={8}>
-          <Plus size={20} color={primaryColor} />
-        </TouchableOpacity>
-      </View>
+        <Text style={[styles.selectorText, { color: languages.length ? textPrimary : textSecondary }]} numberOfLines={1}>
+          {languages.length ? languages.join(", ") : "Selecciona los idiomas que hablas"}
+        </Text>
+        <ChevronDown size={18} color={textSecondary} />
+      </TouchableOpacity>
 
       {languages.length > 0 && (
         <View style={{ marginTop: 4, marginBottom: 20, gap: 8 }}>
@@ -548,6 +516,14 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
           setTimezone(id);
           setShowTimezoneModal(false);
         }}
+      />
+
+      <LanguageModal
+        visible={showLanguageModal}
+        isDark={isDark}
+        selected={languages}
+        onClose={() => setShowLanguageModal(false)}
+        onToggle={toggleLanguage}
       />
     </View>
   );

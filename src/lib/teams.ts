@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import { CUSTOM_ROLE_VALUE } from "./profiles";
 import type { TeamSuggestion } from "./semillero";
+import { logActivity } from "./activity";
 
 export const TEAM_ROLE_OPTIONS = [
   "Desarrollador/a",
@@ -144,6 +145,16 @@ export async function createTeam(params: {
 
   if (error || !team) return { data: null, error };
 
+  await logActivity({
+    organizationId: params.organizationId,
+    actorId: params.createdBy,
+    action: "team_created",
+    entityType: "team",
+    entityName: params.name,
+    entityId: team.id,
+    teamId: team.id,
+  });
+
   const rows = params.members.map((m) => ({
     team_id: team.id,
     user_id: m.userId,
@@ -213,7 +224,24 @@ export async function setTeamMembers(teamId: string, members: { userId: string; 
 }
 
 export async function deleteTeam(teamId: string) {
+  const { data: before } = await supabase.from("teams").select("organization_id, name").eq("id", teamId).maybeSingle();
   const { error } = await supabase.from("teams").delete().eq("id", teamId);
+
+  if (!error && before) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user) {
+      await logActivity({
+        organizationId: before.organization_id,
+        actorId: user.id,
+        action: "team_deleted",
+        entityType: "team",
+        entityName: before.name,
+      });
+    }
+  }
+
   return { error };
 }
 

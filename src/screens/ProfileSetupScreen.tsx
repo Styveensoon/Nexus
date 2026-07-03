@@ -1,6 +1,5 @@
 import React from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
-import { Sparkles } from "lucide-react-native";
+import { Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import ProfileEditorForm from "../components/ProfileEditorForm";
@@ -41,9 +40,7 @@ export default function ProfileSetupScreen({ navigation }: any) {
         >
           <View style={{ width: "100%", maxWidth: 560 }}>
             <View style={styles.logoRow}>
-              <View style={styles.logoIcon}>
-                <Sparkles size={18} color="#FFF" />
-              </View>
+              <Image source={require("../../assets/images/nexus-logo.png")} style={styles.logoIcon} resizeMode="contain" />
               <Text style={[styles.logoText, { color: textPrimary }]}>Nexus</Text>
             </View>
 

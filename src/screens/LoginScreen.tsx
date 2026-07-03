@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -17,7 +18,6 @@ import {
   EyeOff,
   Lock,
   Mail,
-  Sparkles,
 } from "lucide-react-native";
 import { useTheme } from "../context/ThemeContext";
 import { supabase } from "../lib/supabase";
@@ -137,9 +137,7 @@ export default function LoginScreen({ navigation }: any) {
         >
           <View style={{ width: "100%", maxWidth: 440 }}>
             <View style={styles.logoRow}>
-              <View style={styles.logoIcon}>
-                <Sparkles size={18} color="#FFF" />
-              </View>
+              <Image source={require("../../assets/images/nexus-logo.png")} style={styles.logoIcon} resizeMode="contain" />
               <Text style={[styles.logoText, { color: textPrimary }]}>Nexus</Text>
             </View>
 

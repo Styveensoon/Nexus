@@ -1,24 +1,54 @@
 import { supabase } from "./supabase";
 import { Team, getTeamsByIds } from "./teams";
 import { uploadFile } from "./icons";
+import { logActivity } from "./activity";
 
-export type TaskStatus = "pending" | "in_progress" | "blocked" | "completed";
+export type TaskStatus =
+  | "backlog"
+  | "pending"
+  | "in_progress"
+  | "in_review"
+  | "testing"
+  | "blocked"
+  | "completed"
+  | "cancelled";
 
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  backlog: "Backlog",
   pending: "Pendiente",
   in_progress: "En progreso",
+  in_review: "En revisión",
+  testing: "En pruebas",
   blocked: "Bloqueada",
   completed: "Completada",
+  cancelled: "Cancelada",
 };
 
-export const TASK_STATUS_ORDER: TaskStatus[] = ["pending", "in_progress", "blocked", "completed"];
+export const TASK_STATUS_ORDER: TaskStatus[] = [
+  "backlog",
+  "pending",
+  "in_progress",
+  "in_review",
+  "testing",
+  "blocked",
+  "completed",
+  "cancelled",
+];
 
 export const TASK_STATUS_COLORS: Record<TaskStatus, string> = {
+  backlog: "#64748B",
   pending: "#94A3B8",
   in_progress: "#2563EB",
+  in_review: "#A855F7",
+  testing: "#0D9488",
   blocked: "#EF4444",
   completed: "#10B981",
+  cancelled: "#78716C",
 };
+
+// Estados que ya no cuentan como "activos" para vencimiento — una task
+// cancelada no debe marcarse "vencida" igual que una completada.
+const TERMINAL_STATUSES: TaskStatus[] = ["completed", "cancelled"];
 
 export type TaskPriority = "low" | "medium" | "high" | "urgent";
 
@@ -57,7 +87,7 @@ export type Task = {
 };
 
 export function isOverdue(task: Task) {
-  if (!task.dueDate || task.status === "completed") return false;
+  if (!task.dueDate || TERMINAL_STATUSES.includes(task.status)) return false;
   return task.dueDate < new Date().toISOString().slice(0, 10);
 }
 
@@ -70,7 +100,7 @@ export const DUE_SOON_DAYS = 2;
 export const DUE_SOON_COLOR = "#8B5CF6";
 
 export function isDueSoon(task: Task) {
-  if (!task.dueDate || task.status === "completed" || isOverdue(task)) return false;
+  if (!task.dueDate || TERMINAL_STATUSES.includes(task.status) || isOverdue(task)) return false;
   const todayIso = new Date().toISOString().slice(0, 10);
   const limitIso = new Date(Date.now() + DUE_SOON_DAYS * 86400000).toISOString().slice(0, 10);
   return task.dueDate >= todayIso && task.dueDate <= limitIso;
@@ -199,11 +229,47 @@ export async function createTask(params: {
     .select("id")
     .single();
 
+  if (!error && data) {
+    const { data: project } = await supabase.from("projects").select("organization_id").eq("id", params.projectId).maybeSingle();
+    if (project) {
+      await logActivity({
+        organizationId: project.organization_id,
+        actorId: params.createdBy,
+        action: "task_created",
+        entityType: "task",
+        entityName: params.title,
+        entityId: data.id,
+        projectId: params.projectId,
+      });
+    }
+  }
+
   return { data, error };
 }
 
 export async function updateTaskStatus(taskId: string, status: TaskStatus) {
+  const { data: taskBefore } = await supabase.from("tasks").select("project_id, title").eq("id", taskId).maybeSingle();
   const { error } = await supabase.from("tasks").update({ status }).eq("id", taskId);
+
+  if (!error && taskBefore) {
+    const { data: project } = await supabase.from("projects").select("organization_id").eq("id", taskBefore.project_id).maybeSingle();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (project && user) {
+      await logActivity({
+        organizationId: project.organization_id,
+        actorId: user.id,
+        action: "task_status_changed",
+        entityType: "task",
+        entityName: taskBefore.title,
+        entityId: taskId,
+        projectId: taskBefore.project_id,
+        metadata: { toStatus: status, toLabel: TASK_STATUS_LABELS[status] },
+      });
+    }
+  }
+
   return { error };
 }
 
@@ -236,7 +302,28 @@ export async function updateTask(
 }
 
 export async function deleteTask(taskId: string) {
+  const { data: before } = await supabase.from("tasks").select("project_id, title").eq("id", taskId).maybeSingle();
   const { error } = await supabase.from("tasks").delete().eq("id", taskId);
+
+  if (!error && before) {
+    const { data: project } = await supabase.from("projects").select("organization_id").eq("id", before.project_id).maybeSingle();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (project && user) {
+      await logActivity({
+        organizationId: project.organization_id,
+        actorId: user.id,
+        action: "task_deleted",
+        entityType: "task",
+        entityName: before.title,
+        // El proyecto sigue existiendo (solo se borró la task), a diferencia
+        // de project_deleted/team_deleted no hace falta omitir projectId acá.
+        projectId: before.project_id,
+      });
+    }
+  }
+
   return { error };
 }
 
@@ -384,6 +471,28 @@ export async function addTaskComment(params: {
     })
     .select("id")
     .single();
+
+  // Solo si hay texto real: al crear una task, sus adjuntos iniciales pasan
+  // por esta misma función con content:"" (ver handleCreate en
+  // TasksScreen.tsx) y no queremos que cada adjunto de creación aparezca
+  // como "comentó en la tarea" en el log.
+  if (!error && data && params.content.trim()) {
+    const { data: task } = await supabase.from("tasks").select("project_id, title").eq("id", params.taskId).maybeSingle();
+    if (task) {
+      const { data: project } = await supabase.from("projects").select("organization_id").eq("id", task.project_id).maybeSingle();
+      if (project) {
+        await logActivity({
+          organizationId: project.organization_id,
+          actorId: params.userId,
+          action: "task_comment_created",
+          entityType: "task",
+          entityName: task.title,
+          entityId: params.taskId,
+          projectId: task.project_id,
+        });
+      }
+    }
+  }
 
   return { data, error };
 }

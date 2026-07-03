@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { logActivity } from "./activity";
 
 // Catálogo fijo de tipos de badge — no hay tabla de tipos porque hoy no son
 // personalizables (ver docs/PATRONES.md sobre catálogos fijos como
@@ -128,6 +129,17 @@ export async function grantBadge(params: {
     granted_by: params.grantedBy,
   });
 
+  if (!error) {
+    await logActivity({
+      organizationId: params.organizationId,
+      actorId: params.grantedBy,
+      action: "badge_granted",
+      entityType: "badge",
+      entityName: getBadgeDefinition(params.badgeKey)?.label ?? params.badgeKey,
+      targetUserId: params.profileId,
+    });
+  }
+
   return { error };
 }
 
@@ -138,6 +150,22 @@ export async function revokeBadge(params: { organizationId: string; profileId: s
     .eq("organization_id", params.organizationId)
     .eq("profile_id", params.profileId)
     .eq("badge_key", params.badgeKey);
+
+  if (!error) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user) {
+      await logActivity({
+        organizationId: params.organizationId,
+        actorId: user.id,
+        action: "badge_revoked",
+        entityType: "badge",
+        entityName: getBadgeDefinition(params.badgeKey)?.label ?? params.badgeKey,
+        targetUserId: params.profileId,
+      });
+    }
+  }
 
   return { error };
 }

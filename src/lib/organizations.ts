@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { logActivity } from "./activity";
 
 export type Organization = {
   id: string;
@@ -70,6 +71,18 @@ export async function joinOrganization(params: { organizationId: string; userId:
   const { error } = await supabase
     .from("organization_members")
     .insert({ organization_id: organizationId, user_id: userId, role: "member" });
+
+  if (!error) {
+    const { data: org } = await supabase.from("organizations").select("name").eq("id", organizationId).maybeSingle();
+    await logActivity({
+      organizationId,
+      actorId: userId,
+      action: "member_joined",
+      entityType: "member",
+      entityName: org?.name ?? "la organización",
+      targetUserId: userId,
+    });
+  }
 
   return { error };
 }

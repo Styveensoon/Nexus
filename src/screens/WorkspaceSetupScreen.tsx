@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -10,7 +11,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { ArrowLeft, ArrowRight, Building2, Check, Image as ImageIcon, Palette, Sparkles } from "lucide-react-native";
+import { ArrowLeft, ArrowRight, Building2, Check, Image as ImageIcon, Palette } from "lucide-react-native";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { createOrganization } from "../lib/organizations";
@@ -116,9 +117,7 @@ export default function WorkspaceSetupScreen({ navigation, route }: any) {
         >
           <View style={{ width: "100%", maxWidth: 440 }}>
             <View style={styles.logoRow}>
-              <View style={styles.logoIcon}>
-                <Sparkles size={18} color="#FFF" />
-              </View>
+              <Image source={require("../../assets/images/nexus-logo.png")} style={styles.logoIcon} resizeMode="contain" />
               <Text style={[styles.logoText, { color: textPrimary }]}>Nexus</Text>
             </View>
 

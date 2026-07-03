@@ -70,17 +70,42 @@ export const BIO_MAX_LENGTH = 160;
 
 export const DEFAULT_SKILL_LEVEL = 5;
 
+// Cobertura curada (no es la lista completa de idiomas del mundo), en orden
+// alfabético para que el buscador de LanguageModal sea corto y usable — mismo
+// criterio que TIMEZONE_OPTIONS más abajo.
 export const LANGUAGE_OPTIONS = [
-  "Español",
-  "Inglés",
-  "Portugués",
-  "Francés",
   "Alemán",
-  "Italiano",
-  "Mandarín",
-  "Japonés",
-  "Coreano",
   "Árabe",
+  "Bengalí",
+  "Coreano",
+  "Danés",
+  "Español",
+  "Finlandés",
+  "Francés",
+  "Griego",
+  "Hebreo",
+  "Hindi",
+  "Húngaro",
+  "Indonesio",
+  "Inglés",
+  "Italiano",
+  "Japonés",
+  "Mandarín",
+  "Neerlandés",
+  "Noruego",
+  "Persa",
+  "Polaco",
+  "Portugués",
+  "Rumano",
+  "Ruso",
+  "Sueco",
+  "Swahili",
+  "Tagalo",
+  "Tailandés",
+  "Turco",
+  "Ucraniano",
+  "Urdu",
+  "Vietnamita",
 ];
 
 export const LANGUAGE_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"];

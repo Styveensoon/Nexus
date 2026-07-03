@@ -32,6 +32,8 @@ import { useAuth } from "../context/AuthContext";
 import { countTeams } from "../lib/teams";
 import { countProjects } from "../lib/projects";
 import { countOrgBadges } from "../lib/badges";
+import { listActivity, ActivityEntry } from "../lib/activity";
+import ActivityRow from "../components/ActivityRow";
 
 const WELCOME_PHRASES: Array<(name: string) => string> = [
   (n) => `¡Qué bueno verte, ${n}! 👋`,
@@ -85,6 +87,7 @@ export default function DashboardScreen({ navigation }: any) {
   const [teamCount, setTeamCount] = useState<number | null>(null);
   const [projectCount, setProjectCount] = useState<number | null>(null);
   const [badgeCount, setBadgeCount] = useState<number | null>(null);
+  const [recentActivity, setRecentActivity] = useState<ActivityEntry[]>([]);
 
   // useFocusEffect (no useEffect) para que los conteos se refresquen cada vez
   // que se vuelve a esta pestaña (p. ej. después de crear un proyecto en otra
@@ -95,6 +98,7 @@ export default function DashboardScreen({ navigation }: any) {
       countTeams(organization.id).then(({ count }) => setTeamCount(count));
       countProjects(organization.id).then(({ count }) => setProjectCount(count));
       countOrgBadges(organization.id).then(({ count }) => setBadgeCount(count));
+      listActivity({ organizationId: organization.id, limit: 5 }).then(({ data }) => setRecentActivity(data));
     }, [organization])
   );
 
@@ -331,13 +335,38 @@ export default function DashboardScreen({ navigation }: any) {
 
                 <View style={{ width: isMobile ? "100%" : "48%" }}>
                   <Text style={[styles.sectionTitle, { color: textPrimary }]}>Actividad reciente</Text>
-                  <View style={[styles.emptyCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}>
-                    <Activity size={32} color={textSecondary} />
-                    <Text style={[styles.emptyTitle, { color: textPrimary }]}>Sin actividad todavía</Text>
-                    <Text style={[styles.emptySubtitle, { color: textSecondary }]}>
-                      Aquí verás lo que pase en tu workspace en tiempo real.
-                    </Text>
-                  </View>
+                  {recentActivity.length === 0 ? (
+                    <View style={[styles.emptyCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}>
+                      <Activity size={32} color={textSecondary} />
+                      <Text style={[styles.emptyTitle, { color: textPrimary }]}>Sin actividad todavía</Text>
+                      <Text style={[styles.emptySubtitle, { color: textSecondary }]}>
+                        Aquí verás lo que pase en tu workspace en tiempo real.
+                      </Text>
+                      <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("Activity")}>
+                        <Text style={[styles.emptyLink, { color: primaryColor }]}>Ver actividad</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={[styles.activityCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}>
+                      <View style={{ gap: 10 }}>
+                        {recentActivity.slice(0, 3).map((entry) => (
+                          <ActivityRow
+                            key={entry.id}
+                            entry={entry}
+                            isDark={isDark}
+                            primaryColor={orgColor}
+                            border={border}
+                            textPrimary={textPrimary}
+                            textSecondary={textSecondary}
+                            cardBg={cardBg}
+                          />
+                        ))}
+                      </View>
+                      <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("Activity")}>
+                        <Text style={[styles.emptyLink, { color: primaryColor, marginTop: 14 }]}>Ver toda la actividad</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               </View>
             </View>
@@ -403,6 +432,7 @@ const styles = StyleSheet.create({
   card: { borderRadius: 20, borderWidth: 1, padding: 24 },
   sectionTitle: { fontSize: 18, fontWeight: "800", marginTop: 28, marginBottom: 12, letterSpacing: -0.3 },
   emptyCard: { borderRadius: 20, borderWidth: 1, padding: 28, alignItems: "center", gap: 8 },
+  activityCard: { borderRadius: 20, borderWidth: 1, padding: 18 },
   emptyTitle: { fontSize: 15, fontWeight: "700", textAlign: "center" },
   emptySubtitle: { fontSize: 13, textAlign: "center", lineHeight: 20 },
   emptyLink: { fontSize: 13, fontWeight: "700", textAlign: "center", marginTop: 2 },

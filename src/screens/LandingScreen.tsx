@@ -113,7 +113,7 @@ export default function LandingScreen({ navigation }: any) {
         { backgroundColor: isDark ? 'rgba(2, 6, 23, 0.9)' : 'rgba(250, 250, 250, 0.9)', borderBottomColor: border },
         Platform.OS === 'web' && { backdropFilter: 'blur(10px)' } as any
       ]}>
-        <Navbar navigation={navigation} isDark={isDark} />
+        <Navbar navigation={navigation} isDark={isDark} logoUri={require("../../assets/images/nexus-logo.png")} />
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingTop: 64, flexGrow: 1 }} showsVerticalScrollIndicator={false}>
@@ -269,7 +269,7 @@ export default function LandingScreen({ navigation }: any) {
           </View>
         </View>
 
-        <Footer isDark={isDark} />
+        <Footer isDark={isDark} logoUri={require("../../assets/images/nexus-logo.png")} />
       </ScrollView>
     </View>
   );

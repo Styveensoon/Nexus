@@ -17,6 +17,7 @@ import {
   Calendar,
   ChartGantt,
   Check,
+  ChevronDown,
   CircleCheckBig,
   Crown,
   FileText,
@@ -48,6 +49,7 @@ import { listProjects, setProjectTeams, Project } from "../lib/projects";
 import { listTeams, Team } from "../lib/teams";
 import ChatAttachmentButtons from "../components/ChatAttachmentButtons";
 import DatePickerModal from "../components/DatePickerModal";
+import TaskStatusPickerModal from "../components/TaskStatusPickerModal";
 import TaskCalendarView from "../components/TaskCalendarView";
 import TaskListView from "../components/TaskListView";
 import TaskGanttChart from "../components/TaskGanttChart";
@@ -101,11 +103,6 @@ function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "?";
   return parts.slice(0, 2).map((p) => p[0]?.toUpperCase()).join("");
-}
-
-function nextStatus(status: TaskStatus): TaskStatus {
-  const idx = TASK_STATUS_ORDER.indexOf(status);
-  return TASK_STATUS_ORDER[(idx + 1) % TASK_STATUS_ORDER.length];
 }
 
 // Sentinel para "todos los proyectos" en el selector de proyecto — Kanban
@@ -190,6 +187,7 @@ export default function TasksScreen({ navigation }: any) {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [statusPickerTask, setStatusPickerTask] = useState<Task | null>(null);
   const [filterOnlyMine, setFilterOnlyMine] = useState(false);
   const [filterOverdueOnly, setFilterOverdueOnly] = useState(false);
   const [filterPriorities, setFilterPriorities] = useState<Set<TaskPriority>>(new Set());
@@ -482,14 +480,6 @@ export default function TasksScreen({ navigation }: any) {
     setCreating(false);
     setShowCreateModal(false);
     loadData();
-  };
-
-  const handleCycleStatus = async (task: Task) => {
-    if (!canChangeStatus(task)) return;
-    const status = nextStatus(task.status);
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status } : t)));
-    if (selectedTask?.id === task.id) setSelectedTask({ ...task, status });
-    await updateTaskStatus(task.id, status);
   };
 
   const handleSetStatus = async (task: Task, status: TaskStatus) => {
@@ -814,10 +804,11 @@ export default function TasksScreen({ navigation }: any) {
           <TouchableOpacity
             activeOpacity={canChangeStatus(task) ? 0.7 : 1}
             disabled={!canChangeStatus(task)}
-            onPress={() => handleCycleStatus(task)}
-            style={[styles.statusBadge, { backgroundColor: TASK_STATUS_COLORS[task.status] + "20" }]}
+            onPress={() => setStatusPickerTask(task)}
+            style={[styles.statusBadge, { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: TASK_STATUS_COLORS[task.status] + "20" }]}
           >
             <Text style={{ color: TASK_STATUS_COLORS[task.status], fontWeight: "700", fontSize: 11.5 }}>{TASK_STATUS_LABELS[task.status]}</Text>
+            {canChangeStatus(task) && <ChevronDown size={11} color={TASK_STATUS_COLORS[task.status]} />}
           </TouchableOpacity>
         </View>
       </TouchableOpacity>
@@ -1956,6 +1947,17 @@ export default function TasksScreen({ navigation }: any) {
         onConfirm={(isoDate) => {
           setEditDueDate(isoDate);
           setShowEditDueDatePicker(false);
+        }}
+      />
+
+      <TaskStatusPickerModal
+        visible={!!statusPickerTask}
+        isDark={isDark}
+        currentStatus={statusPickerTask?.status ?? null}
+        onClose={() => setStatusPickerTask(null)}
+        onSelect={(status) => {
+          if (statusPickerTask) handleSetStatus(statusPickerTask, status);
+          setStatusPickerTask(null);
         }}
       />
     </View>

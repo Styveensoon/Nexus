@@ -480,7 +480,7 @@ create table if not exists tasks (
   project_id uuid not null references projects(id) on delete cascade,
   title text not null,
   description text,
-  status text not null default 'pending' check (status in ('pending', 'in_progress', 'blocked', 'completed')),
+  status text not null default 'pending' check (status in ('backlog', 'pending', 'in_progress', 'in_review', 'testing', 'blocked', 'completed', 'cancelled')),
   assigned_user_id uuid references auth.users(id) on delete set null,
   assigned_team_id uuid references teams(id) on delete set null,
   created_by uuid not null references auth.users(id) on delete cascade,
@@ -503,6 +503,15 @@ alter table tasks
 alter table tasks drop constraint if exists tasks_priority_check;
 alter table tasks
   add constraint tasks_priority_check check (priority in ('low', 'medium', 'high', 'urgent'));
+
+-- status pasó de 4 a 8 valores (se agregaron backlog/in_review/testing/cancelled)
+-- después del `create table` original — mismo criterio que tasks_priority_check:
+-- drop + add en vez de un DO $$ IF NOT EXISTS $$, así se actualiza el constraint
+-- si ya existía con la lista vieja de valores.
+alter table tasks drop constraint if exists tasks_status_check;
+alter table tasks
+  add constraint tasks_status_check
+  check (status in ('backlog', 'pending', 'in_progress', 'in_review', 'testing', 'blocked', 'completed', 'cancelled'));
 
 alter table tasks drop constraint if exists tasks_dates_order_check;
 alter table tasks
@@ -807,3 +816,48 @@ drop policy if exists "profile_badges_delete_manager" on profile_badges;
 create policy "profile_badges_delete_manager" on profile_badges
   for delete to authenticated
   using (is_badge_manager_for(organization_id, profile_id));
+
+-- ----------------------------------------------------------------------------
+-- activity_log: feed curado de actividad de la organización (creaciones +
+-- cambios de estado clave — no cada edición de campo, ver docs/ESTADO.md).
+-- actor_name/target_name se guardan como snapshot de texto en el momento del
+-- log, no se resuelven con un join a profiles en cada lectura: si esa persona
+-- deja la organización más adelante, profiles_select_org_members ya no
+-- dejaría verla al resto, pero el historial debe seguir siendo legible.
+-- project_id/team_id SÍ son FK reales (para poder filtrar "actividad de este
+-- proyecto/equipo") con on delete set null; entity_id es un uuid plano sin FK
+-- porque puede apuntar a project/team/task/badge indistintamente (polimórfico)
+-- y porque en un "_deleted" la fila referenciada ya no existe.
+-- ----------------------------------------------------------------------------
+create table if not exists activity_log (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  actor_id uuid references auth.users(id) on delete set null,
+  actor_name text not null,
+  action text not null,
+  entity_type text not null check (entity_type in ('project', 'team', 'task', 'badge', 'member')),
+  entity_id uuid,
+  entity_name text not null,
+  project_id uuid references projects(id) on delete set null,
+  team_id uuid references teams(id) on delete set null,
+  target_user_id uuid references auth.users(id) on delete set null,
+  target_name text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+alter table activity_log enable row level security;
+
+drop policy if exists "activity_log_select_org" on activity_log;
+create policy "activity_log_select_org" on activity_log
+  for select to authenticated
+  using (organization_id in (select my_organization_ids()));
+
+-- Autoatestiguado: cada acción se loguea desde el cliente inmediatamente
+-- después de que la mutación real (con su propia RLS) ya tuvo éxito. El peor
+-- caso de confiar en el cliente acá es una entrada de historial falsa sobre
+-- uno mismo, no un cambio de datos con privilegios reales.
+drop policy if exists "activity_log_insert_self" on activity_log;
+create policy "activity_log_insert_self" on activity_log
+  for insert to authenticated
+  with check (auth.uid() = actor_id and organization_id in (select my_organization_ids()));
