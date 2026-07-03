@@ -1,7 +1,7 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import { StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
-import { CircleCheckBig, Folder, LayoutGrid, LogOut, Sparkles, User, Users } from "lucide-react-native";
+import { Image, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { CircleCheckBig, Folder, LayoutGrid, LogOut, User, Users } from "lucide-react-native";
 
 import DashboardScreen from "../screens/DashboardScreen";
 import ProjectsScreen from "../screens/ProjectsScreen";
@@ -76,9 +76,11 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
     <View style={[styles.topBar, { backgroundColor: bg, borderBottomColor: border }]}>
       <View style={styles.topBarInner}>
         <View style={styles.brand}>
-          <View style={styles.brandIcon}>
-            <Sparkles size={16} color="#FFF" />
-          </View>
+          <Image
+            source={require("../../assets/images/nexus-logo.png")}
+            style={styles.brandIcon}
+            resizeMode="contain"
+          />
           <Text style={[styles.brandText, { color: isDark ? "#F8FAFC" : "#020617" }]}>Nexus</Text>
         </View>
 
@@ -148,7 +150,7 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "space-between", paddingHorizontal: 32, height: 64,
   },
   brand: { flexDirection: "row", alignItems: "center", gap: 10 },
-  brandIcon: { width: 32, height: 32, borderRadius: 9, backgroundColor: "#2563EB", justifyContent: "center", alignItems: "center" },
+  brandIcon: { width: 32, height: 32, borderRadius: 8 },
   brandText: { fontSize: 17, fontWeight: "900", letterSpacing: -0.5 },
   links: { flexDirection: "row", alignItems: "center", gap: 6 },
   link: {

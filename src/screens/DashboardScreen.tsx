@@ -197,13 +197,15 @@ export default function DashboardScreen({ navigation }: any) {
               </View>
             </View>
 
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={[styles.iconBtn, { backgroundColor: cardBg, borderColor: border }]}
-              onPress={handleSignOut}
-            >
-              <LogOut size={18} color={textSecondary} />
-            </TouchableOpacity>
+            {isMobile && (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[styles.iconBtn, { backgroundColor: cardBg, borderColor: border }]}
+                onPress={handleSignOut}
+              >
+                <LogOut size={18} color={textSecondary} />
+              </TouchableOpacity>
+            )}
           </View>
 
           {!organization ? (
