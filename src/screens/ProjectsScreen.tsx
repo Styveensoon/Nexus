@@ -52,6 +52,9 @@ const STATUS_COLORS: Record<ProjectStatus, string> = {
   completed: "#2563EB",
 };
 
+// Paleta de marca de Nexus (azure) — acento moderado, no cubre áreas grandes.
+const AZURE_DEEP = "#2C7BD1";
+
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "?";
@@ -75,30 +78,33 @@ export default function ProjectsScreen({ navigation }: any) {
   const isWeb = Platform.OS === "web";
   const isOwner = !!organization && organization.owner_id === user?.id;
 
-  const bg            = isDark ? "#020617" : "#FAFAFA";
-  const cardBg        = isDark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
-  const border        = isDark ? "rgba(51, 65, 85, 0.5)" : "rgba(226, 232, 240, 0.8)";
-  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
-  const primaryColor  = organization?.color ?? "#2563EB";
-  const inputBg       = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
+  const bg            = isDark ? "#0B1220" : "#F1F5FA";
+  const cardBg        = isDark ? "rgba(17, 24, 39, 0.58)" : "rgba(255, 255, 255, 0.6)";
+  const border        = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
+  const primaryColor  = organization?.color ?? AZURE_DEEP;
+  const inputBg       = isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.5)";
   const dangerColor   = "#EF4444";
 
-  const ultraShadow = Platform.select({
-    web: {
-      boxShadow: isDark
-        ? "0 25px 50px -12px rgba(0,0,0,1), 0 0 0 1px rgba(255,255,255,0.05) inset"
-        : "0 30px 60px -15px rgba(0,0,0,0.08), 0 10px 30px -5px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02) inset",
-      backdropFilter: "blur(12px)",
-    } as any,
-    default: {
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: isDark ? 0.4 : 0.06,
-      shadowRadius: 16,
-      elevation: 6,
-    },
-  });
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: {
+        shadowColor: isDark ? "#000" : "#2C7BD1",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 22,
+        elevation: 6,
+      },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
@@ -309,7 +315,7 @@ export default function ProjectsScreen({ navigation }: any) {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: bg }]}>
+    <View style={[styles.container, { backgroundColor: bg, overflow: "hidden" }]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: isMobile ? 16 : 32 }}>
         <View style={{ width: "100%", maxWidth: 1280, alignSelf: "center" }}>
           {/* HEADER */}
@@ -327,7 +333,7 @@ export default function ProjectsScreen({ navigation }: any) {
                 style={[styles.newProjectBtn, { backgroundColor: primaryColor }]}
                 onPress={openCreateModal}
               >
-                <Plus size={16} color="#FFF" />
+                <Plus size={16} color="#FFF" strokeWidth={2.3} />
                 <Text style={styles.newProjectBtnText}>Nuevo proyecto</Text>
               </TouchableOpacity>
             )}
@@ -344,7 +350,7 @@ export default function ProjectsScreen({ navigation }: any) {
             <>
               {/* SEARCH */}
               <View style={[styles.searchWrapper, { backgroundColor: inputBg, borderColor: border, marginTop: 20 }]}>
-                <Search size={18} color={textSecondary} />
+                <Search size={18} color={textSecondary} strokeWidth={2.2} />
                 <TextInput
                   value={search}
                   onChangeText={setSearch}
@@ -391,7 +397,7 @@ export default function ProjectsScreen({ navigation }: any) {
                 <Text style={{ color: textSecondary, marginTop: 24 }}>Cargando proyectos…</Text>
               ) : filteredProjects.length === 0 ? (
                 <View style={[styles.emptyCard, { backgroundColor: cardBg, borderColor: border, marginTop: 20 }, ultraShadow]}>
-                  <Folder size={32} color={textSecondary} />
+                  <Folder size={32} color={textSecondary} strokeWidth={2} />
                   <Text style={[styles.emptyTitle, { color: textPrimary }]}>
                     {projects.length === 0 ? "No tienes ningún proyecto todavía" : "Ningún proyecto coincide con esos filtros"}
                   </Text>
@@ -421,7 +427,7 @@ export default function ProjectsScreen({ navigation }: any) {
                               style={[styles.confirmBtn, { backgroundColor: dangerColor }]}
                               onPress={() => handleDelete(project.id)}
                             >
-                              <Check size={14} color="#FFF" />
+                              <Check size={14} color="#FFF" strokeWidth={2.3} />
                               <Text style={styles.confirmBtnText}>Borrar</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
@@ -453,7 +459,7 @@ export default function ProjectsScreen({ navigation }: any) {
                               {project.iconUrl ? (
                                 <Image source={{ uri: project.iconUrl }} style={styles.projectIconImage} />
                               ) : (
-                                <Folder size={20} color={project.color} />
+                                <Folder size={20} color={project.color} strokeWidth={2.2} />
                               )}
                             </View>
                             <View style={{ flexShrink: 1 }}>
@@ -469,10 +475,10 @@ export default function ProjectsScreen({ navigation }: any) {
                           {isOwner && (
                             <View style={{ flexDirection: "row", gap: 14 }}>
                               <TouchableOpacity hitSlop={8} onPress={() => openEditModal(project)}>
-                                <Pencil size={16} color={textSecondary} />
+                                <Pencil size={16} color={textSecondary} strokeWidth={2.2} />
                               </TouchableOpacity>
                               <TouchableOpacity hitSlop={8} onPress={() => setConfirmDeleteId(project.id)}>
-                                <Trash2 size={16} color={textSecondary} />
+                                <Trash2 size={16} color={textSecondary} strokeWidth={2.2} />
                               </TouchableOpacity>
                             </View>
                           )}
@@ -573,11 +579,11 @@ export default function ProjectsScreen({ navigation }: any) {
       <Modal visible={showCreateModal} transparent animationType="fade" onRequestClose={() => setShowCreateModal(false)}>
         <View style={styles.overlay}>
           <ScrollView contentContainerStyle={styles.overlayScroll} showsVerticalScrollIndicator={false}>
-          <View style={[styles.modalCard, { backgroundColor: isDark ? "#0F172A" : "#FFFFFF", borderColor: border }, !isMobile && styles.modalCardWide]}>
+          <View style={[styles.modalCard, { backgroundColor: isDark ? "rgba(15,23,42,0.72)" : "rgba(255,255,255,0.78)", borderColor: border }, ultraShadow, !isMobile && styles.modalCardWide]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: textPrimary }]}>{editingProjectId ? "Editar proyecto" : "Nuevo proyecto"}</Text>
               <TouchableOpacity onPress={() => setShowCreateModal(false)} hitSlop={8}>
-                <X size={20} color={textSecondary} />
+                <X size={20} color={textSecondary} strokeWidth={2.2} />
               </TouchableOpacity>
             </View>
 
@@ -625,7 +631,7 @@ export default function ProjectsScreen({ navigation }: any) {
                     style={[styles.chipInput, { color: textPrimary }, isWeb && styles.noOutline]}
                   />
                   <TouchableOpacity onPress={addGoal} hitSlop={8}>
-                    <Plus size={18} color={primaryColor} />
+                    <Plus size={18} color={primaryColor} strokeWidth={2.3} />
                   </TouchableOpacity>
                 </View>
                 {newGoals.length > 0 && (
@@ -673,7 +679,7 @@ export default function ProjectsScreen({ navigation }: any) {
                     style={[styles.chipInput, { color: textPrimary }, isWeb && styles.noOutline]}
                   />
                   <TouchableOpacity onPress={addArea} hitSlop={8}>
-                    <Plus size={18} color={primaryColor} />
+                    <Plus size={18} color={primaryColor} strokeWidth={2.3} />
                   </TouchableOpacity>
                 </View>
                 {/* Solo las áreas personalizadas (las del abanico ya muestran su propio
@@ -733,7 +739,7 @@ export default function ProjectsScreen({ navigation }: any) {
               style={[styles.createBtn, { backgroundColor: primaryColor, opacity: !newName.trim() || creating ? 0.5 : 1 }]}
               onPress={handleSubmit}
             >
-              <Sparkles size={16} color="#FFF" />
+              <Sparkles size={16} color="#FFF" strokeWidth={2.3} />
               <Text style={styles.createBtnText}>
                 {creating ? (editingProjectId ? "Guardando…" : "Creando…") : editingProjectId ? "Guardar cambios" : "Crear proyecto"}
               </Text>
@@ -775,8 +781,8 @@ function StatCard({
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  subtitle: { fontSize: 13, fontWeight: "700" },
-  title: { fontSize: 30, fontWeight: "900", letterSpacing: -0.5, marginTop: 2 },
+  subtitle: { fontSize: 13, fontWeight: "600" },
+  title: { fontSize: 30, fontWeight: "700", letterSpacing: -0.5, marginTop: 2 },
 
   newProjectBtn: {
     flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 999, paddingHorizontal: 18, paddingVertical: 12,
@@ -790,9 +796,9 @@ const styles = StyleSheet.create({
   noOutline: { outlineStyle: "none" } as any,
 
   statsRow: { gap: 12, marginTop: 20 },
-  statCard: { flexGrow: 1, minWidth: 130, borderRadius: 18, borderWidth: 1, padding: 16 },
+  statCard: { flexGrow: 1, minWidth: 130, borderRadius: 20, borderWidth: 1, padding: 16 },
   statDot: { width: 10, height: 10, borderRadius: 5, marginBottom: 10 },
-  statValue: { fontSize: 22, fontWeight: "900" },
+  statValue: { fontSize: 22, fontWeight: "700" },
   statLabel: { fontSize: 12, marginTop: 2 },
 
   filterScroll: { marginTop: 20 },
@@ -800,11 +806,11 @@ const styles = StyleSheet.create({
 
   errorText: { marginTop: 16, fontSize: 13, fontWeight: "600" },
 
-  projectCard: { borderRadius: 22, borderWidth: 1, padding: 20 },
+  projectCard: { borderRadius: 26, borderWidth: 1, padding: 20 },
   projectHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
   projectHeaderLeft: { flexDirection: "row", gap: 12, flex: 1 },
-  projectIcon: { width: 42, height: 42, borderRadius: 13, justifyContent: "center", alignItems: "center" },
-  projectTitle: { fontSize: 16, fontWeight: "800" },
+  projectIcon: { width: 42, height: 42, borderRadius: 16, justifyContent: "center", alignItems: "center" },
+  projectTitle: { fontSize: 16, fontWeight: "700" },
   projectDate: { fontSize: 11.5, marginTop: 3 },
   projectDescription: { fontSize: 13, lineHeight: 19, marginTop: 14 },
   projectIconImage: { width: 42, height: 42, resizeMode: "cover" },
@@ -817,12 +823,12 @@ const styles = StyleSheet.create({
   leaderRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 16 },
   leaderName: { fontSize: 13, fontWeight: "700", flexShrink: 1 },
   leaderPill: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
-  leaderPillText: { fontSize: 10, fontWeight: "800" },
+  leaderPillText: { fontSize: 10, fontWeight: "700" },
 
   projectFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 16 },
   membersRow: { flexDirection: "row", alignItems: "center" },
   avatarMini: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  avatarMiniText: { color: "#FFF", fontSize: 11, fontWeight: "800" },
+  avatarMiniText: { color: "#FFF", fontSize: 11, fontWeight: "700" },
 
   statusBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999 },
 
@@ -831,14 +837,14 @@ const styles = StyleSheet.create({
   confirmBtn: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9 },
   confirmBtnText: { color: "#FFF", fontWeight: "700", fontSize: 13 },
 
-  emptyCard: { borderRadius: 20, borderWidth: 1, padding: 32, alignItems: "center", gap: 8 },
+  emptyCard: { borderRadius: 24, borderWidth: 1, padding: 32, alignItems: "center", gap: 8 },
   emptyTitle: { fontSize: 15, fontWeight: "700", textAlign: "center" },
   emptySubtitle: { fontSize: 13, textAlign: "center", lineHeight: 20 },
   emptyLink: { fontSize: 13, fontWeight: "700", textAlign: "center", marginTop: 2 },
 
   overlay: { flex: 1, backgroundColor: "rgba(2, 6, 23, 0.6)", alignItems: "center", justifyContent: "center", padding: 20 },
   overlayScroll: { flexGrow: 1, alignItems: "center", justifyContent: "center", width: "100%" },
-  modalCard: { width: "100%", maxWidth: 460, borderRadius: 24, borderWidth: 1, padding: 24 },
+  modalCard: { width: "100%", maxWidth: 460, borderRadius: 32, borderWidth: 1, padding: 24 },
   modalCardWide: { maxWidth: 1080, padding: 40 },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
 
@@ -848,7 +854,7 @@ const styles = StyleSheet.create({
   formLayout: { flexDirection: "row", gap: 28, alignItems: "flex-start" },
   formMain: { flex: 1.5, minWidth: 0 },
   formSide: { width: 300 },
-  modalTitle: { fontSize: 18, fontWeight: "800" },
+  modalTitle: { fontSize: 18, fontWeight: "700" },
   modalLabel: { fontSize: 12, fontWeight: "700", marginBottom: 8, marginTop: 14 },
   modalHint: { fontSize: 11.5, marginTop: 10, marginBottom: 8 },
   modalInput: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14 },

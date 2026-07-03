@@ -1,8 +1,36 @@
 # Patrones de código ya establecidos
 Reusar, no reinventar.
 
-- **Paleta local por pantalla** (no hay theme file compartido para las pantallas nuevas): cada componente calcula sus propios `bg`, `cardBg`, `border`, `textPrimary`, `textSecondary`, `primaryColor = "#2563EB"` (u `organization?.color` cuando aplica), `inputBg` a partir de `isDark` (de `useTheme()`). Copiar el bloque tal cual de cualquier pantalla ya rediseñada en vez de crear una paleta nueva.
-- **Sombra:** patrón `ultraShadow` vía `Platform.select({ web: { boxShadow, backdropFilter: "blur(12px)" }, default: { shadowColor/Offset/Opacity/Radius, elevation } })`.
+- **Paleta local por pantalla, unificada en "vidrio azure"** (no hay theme file compartido — cada componente sigue calculando sus propios tokens, pero ahora todos parten del mismo sistema): `AZURE_LIGHT = "#7EC8F5"` / `AZURE_DEEP = "#2C7BD1"` (tomados del degradé del logo, `assets/images/nexus-logo.png`) son el único acento de marca de la app — reemplazan cualquier azul plano viejo (`#2563EB`) y cualquier morado/violeta secundario (`#7C3AED` y similares, ya erradicados salvo como opción de color personalizable por el usuario en paletas tipo `WORKSPACE_COLORS`/`CARD_COLORS`/`PRESET_COLORS`, donde sí puede seguir existiendo como una opción más). `bg` (claro `#F1F5FA` / oscuro `#0B1220`), `cardBg`, `border`, `textPrimary` (claro `#101828` / oscuro `#F8FAFC`), `textSecondary` (claro `#5B6472` / oscuro `#94A3B8`), `inputBg`, `primaryColor = AZURE_DEEP` (fijo, **nunca** `organization?.color`) a partir de `isDark` (de `useTheme()`). Copiar el bloque tal cual de `DashboardScreen.tsx` o `ProfileScreen.tsx` (las referencias vivas del sistema) en vez de crear una paleta nueva.
+- **`primaryColor` (acento de marca de Nexus) vs. `orgColor`/`organization.color` (marca del workspace) son variables DISTINTAS, nunca la misma:** `primaryColor` es siempre el azure fijo de arriba — lo usan íconos, bordes activos, links, y las manchas de fondo (ver bullet siguiente). `organization.color` (elegido por cada owner en `WorkspaceSetupScreen`) solo debe usarse en los elementos que existen específicamente para mostrar la marca del workspace: el hero card "TU WORKSPACE" y el avatar de organización en `DashboardScreen.tsx`, el `previewRow` de `ProfileScreen.tsx` (ahí es el `avatar_color` del perfil, mismo criterio). Si una pantalla necesita mostrar el color de marca del workspace en más de un lugar, se lo asigna a una variable con nombre propio (`orgColor`), separada de `primaryColor` — mezclar ambas en una sola variable (`const primaryColor = organization?.color ?? AZURE_DEEP`) es fácil de escribir pero rompe la regla "azure es el único acento de chrome" en cuanto esa variable se reusa para algo decorativo (pasó de verdad: ver la trampa de las manchas de fondo en `docs/TRAMPAS.md`).
+- **Manchas de fondo desenfocadas ("blobs"), el ingrediente que hace visible el vidrio esmerilado:** sin algo de color detrás, el `backdropFilter: blur(...)` de una tarjeta translúcida no tiene nada que desenfocar y el efecto de vidrio no se nota. Toda pantalla raíz de la app (no los modales/overlays, no los componentes que se renderizan dentro de otra pantalla) declara su propia `blobStyle(color, size, isDark)` local (mismo criterio de "copiar el bloque", no hay helper compartido) y renderiza 2 `View` absolutas como primeros hijos del contenedor raíz (que necesita `overflow: "hidden"`), típicamente `AZURE_DEEP` arriba/derecha y `AZURE_LIGHT` abajo/izquierda:
+  ```ts
+  function blobStyle(color: string, size: number, isDark: boolean): any {
+    return Platform.select({
+      web: { position: "absolute", width: size, height: size, borderRadius: size / 2, backgroundColor: color, opacity: isDark ? 0.4 : 0.34, filter: "blur(90px)" } as any,
+      default: { position: "absolute", width: size, height: size, borderRadius: size / 2, backgroundColor: color, opacity: isDark ? 0.18 : 0.14 },
+    });
+  }
+  ```
+  En web el desenfoque es real (`filter: blur`); en nativo, sin esa API, queda como una mancha de color plano de opacidad baja — degrada bien, no rompe nada. `DashboardScreen.tsx`/`ProfileScreen.tsx` además usan `orgColor` (no `primaryColor`) en la mancha superior para que el fondo refuerce la marca del workspace — ver el bullet anterior sobre por qué esa distinción de variable importa acá específicamente.
+- **Sombra/vidrio:** patrón `ultraShadow` (ya no es solo sombra, es la receta completa del "vidrio"):
+  ```ts
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: { shadowColor: isDark ? "#000" : "#2C7BD1", shadowOffset: { width: 0, height: 10 }, shadowOpacity: isDark ? 0.35 : 0.1, shadowRadius: 22, elevation: 6 },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
+  ```
+  El `borderTopColor` agrega un filo de brillo en el borde superior de cada tarjeta (efecto "rim light" de vidrio) — para que tenga efecto, el elemento necesita `borderWidth: 1` y un `borderColor` base ya seteado antes en el array de estilos (`ultraShadow` va último para poder pisar solo `borderTopColor`). Modales/overlays van con la card más opaca (`rgba(255,255,255,0.75-0.9)` en claro) que las pantallas de fondo (`~0.6`), porque suelen llevar inputs/listas y necesitan más contraste de lectura.
+- **Esquinas tipo "squircle":** radios más grandes que antes — panel/sheet grande 32-36, tarjetas/hero 24-28, tiles/tarjetas chicas 20-24, wraps de ícono 14-18, botones de ícono chicos 14-16 (cuadrados redondeados, no círculo perfecto — los avatares circulares siguen siendo circulares).
+- **Tipografía más liviana:** títulos que antes eran `fontWeight: "900"/"800"` bajaron a `"700"` (títulos grandes/hero) o `"600"` (subtítulos, títulos de sección, énfasis de cuerpo) — "medios-semibold", no "black". Los íconos de `lucide-react-native` de 16px o más llevan `strokeWidth={2.2}`–`{2.3}` para un trazo más definido (los íconos chicos, bajo 16px, no lo necesitan).
 - **Responsive:** `const isMobile = useWindowDimensions().width < 768` en cada pantalla — no hay breakpoints centralizados. Contenido en desktop va dentro de un contenedor `maxWidth` centrado (960–1280 según la pantalla).
 - **Íconos:** `lucide-react-native` en todo el proyecto — ya no queda ninguna pantalla usando `@expo/vector-icons` (la última, la vieja `CalendarScreen`, se eliminó al fusionarse como vista dentro de Tasks).
 - **Ícono + color personalizado de una entidad (equipo/proyecto):** `IconColorPicker.tsx` tiene dos secciones rotuladas ("Imagen" / "Color"), no una sola fila apretada. "Imagen": preview y `AvatarUploadZone` (drag-and-drop en web / picker nativo) del mismo tamaño (`AVATAR_TILE_SIZE`, 84px) lado a lado, con el input de URL pegada ocupando el ancho completo debajo (confirma con Enter, el botón de flecha, **o al perder el foco** — pegar y hacer clic afuera debe aplicar igual). Sube a través de `uploadIconFile` en `src/lib/icons.ts` (reusa el bucket `avatars`, ver `docs/TRAMPAS.md`). Si no hay ícono, se cae a un ícono de lucide (`fallbackIcon`) coloreado con el color elegido. "Color": 5 muestras rápidas (`PRESET_COLORS`) + un círculo punteado para personalizar (`ColorPickerModal`), con el hex mostrado debajo — no un solo swatch-pill con chevron.

@@ -24,6 +24,9 @@ import Navbar from "../components/landing/Navbar";
 import Footer from "../components/landing/Footer";
 import DashboardMockup from "../components/landing/DashboardMockup";
 
+// Paleta de marca de Nexus (azure) — acento único, moderado, no cubre áreas grandes.
+const AZURE_DEEP = "#2C7BD1";
+
 const FEATURES = [
   { icon: Sparkles,   title: "Semillero IA",        desc: "Describe tu proyecto y la IA forma el equipo ideal basándose en perfiles reales de tu organización." },
   { icon: Lock,       title: "Self-hosted & privado", desc: "La IA corre en tu servidor. Tus datos nunca salen de tu red. Ideal para corporativos y gobierno." },
@@ -49,14 +52,14 @@ export default function LandingScreen({ navigation }: any) {
   const [hoverHeroSecondary, setHoverHeroSecondary] = useState(false);
   const [hoverCta, setHoverCta] = useState(false);
 
-  // Paleta Premium (Contrastes agresivos)
-  const bg            = isDark ? "#020617" : "#FAFAFA"; 
-  const cardBg        = isDark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)"; 
-  const bg2           = isDark ? "#0B1120" : "#F1F5F9";
-  const border        = isDark ? "rgba(51, 65, 85, 0.5)" : "rgba(226, 232, 240, 0.8)";
-  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
-  const primaryColor  = "#2563EB";
+  // Paleta "vidrio azure" — mismo lenguaje visual que Dashboard/Profile
+  const bg            = isDark ? "#0B1220" : "#F1F5FA";
+  const cardBg        = isDark ? "rgba(17, 24, 39, 0.62)" : "rgba(255, 255, 255, 0.72)";
+  const bg2           = isDark ? "#0E1626" : "#EAF1FA";
+  const border        = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
+  const primaryColor  = AZURE_DEEP;
 
   // --- COREOGRAFÍA DE ANIMACIONES ---
   const heroContentOpacity = useRef(new Animated.Value(0)).current;
@@ -89,43 +92,37 @@ export default function LandingScreen({ navigation }: any) {
     ? { backgroundColor: bg, height: "100vh", width: "100%" }
     : { flex: 1, backgroundColor: bg };
 
-  const ultraShadow = Platform.select({
-    web: {
-      boxShadow: isDark 
-        ? "0 25px 50px -12px rgba(0,0,0,1), 0 0 0 1px rgba(255,255,255,0.05) inset"
-        : "0 30px 60px -15px rgba(0,0,0,0.08), 0 10px 30px -5px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02) inset",
-      backdropFilter: "blur(12px)", 
-    } as any,
-    default: {
-      // SOMBRA ESPECÍFICA PARA MÓVIL: Sutil, elegante, no rústica.
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: isDark ? 0.4 : 0.05,
-      shadowRadius: 12,
-      elevation: 6, 
-    },
-  });
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: {
+        shadowColor: isDark ? "#000" : "#2C7BD1",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 22,
+        elevation: 6,
+      },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
 
   return (
     <View style={containerStyle}>
       <View style={[
         styles.navWrapper, 
-        { backgroundColor: isDark ? 'rgba(2, 6, 23, 0.9)' : 'rgba(250, 250, 250, 0.9)', borderBottomColor: border },
-        Platform.OS === 'web' && { backdropFilter: 'blur(10px)' } as any
+        { backgroundColor: isDark ? 'rgba(11, 18, 32, 0.72)' : 'rgba(241, 245, 250, 0.78)', borderBottomColor: border },
+        Platform.OS === 'web' && { backdropFilter: 'blur(20px) saturate(180%)' } as any
       ]}>
         <Navbar navigation={navigation} isDark={isDark} logoUri={require("../../assets/images/nexus-logo.png")} />
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingTop: 64, flexGrow: 1 }} showsVerticalScrollIndicator={false}>
         
-        {Platform.OS === 'web' && (
-          <View style={styles.backgroundTextureContainer}>
-            <View style={[styles.glowOrb, { top: -100, left: '-10%', backgroundColor: isDark ? 'rgba(37, 99, 235, 0.15)' : 'rgba(37, 99, 235, 0.08)' }]} />
-            <View style={[styles.glowOrb, { top: 300, right: '-5%', backgroundColor: isDark ? 'rgba(124, 58, 237, 0.12)' : 'rgba(124, 58, 237, 0.05)' }]} />
-            <View style={[styles.glowOrb, { top: '60%', left: '20%', backgroundColor: isDark ? 'rgba(16, 185, 129, 0.05)' : 'rgba(16, 185, 129, 0.03)' }]} />
-          </View>
-        )}
-
         {/* --- HERO SECTION --- */}
         <View style={[styles.contentContainer, { paddingHorizontal: isMobile ? 16 : "5%" }]}>
           <View style={[styles.hero, { flexDirection: isMobile ? "column" : "row", paddingVertical: isMobile ? 40 : 140 }]}>
@@ -135,7 +132,7 @@ export default function LandingScreen({ navigation }: any) {
               opacity: heroContentOpacity,
               transform: [{ translateY: heroContentTranslateY }]
             }]}>
-              <View style={[styles.badge, { backgroundColor: isDark ? "rgba(37, 99, 235, 0.1)" : "#EFF6FF", borderColor: isDark ? "rgba(37, 99, 235, 0.3)" : "#BFDBFE", marginBottom: isMobile ? 16 : 32 }]}>
+              <View style={[styles.badge, { backgroundColor: isDark ? "rgba(44,123,209,0.14)" : "#EAF4FC", borderColor: isDark ? "rgba(44,123,209,0.35)" : "#BEE3FA", marginBottom: isMobile ? 16 : 32 }]}>
                 <Sparkles size={14} color={primaryColor} />
                 <Text style={styles.badgeText}>La evolución del management</Text>
               </View>
@@ -164,7 +161,7 @@ export default function LandingScreen({ navigation }: any) {
                   {...(isWeb ? { onMouseEnter: () => setHoverHeroPrimary(true), onMouseLeave: () => setHoverHeroPrimary(false) } as any : {})}
                 >
                   <Text style={[styles.btnPrimaryText, { fontSize: isMobile ? 16 : 18 }]}>Iniciar gratis</Text>
-                  <ArrowRight size={isMobile ? 16 : 18} color="#FFF" />
+                  <ArrowRight size={isMobile ? 16 : 18} color="#FFF" strokeWidth={2.2} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   activeOpacity={0.85}
@@ -234,8 +231,8 @@ export default function LandingScreen({ navigation }: any) {
                     }
                   ]}
                 >
-                  <View style={[styles.featIcon, { backgroundColor: isDark ? "rgba(37,99,235,0.15)" : "#EFF6FF", width: isMobile ? 48 : 60, height: isMobile ? 48 : 60, marginBottom: isMobile ? 16 : 24 }]}>
-                    <f.icon size={isMobile ? 20 : 26} color={primaryColor} />
+                  <View style={[styles.featIcon, { backgroundColor: isDark ? "rgba(44,123,209,0.16)" : "#EAF4FC", width: isMobile ? 48 : 60, height: isMobile ? 48 : 60, marginBottom: isMobile ? 16 : 24 }]}>
+                    <f.icon size={isMobile ? 20 : 26} color={primaryColor} strokeWidth={2.3} />
                   </View>
                   <Text style={[styles.featTitle, { color: textPrimary, fontSize: isMobile ? 17 : 22 }]}>{f.title}</Text>
                   <Text style={[styles.featDesc, { color: textSecondary, fontSize: isMobile ? 13 : 16, lineHeight: isMobile ? 20 : 26 }]}>{f.desc}</Text>
@@ -246,7 +243,7 @@ export default function LandingScreen({ navigation }: any) {
         </View>
 
         {/* --- CTA FINAL --- */}
-        <View style={[styles.cta, { backgroundColor: isDark ? "#020617" : "#FFFFFF", borderTopWidth: 1, borderTopColor: border, paddingVertical: isMobile ? 48 : 120, paddingHorizontal: isMobile ? 16 : 0 }]}>
+        <View style={[styles.cta, { backgroundColor: isDark ? "#0B1220" : "#FFFFFF", borderTopWidth: 1, borderTopColor: border, paddingVertical: isMobile ? 48 : 120, paddingHorizontal: isMobile ? 16 : 0 }]}>
           <View style={[styles.contentContainer, { maxWidth: 1000 }]}>
             <Text style={[styles.ctaTitle, { color: textPrimary, fontSize: isMobile ? 28 : 48, marginBottom: isMobile ? 16 : 24 }]}>Deja de gestionar. Empieza a crear.</Text>
             <Text style={[styles.ctaSub, { color: textSecondary, fontSize: isMobile ? 15 : 20, marginBottom: isMobile ? 24 : 48 }]}>
@@ -263,7 +260,7 @@ export default function LandingScreen({ navigation }: any) {
                 onPress={() => navigation.navigate("Register")}
                 {...(isWeb ? { onMouseEnter: () => setHoverCta(true), onMouseLeave: () => setHoverCta(false) } as any : {})}
               >
-                <Text style={[styles.btnPrimaryText, { color: isDark ? "#020617" : "#FFFFFF", fontSize: isMobile ? 16 : 18 }]}>Crear mi Workspace</Text>
+                <Text style={[styles.btnPrimaryText, { color: isDark ? "#0B1220" : "#FFFFFF", fontSize: isMobile ? 16 : 18 }]}>Crear mi Workspace</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -276,12 +273,6 @@ export default function LandingScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  backgroundTextureContainer: {
-    position: 'absolute', width: '100%', height: 1200, overflow: 'hidden', zIndex: -1,
-  },
-  glowOrb: {
-    position: 'absolute', width: 800, height: 800, borderRadius: 400, filter: 'blur(150px)', 
-  } as any,
   navWrapper: {
     position: "absolute", top: 0, left: 0, right: 0, zIndex: 100, borderBottomWidth: 1, height: 72, justifyContent: "center",
   },
@@ -299,15 +290,15 @@ const styles = StyleSheet.create({
     zIndex: 5,
   },
   mockupWrapper: {
-    borderRadius: 24,
-    borderWidth: Platform.OS === 'web' ? 0 : 1, 
-    borderColor: 'rgba(150,150,150,0.2)', 
+    borderRadius: 28,
+    borderWidth: Platform.OS === 'web' ? 0 : 1,
+    borderColor: 'rgba(150,150,150,0.2)',
   },
   badge: {
     flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-start", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, borderWidth: 1,
   },
-  badgeText:        { color: "#2563EB", fontSize: 14, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
-  heroTitle:        { fontWeight: "900", letterSpacing: -2 }, 
+  badgeText:        { color: "#2C7BD1", fontSize: 14, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
+  heroTitle:        { fontWeight: "700", letterSpacing: -2 },
   heroDesc:         { fontWeight: "400" },
   btnRow:           { alignItems: "center" },
   btnPrimary:       { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, borderRadius: 999 },
@@ -317,16 +308,16 @@ const styles = StyleSheet.create({
   section: {
     width: "100%",
   },
-  sectionTitle:  { fontWeight: "900", textAlign: "center", letterSpacing: -1 },
+  sectionTitle:  { fontWeight: "700", textAlign: "center", letterSpacing: -1 },
   sectionSub:    { textAlign: "center", lineHeight: 30, maxWidth: 800, alignSelf: 'center', fontWeight: "400" },
   featGrid:      { flexDirection: "row", flexWrap: "wrap", gap: 32, justifyContent: "center" },
   featCard: {
     borderRadius: 24,
   },
   featIcon:      { borderRadius: 18, justifyContent: "center", alignItems: "center" },
-  featTitle:     { fontWeight: "800", marginBottom: 16, letterSpacing: -0.5 },
+  featTitle:     { fontWeight: "600", marginBottom: 16, letterSpacing: -0.5 },
   featDesc:      { },
   cta:           { alignItems: "center", width: '100%' },
-  ctaTitle:      { fontWeight: "900", textAlign: "center", letterSpacing: -1.5 },
+  ctaTitle:      { fontWeight: "700", textAlign: "center", letterSpacing: -1.5 },
   ctaSub:        { textAlign: "center", maxWidth: 800, alignSelf: 'center', lineHeight: 32 },
 });

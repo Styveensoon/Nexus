@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
+
+const AZURE_DEEP = "#2C7BD1";
 
 type Props = {
   visible: boolean;
@@ -36,11 +38,30 @@ export default function DatePickerModal({ visible, initialDate, isDark, onClose,
     setSelected(base);
   }, [visible, initialDate]);
 
-  const cardBg        = isDark ? "#0F172A" : "#FFFFFF";
-  const border        = isDark ? "rgba(51, 65, 85, 0.6)" : "rgba(226, 232, 240, 0.9)";
-  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
-  const primaryColor  = "#2563EB";
+  const cardBg        = isDark ? "rgba(15,23,42,0.85)" : "rgba(255,255,255,0.85)";
+  const border        = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
+  const primaryColor  = AZURE_DEEP;
+
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: {
+        shadowColor: isDark ? "#000" : "#2C7BD1",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 22,
+        elevation: 6,
+      },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
 
   const year = viewMonth.getFullYear();
   const month = viewMonth.getMonth();
@@ -54,16 +75,16 @@ export default function DatePickerModal({ visible, initialDate, isDark, onClose,
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={[styles.card, { backgroundColor: cardBg, borderColor: border }]}>
+        <View style={[styles.card, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
           <View style={styles.header}>
             <TouchableOpacity hitSlop={8} onPress={() => setViewMonth(new Date(year, month - 1, 1))}>
-              <ChevronLeft size={18} color={textSecondary} />
+              <ChevronLeft size={18} color={textSecondary} strokeWidth={2.2} />
             </TouchableOpacity>
             <Text style={[styles.monthLabel, { color: textPrimary }]}>
               {MONTH_LABELS[month]} {year}
             </Text>
             <TouchableOpacity hitSlop={8} onPress={() => setViewMonth(new Date(year, month + 1, 1))}>
-              <ChevronRight size={18} color={textSecondary} />
+              <ChevronRight size={18} color={textSecondary} strokeWidth={2.2} />
             </TouchableOpacity>
           </View>
 
@@ -91,7 +112,7 @@ export default function DatePickerModal({ visible, initialDate, isDark, onClose,
                       !selectedDay && isToday && { borderWidth: 1.5, borderColor: primaryColor },
                     ]}
                   >
-                    <Text style={{ color: selectedDay ? "#FFF" : textPrimary, fontWeight: selectedDay ? "800" : "600", fontSize: 13 }}>
+                    <Text style={{ color: selectedDay ? "#FFF" : textPrimary, fontWeight: selectedDay ? "700" : "600", fontSize: 13 }}>
                       {cell.getDate()}
                     </Text>
                   </TouchableOpacity>
@@ -119,10 +140,17 @@ export default function DatePickerModal({ visible, initialDate, isDark, onClose,
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(2, 6, 23, 0.6)", alignItems: "center", justifyContent: "center", padding: 20 },
-  card: { width: "100%", maxWidth: 340, borderRadius: 24, borderWidth: 1, padding: 22 },
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(2, 6, 23, 0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+    ...Platform.select({ web: { backdropFilter: "blur(4px)" } as any, default: {} }),
+  },
+  card: { width: "100%", maxWidth: 340, borderRadius: 28, borderWidth: 1, padding: 22 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
-  monthLabel: { fontSize: 15, fontWeight: "800" },
+  monthLabel: { fontSize: 15, fontWeight: "700" },
   weekRow: { flexDirection: "row", marginBottom: 6 },
   weekLabel: { width: `${100 / 7}%`, textAlign: "center", fontSize: 11, fontWeight: "700" },
   grid: { flexDirection: "row", flexWrap: "wrap" },

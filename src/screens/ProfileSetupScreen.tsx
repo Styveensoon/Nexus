@@ -11,9 +11,9 @@ export default function ProfileSetupScreen({ navigation }: any) {
   const isMobile = width < 768;
   const isWeb = Platform.OS === "web";
 
-  const bg            = isDark ? "#020617" : "#FAFAFA";
-  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
+  const bg            = isDark ? "#0B1220" : "#F1F5FA";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
 
   const containerStyle: any = isWeb
     ? { backgroundColor: bg, height: "100vh", width: "100%" }
@@ -25,12 +25,6 @@ export default function ProfileSetupScreen({ navigation }: any) {
 
   return (
     <View style={containerStyle}>
-      {isWeb && (
-        <View style={styles.backgroundTextureContainer} pointerEvents="none">
-          <View style={[styles.glowOrb, { top: -150, left: "-10%", backgroundColor: isDark ? "rgba(37, 99, 235, 0.15)" : "rgba(37, 99, 235, 0.08)" }]} />
-          <View style={[styles.glowOrb, { bottom: -200, right: "-10%", backgroundColor: isDark ? "rgba(124, 58, 237, 0.12)" : "rgba(124, 58, 237, 0.05)" }]} />
-        </View>
-      )}
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView
@@ -64,15 +58,9 @@ export default function ProfileSetupScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  backgroundTextureContainer: {
-    position: "absolute", width: "100%", height: "100%", overflow: "hidden", zIndex: -1,
-  },
-  glowOrb: {
-    position: "absolute", width: 700, height: 700, borderRadius: 350, filter: "blur(150px)",
-  } as any,
   logoRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 32 },
-  logoIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: "#2563EB", justifyContent: "center", alignItems: "center" },
-  logoText: { fontSize: 24, fontWeight: "900", letterSpacing: -0.5 },
-  title: { fontSize: 32, fontWeight: "900", letterSpacing: -1, marginBottom: 8 },
+  logoIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: "#2C7BD1", justifyContent: "center", alignItems: "center" },
+  logoText: { fontSize: 24, fontWeight: "700", letterSpacing: -0.5 },
+  title: { fontSize: 32, fontWeight: "700", letterSpacing: -1, marginBottom: 8 },
   subtitle: { fontSize: 16, lineHeight: 24, marginBottom: 32 },
 });

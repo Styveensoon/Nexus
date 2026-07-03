@@ -1,5 +1,5 @@
 import React from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Calendar, Flag, Folder, Users } from "lucide-react-native";
 
 import { Project } from "../lib/projects";
@@ -42,18 +42,37 @@ type Props = {
 };
 
 export default function TaskListView({ tasks, projects, showProject, isDark, onTaskPress }: Props) {
-  const cardBg        = isDark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
-  const border        = isDark ? "rgba(51, 65, 85, 0.5)" : "rgba(226, 232, 240, 0.8)";
-  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
-  const inputBg       = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
+  const cardBg        = isDark ? "rgba(17, 24, 39, 0.58)" : "rgba(255, 255, 255, 0.6)";
+  const border        = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
+  const inputBg       = isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.5)";
+
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: {
+        shadowColor: isDark ? "#000" : "#2C7BD1",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 22,
+        elevation: 6,
+      },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
 
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const sorted = sortTasks(tasks);
 
   if (sorted.length === 0) {
     return (
-      <View style={[styles.emptyCard, { backgroundColor: cardBg, borderColor: border }]}>
+      <View style={[styles.emptyCard, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
         <Text style={{ color: textSecondary, fontSize: 13 }}>No hay tareas que coincidan con los filtros.</Text>
       </View>
     );
@@ -69,7 +88,7 @@ export default function TaskListView({ tasks, projects, showProject, isDark, onT
             key={task.id}
             activeOpacity={0.85}
             onPress={() => onTaskPress(task)}
-            style={[styles.row, { backgroundColor: cardBg, borderColor: border }]}
+            style={[styles.row, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}
           >
             <View style={[styles.priorityBar, { backgroundColor: TASK_PRIORITY_COLORS[task.priority] }]} />
 
@@ -115,12 +134,12 @@ export default function TaskListView({ tasks, projects, showProject, isDark, onT
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderRadius: 16, padding: 14, overflow: "hidden" },
+  row: { flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderRadius: 18, padding: 14, overflow: "hidden" },
   priorityBar: { width: 4, alignSelf: "stretch", borderRadius: 2 },
-  title: { fontSize: 14, fontWeight: "700" },
+  title: { fontSize: 14, fontWeight: "600" },
   metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 4 },
   metaItem: { flexDirection: "row", alignItems: "center", gap: 4 },
   metaChip: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
   statusBadge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
-  emptyCard: { borderRadius: 20, borderWidth: 1, padding: 24, alignItems: "center" },
+  emptyCard: { borderRadius: 24, borderWidth: 1, padding: 24, alignItems: "center" },
 });

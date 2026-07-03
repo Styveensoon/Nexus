@@ -115,30 +115,34 @@ export default function RegisterScreen({ navigation }: any) {
     }
   };
 
-  // Misma paleta del Landing
-  const bg            = isDark ? "#020617" : "#FAFAFA";
-  const cardBg        = isDark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
-  const border        = isDark ? "rgba(51, 65, 85, 0.5)" : "rgba(226, 232, 240, 0.8)";
-  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
-  const primaryColor  = "#2563EB";
-  const inputBg       = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
+  // Paleta "vidrio azure" — mismo lenguaje visual que Dashboard/Profile
+  const AZURE_DEEP    = "#2C7BD1";
+  const bg            = isDark ? "#0B1220" : "#F1F5FA";
+  const cardBg        = isDark ? "rgba(17, 24, 39, 0.68)" : "rgba(255, 255, 255, 0.72)";
+  const border        = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
+  const primaryColor  = AZURE_DEEP;
+  const inputBg       = isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.5)";
 
-  const ultraShadow = Platform.select({
-    web: {
-      boxShadow: isDark
-        ? "0 25px 50px -12px rgba(0,0,0,1), 0 0 0 1px rgba(255,255,255,0.05) inset"
-        : "0 30px 60px -15px rgba(0,0,0,0.08), 0 10px 30px -5px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02) inset",
-      backdropFilter: "blur(12px)",
-    } as any,
-    default: {
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: isDark ? 0.4 : 0.06,
-      shadowRadius: 16,
-      elevation: 6,
-    },
-  });
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: {
+        shadowColor: isDark ? "#000" : "#2C7BD1",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 22,
+        elevation: 6,
+      },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
 
   const containerStyle: any = isWeb
     ? { backgroundColor: bg, height: "100vh", width: "100%" }
@@ -149,18 +153,12 @@ export default function RegisterScreen({ navigation }: any) {
 
   return (
     <View style={containerStyle}>
-      {isWeb && (
-        <View style={styles.backgroundTextureContainer} pointerEvents="none">
-          <View style={[styles.glowOrb, { top: -150, right: "-10%", backgroundColor: isDark ? "rgba(37, 99, 235, 0.15)" : "rgba(37, 99, 235, 0.08)" }]} />
-          <View style={[styles.glowOrb, { bottom: -200, left: "-10%", backgroundColor: isDark ? "rgba(124, 58, 237, 0.12)" : "rgba(124, 58, 237, 0.05)" }]} />
-        </View>
-      )}
 
       <TouchableOpacity
         style={[styles.backLink, { top: isMobile ? 20 : 32, left: isMobile ? 20 : 40 }]}
         onPress={() => navigation.navigate("Landing")}
       >
-        <ArrowLeft size={16} color={textSecondary} />
+        <ArrowLeft size={16} color={textSecondary} strokeWidth={2.2} />
         <Text style={[styles.backLinkText, { color: textSecondary }]}>Volver al inicio</Text>
       </TouchableOpacity>
 
@@ -191,7 +189,7 @@ export default function RegisterScreen({ navigation }: any) {
                   style={[styles.segmentButton, accountType === "create" && { backgroundColor: primaryColor }]}
                   onPress={() => setAccountType("create")}
                 >
-                  <Building2 size={16} color={accountType === "create" ? "#FFF" : textSecondary} />
+                  <Building2 size={16} color={accountType === "create" ? "#FFF" : textSecondary} strokeWidth={2.2} />
                   <Text style={[styles.segmentText, { color: accountType === "create" ? "#FFF" : textSecondary }]}>
                     Crear organización
                   </Text>
@@ -201,7 +199,7 @@ export default function RegisterScreen({ navigation }: any) {
                   style={[styles.segmentButton, accountType === "join" && { backgroundColor: primaryColor }]}
                   onPress={() => setAccountType("join")}
                 >
-                  <Users size={16} color={accountType === "join" ? "#FFF" : textSecondary} />
+                  <Users size={16} color={accountType === "join" ? "#FFF" : textSecondary} strokeWidth={2.2} />
                   <Text style={[styles.segmentText, { color: accountType === "join" ? "#FFF" : textSecondary }]}>
                     Unirme a un equipo
                   </Text>
@@ -210,7 +208,7 @@ export default function RegisterScreen({ navigation }: any) {
 
               {accountType === "create" ? (
                 <View style={[styles.inputWrapper, { backgroundColor: inputBg, borderColor: inputBorderColor("org") }]}>
-                  <Building2 size={18} color={textSecondary} />
+                  <Building2 size={18} color={textSecondary} strokeWidth={2.2} />
                   <TextInput
                     placeholder="Nombre de tu organización"
                     placeholderTextColor={textSecondary}
@@ -223,7 +221,7 @@ export default function RegisterScreen({ navigation }: any) {
                 </View>
               ) : (
                 <View style={[styles.inputWrapper, { backgroundColor: inputBg, borderColor: inputBorderColor("orgCode") }]}>
-                  <Hash size={18} color={textSecondary} />
+                  <Hash size={18} color={textSecondary} strokeWidth={2.2} />
                   <TextInput
                     placeholder="Código de invitación"
                     placeholderTextColor={textSecondary}
@@ -238,7 +236,7 @@ export default function RegisterScreen({ navigation }: any) {
               )}
 
               <View style={[styles.inputWrapper, { backgroundColor: inputBg, borderColor: inputBorderColor("name") }]}>
-                <User size={18} color={textSecondary} />
+                <User size={18} color={textSecondary} strokeWidth={2.2} />
                 <TextInput
                   placeholder="Nombre completo"
                   placeholderTextColor={textSecondary}
@@ -251,7 +249,7 @@ export default function RegisterScreen({ navigation }: any) {
               </View>
 
               <View style={[styles.inputWrapper, { backgroundColor: inputBg, borderColor: inputBorderColor("email") }]}>
-                <Mail size={18} color={textSecondary} />
+                <Mail size={18} color={textSecondary} strokeWidth={2.2} />
                 <TextInput
                   placeholder="Correo electrónico"
                   placeholderTextColor={textSecondary}
@@ -266,7 +264,7 @@ export default function RegisterScreen({ navigation }: any) {
               </View>
 
               <View style={[styles.inputWrapper, { backgroundColor: inputBg, borderColor: inputBorderColor("password"), marginBottom: 8 }]}>
-                <Lock size={18} color={textSecondary} />
+                <Lock size={18} color={textSecondary} strokeWidth={2.2} />
                 <TextInput
                   placeholder="Contraseña"
                   placeholderTextColor={textSecondary}
@@ -278,7 +276,7 @@ export default function RegisterScreen({ navigation }: any) {
                   style={[styles.input, { color: textPrimary }, isWeb && styles.inputNoOutline]}
                 />
                 <TouchableOpacity onPress={() => setShowPassword(!showPassword)} hitSlop={8}>
-                  {showPassword ? <EyeOff size={18} color={textSecondary} /> : <Eye size={18} color={textSecondary} />}
+                  {showPassword ? <EyeOff size={18} color={textSecondary} strokeWidth={2.2} /> : <Eye size={18} color={textSecondary} strokeWidth={2.2} />}
                 </TouchableOpacity>
               </View>
 
@@ -298,7 +296,7 @@ export default function RegisterScreen({ navigation }: any) {
               </Text>
 
               <View style={[styles.inputWrapper, { backgroundColor: inputBg, borderColor: inputBorderColor("confirm") }]}>
-                <Lock size={18} color={textSecondary} />
+                <Lock size={18} color={textSecondary} strokeWidth={2.2} />
                 <TextInput
                   placeholder="Confirmar contraseña"
                   placeholderTextColor={textSecondary}
@@ -324,7 +322,7 @@ export default function RegisterScreen({ navigation }: any) {
                     acceptedTerms && { backgroundColor: primaryColor },
                   ]}
                 >
-                  {acceptedTerms && <Check size={14} color="#FFF" />}
+                  {acceptedTerms && <Check size={14} color="#FFF" strokeWidth={2.4} />}
                 </View>
                 <Text style={[styles.checkboxText, { color: textSecondary }]}>
                   Acepto los términos y condiciones
@@ -338,7 +336,7 @@ export default function RegisterScreen({ navigation }: any) {
                 onPress={handleRegister}
               >
                 <Text style={styles.btnPrimaryText}>{loading ? "Creando cuenta…" : "Crear cuenta"}</Text>
-                {!loading && <ArrowRight size={18} color="#FFF" />}
+                {!loading && <ArrowRight size={18} color="#FFF" strokeWidth={2.2} />}
               </TouchableOpacity>
 
               <View style={styles.divider}>
@@ -368,27 +366,21 @@ export default function RegisterScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  backgroundTextureContainer: {
-    position: "absolute", width: "100%", height: "100%", overflow: "hidden", zIndex: -1,
-  },
-  glowOrb: {
-    position: "absolute", width: 700, height: 700, borderRadius: 350, filter: "blur(150px)",
-  } as any,
   backLink: {
     position: "absolute", zIndex: 10, flexDirection: "row", alignItems: "center", gap: 8,
   },
   backLinkText: { fontSize: 14, fontWeight: "600" },
   logoRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 32 },
-  logoIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: "#2563EB", justifyContent: "center", alignItems: "center" },
-  logoText: { fontSize: 24, fontWeight: "900", letterSpacing: -0.5 },
-  title: { fontSize: 32, fontWeight: "900", letterSpacing: -1, marginBottom: 8 },
+  logoIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: "#2C7BD1", justifyContent: "center", alignItems: "center" },
+  logoText: { fontSize: 24, fontWeight: "700", letterSpacing: -0.5 },
+  title: { fontSize: 32, fontWeight: "700", letterSpacing: -1, marginBottom: 8 },
   subtitle: { fontSize: 16, lineHeight: 24, marginBottom: 32 },
-  card: { borderRadius: 24, borderWidth: 1, padding: 28 },
-  segmentedControl: { flexDirection: "row", borderWidth: 1, borderRadius: 14, padding: 4, gap: 4, marginBottom: 14 },
-  segmentButton: { flex: 1, alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, paddingHorizontal: 4, borderRadius: 10 },
+  card: { borderRadius: 32, borderWidth: 1, padding: 28 },
+  segmentedControl: { flexDirection: "row", borderWidth: 1, borderRadius: 16, padding: 4, gap: 4, marginBottom: 14 },
+  segmentButton: { flex: 1, alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, paddingHorizontal: 4, borderRadius: 12 },
   segmentText: { fontSize: 12, fontWeight: "700", textAlign: "center" },
   inputWrapper: {
-    flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, marginBottom: 14,
+    flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 16, paddingHorizontal: 16, marginBottom: 14,
   },
   input: { flex: 1, paddingVertical: 16, fontSize: 15 },
   inputNoOutline: { outlineStyle: "none" } as any,

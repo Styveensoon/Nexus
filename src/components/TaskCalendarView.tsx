@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
+import { Platform, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import { CalendarDays, ChevronLeft, ChevronRight, Flag, Folder, Users } from "lucide-react-native";
 
 import { Project } from "../lib/projects";
@@ -37,11 +37,30 @@ export default function TaskCalendarView({ tasks, projects, isDark, primaryColor
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
 
-  const cardBg        = isDark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
-  const border        = isDark ? "rgba(51, 65, 85, 0.5)" : "rgba(226, 232, 240, 0.8)";
-  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
-  const inputBg       = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
+  const cardBg        = isDark ? "rgba(17, 24, 39, 0.58)" : "rgba(255, 255, 255, 0.6)";
+  const border        = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
+  const inputBg       = isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.5)";
+
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: {
+        shadowColor: isDark ? "#000" : "#2C7BD1",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 22,
+        elevation: 6,
+      },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
 
   const [viewMonth, setViewMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(todayIso());
@@ -82,16 +101,16 @@ export default function TaskCalendarView({ tasks, projects, isDark, primaryColor
 
   return (
     <View style={[styles.layout, isMobile && styles.layoutMobile]}>
-      <View style={[styles.card, { backgroundColor: cardBg, borderColor: border, flex: isMobile ? undefined : 1.3 }]}>
+      <View style={[styles.card, { backgroundColor: cardBg, borderColor: border, flex: isMobile ? undefined : 1.3 }, ultraShadow]}>
         <View style={styles.monthHeader}>
           <TouchableOpacity hitSlop={8} onPress={() => setViewMonth(new Date(year, month - 1, 1))}>
-            <ChevronLeft size={18} color={textSecondary} />
+            <ChevronLeft size={18} color={textSecondary} strokeWidth={2.2} />
           </TouchableOpacity>
           <Text style={[styles.monthLabel, { color: textPrimary }]}>
             {MONTH_LABELS[month]} {year}
           </Text>
           <TouchableOpacity hitSlop={8} onPress={() => setViewMonth(new Date(year, month + 1, 1))}>
-            <ChevronRight size={18} color={textSecondary} />
+            <ChevronRight size={18} color={textSecondary} strokeWidth={2.2} />
           </TouchableOpacity>
         </View>
 
@@ -119,7 +138,7 @@ export default function TaskCalendarView({ tasks, projects, isDark, primaryColor
                     !isSelected && isToday && { borderWidth: 1.5, borderColor: primaryColor },
                   ]}
                 >
-                  <Text style={{ color: isSelected ? "#FFF" : textPrimary, fontWeight: isSelected ? "800" : "600", fontSize: 13 }}>
+                  <Text style={{ color: isSelected ? "#FFF" : textPrimary, fontWeight: isSelected ? "700" : "600", fontSize: 13 }}>
                     {cell.getDate()}
                   </Text>
                   {events.length > 0 && (
@@ -141,9 +160,9 @@ export default function TaskCalendarView({ tasks, projects, isDark, primaryColor
         </View>
       </View>
 
-      <View style={[styles.card, { backgroundColor: cardBg, borderColor: border, flex: 1, marginTop: isMobile ? 16 : 0 }]}>
+      <View style={[styles.card, { backgroundColor: cardBg, borderColor: border, flex: 1, marginTop: isMobile ? 16 : 0 }, ultraShadow]}>
         <View style={styles.agendaHeader}>
-          <CalendarDays size={16} color={primaryColor} />
+          <CalendarDays size={16} color={primaryColor} strokeWidth={2.2} />
           <Text style={[styles.agendaTitle, { color: textPrimary }]} numberOfLines={1}>
             {formatLongDate(selectedDate)}
           </Text>
@@ -199,10 +218,10 @@ export default function TaskCalendarView({ tasks, projects, isDark, primaryColor
 const styles = StyleSheet.create({
   layout: { flexDirection: "row", gap: 20, alignItems: "flex-start" },
   layoutMobile: { flexDirection: "column" },
-  card: { borderRadius: 22, borderWidth: 1, padding: 20 },
+  card: { borderRadius: 24, borderWidth: 1, padding: 20 },
 
   monthHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
-  monthLabel: { fontSize: 16, fontWeight: "800", textTransform: "capitalize" },
+  monthLabel: { fontSize: 16, fontWeight: "700", textTransform: "capitalize" },
 
   weekRow: { flexDirection: "row", marginBottom: 6 },
   weekLabel: { width: `${100 / 7}%`, textAlign: "center", fontSize: 11, fontWeight: "700" },
@@ -216,9 +235,9 @@ const styles = StyleSheet.create({
   legendDot: { width: 8, height: 8, borderRadius: 4 },
 
   agendaHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
-  agendaTitle: { fontSize: 15, fontWeight: "800", textTransform: "capitalize", flex: 1 },
+  agendaTitle: { fontSize: 15, fontWeight: "700", textTransform: "capitalize", flex: 1 },
 
-  eventCard: { borderRadius: 14, borderLeftWidth: 3, padding: 12 },
+  eventCard: { borderRadius: 16, borderLeftWidth: 3, padding: 12 },
   eventTitle: { fontSize: 13.5, fontWeight: "700", flex: 1, marginRight: 8 },
   kindChip: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
 });

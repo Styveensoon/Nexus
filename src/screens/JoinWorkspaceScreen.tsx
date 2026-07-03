@@ -46,29 +46,34 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
     return WELCOME_MESSAGES[index];
   }, [organization]);
 
-  const bg            = isDark ? "#020617" : "#FAFAFA";
-  const cardBg        = isDark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
-  const border        = isDark ? "rgba(51, 65, 85, 0.5)" : "rgba(226, 232, 240, 0.8)";
-  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
-  const primaryColor  = "#2563EB";
-  const inputBg       = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
+  // Paleta "vidrio azure" — mismo lenguaje visual que Dashboard/Profile
+  const AZURE_DEEP    = "#2C7BD1";
+  const bg            = isDark ? "#0B1220" : "#F1F5FA";
+  const cardBg        = isDark ? "rgba(17, 24, 39, 0.68)" : "rgba(255, 255, 255, 0.72)";
+  const border        = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
+  const primaryColor  = AZURE_DEEP;
+  const inputBg       = isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.5)";
 
-  const ultraShadow = Platform.select({
-    web: {
-      boxShadow: isDark
-        ? "0 25px 50px -12px rgba(0,0,0,1), 0 0 0 1px rgba(255,255,255,0.05) inset"
-        : "0 30px 60px -15px rgba(0,0,0,0.08), 0 10px 30px -5px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02) inset",
-      backdropFilter: "blur(12px)",
-    } as any,
-    default: {
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: isDark ? 0.4 : 0.06,
-      shadowRadius: 16,
-      elevation: 6,
-    },
-  });
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: {
+        shadowColor: isDark ? "#000" : "#2C7BD1",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 22,
+        elevation: 6,
+      },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
 
   const containerStyle: any = isWeb
     ? { backgroundColor: bg, height: "100vh", width: "100%" }
@@ -116,17 +121,12 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
 
   return (
     <View style={containerStyle}>
-      {isWeb && (
-        <View style={styles.backgroundTextureContainer} pointerEvents="none">
-          <View style={[styles.glowOrb, { top: -150, right: "-10%", backgroundColor: isDark ? "rgba(37, 99, 235, 0.15)" : "rgba(37, 99, 235, 0.08)" }]} />
-        </View>
-      )}
 
       <TouchableOpacity
         style={[styles.backLink, { top: isMobile ? 20 : 32, left: isMobile ? 20 : 40 }]}
         onPress={() => navigation.navigate("Landing")}
       >
-        <ArrowLeft size={16} color={textSecondary} />
+        <ArrowLeft size={16} color={textSecondary} strokeWidth={2.2} />
         <Text style={[styles.backLinkText, { color: textSecondary }]}>Volver al inicio</Text>
       </TouchableOpacity>
 
@@ -158,7 +158,7 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
                     {organization.logo_url ? (
                       <Image source={{ uri: organization.logo_url }} style={styles.previewLogoImage} />
                     ) : (
-                      <Building2 size={30} color="#FFF" />
+                      <Building2 size={30} color="#FFF" strokeWidth={2.3} />
                     )}
                   </View>
                   <Text style={[styles.previewLabel, { color: textSecondary }]}>Te estás uniendo a</Text>
@@ -177,21 +177,21 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
                   onPress={handleJoin}
                 >
                   <Text style={styles.btnPrimaryText}>{joining ? "Uniéndote…" : `Unirme a ${organization.name}`}</Text>
-                  {!joining && <ArrowRight size={18} color="#FFF" />}
+                  {!joining && <ArrowRight size={18} color="#FFF" strokeWidth={2.2} />}
                 </TouchableOpacity>
               </>
             ) : (
               <>
                 {searched && (
                   <View style={styles.errorBlock}>
-                    <CircleX size={28} color="#EF4444" />
+                    <CircleX size={28} color="#EF4444" strokeWidth={2.2} />
                     <Text style={[styles.errorTitle, { color: textPrimary }]}>{errorMsg}</Text>
                   </View>
                 )}
 
                 <Text style={[styles.label, { color: textSecondary }]}>Código de invitación</Text>
                 <View style={[styles.inputWrapper, { backgroundColor: inputBg, borderColor: border }]}>
-                  <Hash size={18} color={textSecondary} />
+                  <Hash size={18} color={textSecondary} strokeWidth={2.2} />
                   <TextInput
                     placeholder="Ej. 7K3PQ2X"
                     placeholderTextColor={textSecondary}
@@ -211,7 +211,7 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
                   onPress={() => handleSearch()}
                 >
                   <Text style={styles.btnPrimaryText}>Buscar workspace</Text>
-                  <ArrowRight size={18} color="#FFF" />
+                  <ArrowRight size={18} color="#FFF" strokeWidth={2.2} />
                 </TouchableOpacity>
               </>
             )}
@@ -223,28 +223,22 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
 }
 
 const styles = StyleSheet.create({
-  backgroundTextureContainer: {
-    position: "absolute", width: "100%", height: "100%", overflow: "hidden", zIndex: -1,
-  },
-  glowOrb: {
-    position: "absolute", width: 700, height: 700, borderRadius: 350, filter: "blur(150px)",
-  } as any,
   backLink: {
     position: "absolute", zIndex: 10, flexDirection: "row", alignItems: "center", gap: 8,
   },
   backLinkText: { fontSize: 14, fontWeight: "600" },
   label: { fontSize: 13, fontWeight: "700", marginBottom: 8 },
   inputWrapper: {
-    flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, marginBottom: 20,
+    flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 16, paddingHorizontal: 16, marginBottom: 20,
   },
   input: { flex: 1, paddingVertical: 16, fontSize: 15 },
   inputNoOutline: { outlineStyle: "none" } as any,
   logoRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 32 },
-  logoIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: "#2563EB", justifyContent: "center", alignItems: "center" },
-  logoText: { fontSize: 24, fontWeight: "900", letterSpacing: -0.5 },
-  title: { fontSize: 32, fontWeight: "900", letterSpacing: -1, marginBottom: 8 },
+  logoIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: "#2C7BD1", justifyContent: "center", alignItems: "center" },
+  logoText: { fontSize: 24, fontWeight: "700", letterSpacing: -0.5 },
+  title: { fontSize: 32, fontWeight: "700", letterSpacing: -1, marginBottom: 8 },
   subtitle: { fontSize: 16, lineHeight: 24, marginBottom: 32 },
-  card: { borderRadius: 24, borderWidth: 1, padding: 28 },
+  card: { borderRadius: 32, borderWidth: 1, padding: 28 },
   previewCentered: { alignItems: "center", marginBottom: 24 },
   previewLogo: {
     width: 76, height: 76, borderRadius: 38, justifyContent: "center", alignItems: "center",
@@ -252,7 +246,7 @@ const styles = StyleSheet.create({
   },
   previewLogoImage: { width: 76, height: 76 },
   previewLabel: { fontSize: 13, fontWeight: "600", marginBottom: 4 },
-  previewName: { fontSize: 22, fontWeight: "900", letterSpacing: -0.5, textAlign: "center", marginBottom: 12 },
+  previewName: { fontSize: 22, fontWeight: "700", letterSpacing: -0.5, textAlign: "center", marginBottom: 12 },
   welcomeMessage: { fontSize: 14, textAlign: "center", lineHeight: 21, paddingHorizontal: 12 },
   errorText: { color: "#EF4444", fontSize: 13, fontWeight: "600", marginBottom: 14 },
   errorBlock: { alignItems: "center", gap: 12, paddingVertical: 12, marginBottom: 20 },

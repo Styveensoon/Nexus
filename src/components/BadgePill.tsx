@@ -43,7 +43,7 @@ export default function BadgePill({ badge, size = "md", onPress }: Props) {
       onPress={onPress}
       style={[styles.pill, isSmall && styles.pillSm, { backgroundColor: badge.color }]}
     >
-      <Icon size={isSmall ? 12 : 14} color={textColor} />
+      <Icon size={isSmall ? 12 : 14} color={textColor} strokeWidth={2.2} />
       <Text style={[styles.text, isSmall && styles.textSm, { color: textColor }]}>{badge.label}</Text>
     </Wrapper>
   );
@@ -52,6 +52,6 @@ export default function BadgePill({ badge, size = "md", onPress }: Props) {
 const styles = StyleSheet.create({
   pill: { flexDirection: "row", alignItems: "center", gap: 7, borderRadius: 999, paddingHorizontal: 13, paddingVertical: 8 },
   pillSm: { paddingHorizontal: 10, paddingVertical: 6, gap: 5 },
-  text: { fontSize: 12.5, fontWeight: "700" },
+  text: { fontSize: 12.5, fontWeight: "600" },
   textSm: { fontSize: 11.5 },
 });

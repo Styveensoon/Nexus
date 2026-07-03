@@ -22,14 +22,14 @@ type Props = {
 // contra una columna angosta.
 const TILE_SIZE = AVATAR_TILE_SIZE;
 
-const PRESET_COLORS = ["#2563EB", "#7C3AED", "#10B981", "#F59E0B", "#EF4444"];
+const PRESET_COLORS = ["#2C7BD1", "#7C3AED", "#10B981", "#F59E0B", "#EF4444"];
 
 export default function IconColorPicker({ isDark, userId, color, onColorChange, iconUrl, onIconChange, fallbackIcon: FallbackIcon }: Props) {
   const isWeb = Platform.OS === "web";
-  const border = isDark ? "rgba(51, 65, 85, 0.5)" : "rgba(226, 232, 240, 0.8)";
-  const textPrimary = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
-  const inputBg = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
+  const border = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
+  const inputBg = isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.5)";
 
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [urlInput, setUrlInput] = useState("");
@@ -65,7 +65,7 @@ export default function IconColorPicker({ isDark, userId, color, onColorChange, 
           {iconUrl ? (
             <Image source={{ uri: iconUrl }} style={styles.previewImage} />
           ) : (
-            <FallbackIcon size={30} color={color} />
+            <FallbackIcon size={30} color={color} strokeWidth={2.2} />
           )}
         </View>
         <AvatarUploadZone isDark={isDark} primaryColor={color} uploading={uploading} onFileReady={handleFileReady as any} onError={setErrorMsg} />
@@ -82,13 +82,13 @@ export default function IconColorPicker({ isDark, userId, color, onColorChange, 
           style={[styles.urlInput, { color: textPrimary }, isWeb && styles.noOutline]}
         />
         <TouchableOpacity onPress={commitUrl} hitSlop={8}>
-          <ChevronRight size={16} color={color} />
+          <ChevronRight size={16} color={color} strokeWidth={2.2} />
         </TouchableOpacity>
       </View>
 
       {iconUrl && (
         <TouchableOpacity activeOpacity={0.7} style={styles.removeIconBtn} onPress={() => onIconChange(null)}>
-          <X size={13} color={textSecondary} />
+          <X size={13} color={textSecondary} strokeWidth={2.2} />
           <Text style={{ color: textSecondary, fontSize: 12.5, fontWeight: "600" }}>Quitar imagen</Text>
         </TouchableOpacity>
       )}
@@ -102,7 +102,7 @@ export default function IconColorPicker({ isDark, userId, color, onColorChange, 
             onPress={() => onColorChange(c)}
             style={[styles.presetSwatch, { backgroundColor: c }]}
           >
-            {color.toUpperCase() === c.toUpperCase() && <Check size={16} color="#FFF" />}
+            {color.toUpperCase() === c.toUpperCase() && <Check size={16} color="#FFF" strokeWidth={2.3} />}
           </TouchableOpacity>
         ))}
         <TouchableOpacity
@@ -113,7 +113,7 @@ export default function IconColorPicker({ isDark, userId, color, onColorChange, 
             { borderColor: border, backgroundColor: !isPreset ? color : inputBg },
           ]}
         >
-          {!isPreset ? <Check size={16} color="#FFF" /> : <Palette size={15} color={textSecondary} />}
+          {!isPreset ? <Check size={16} color="#FFF" strokeWidth={2.3} /> : <Palette size={15} color={textSecondary} strokeWidth={2.2} />}
         </TouchableOpacity>
       </View>
       <Text style={[styles.hexLabel, { color: textSecondary }]}>{color.toUpperCase()}</Text>
@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
   previewImage: { width: TILE_SIZE, height: TILE_SIZE, resizeMode: "cover" },
 
   urlInputWrapper: {
-    flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 14,
+    flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 16,
     paddingHorizontal: 14, paddingVertical: 12,
   },
   urlInput: { flex: 1, fontSize: 13 },

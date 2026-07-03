@@ -12,9 +12,9 @@ type Props = {
 };
 
 export default function AvatarUploadZone({ isDark, primaryColor, uploading, onFileReady, onError }: Props) {
-  const border = isDark ? "rgba(148, 163, 184, 0.5)" : "rgba(100, 116, 139, 0.4)";
-  const inputBg = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
+  const border = isDark ? "rgba(255,255,255,0.16)" : "rgba(15,23,42,0.14)";
+  const inputBg = isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.5)";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
 
   const viewRef = useRef<View>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -73,7 +73,7 @@ export default function AvatarUploadZone({ isDark, primaryColor, uploading, onFi
       ]}
       {...({ onClick: () => !uploading && fileInputRef.current?.click() } as any)}
     >
-      <UploadCloud size={20} color={primaryColor} />
+      <UploadCloud size={20} color={primaryColor} strokeWidth={2.2} />
       <Text style={[styles.label, { color: textSecondary }]} numberOfLines={2}>
         {uploading ? "Subiendo…" : isDragging ? "Suelta la imagen" : "Arrastra o haz clic"}
       </Text>
@@ -97,12 +97,12 @@ const styles = StyleSheet.create({
     width: AVATAR_TILE_SIZE,
     height: AVATAR_TILE_SIZE,
     borderRadius: 20,
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderStyle: "dashed",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
     padding: 6,
   },
-  label: { fontSize: 11, fontWeight: "700", textAlign: "center" },
+  label: { fontSize: 11, fontWeight: "600", textAlign: "center" },
 });

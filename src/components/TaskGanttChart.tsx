@@ -46,12 +46,31 @@ export default function TaskGanttChart({ tasks, projects, showProject, isDark, p
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
 
-  const cardBg        = isDark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
-  const border        = isDark ? "rgba(51, 65, 85, 0.5)" : "rgba(226, 232, 240, 0.8)";
-  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
+  const cardBg        = isDark ? "rgba(17, 24, 39, 0.58)" : "rgba(255, 255, 255, 0.6)";
+  const border        = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
   const rowAltBg      = isDark ? "rgba(255,255,255,0.02)" : "rgba(2, 6, 23, 0.015)";
   const weekendBg     = isDark ? "rgba(255,255,255,0.025)" : "rgba(2, 6, 23, 0.025)";
+
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: {
+        shadowColor: isDark ? "#000" : "#2C7BD1",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 22,
+        elevation: 6,
+      },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
 
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const withDates = tasks.filter((t) => t.startDate || t.dueDate);
@@ -130,14 +149,14 @@ export default function TaskGanttChart({ tasks, projects, showProject, isDark, p
 
   if (rows.length === 0) {
     return (
-      <View style={[styles.emptyCard, { backgroundColor: cardBg, borderColor: border }]}>
+      <View style={[styles.emptyCard, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
         <Text style={{ color: textSecondary, fontSize: 13 }}>Ninguna task visible tiene fecha de inicio o límite todavía.</Text>
       </View>
     );
   }
 
   return (
-    <View style={[styles.wrapper, { backgroundColor: cardBg, borderColor: border }]}>
+    <View style={[styles.wrapper, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
       <View style={{ flexDirection: "row" }}>
         <View style={{ width: LABEL_WIDTH }}>
           <View style={[styles.labelHeaderCell, { borderColor: border }]}>
@@ -188,7 +207,7 @@ export default function TaskGanttChart({ tasks, projects, showProject, isDark, p
               {dayColumns.map((col) => (
                 <View key={col.iso} style={[styles.dayCell, { backgroundColor: col.isWeekend ? weekendBg : "transparent" }]}>
                   <Text style={{ color: textSecondary, fontSize: 9.5 }}>{WEEKDAY_INITIALS[col.date.getDay()]}</Text>
-                  <Text style={{ color: col.iso === todayIso ? primaryColor : textPrimary, fontWeight: col.iso === todayIso ? "800" : "600", fontSize: 11 }}>
+                  <Text style={{ color: col.iso === todayIso ? primaryColor : textPrimary, fontWeight: col.iso === todayIso ? "700" : "600", fontSize: 11 }}>
                     {col.date.getDate()}
                   </Text>
                 </View>
@@ -329,8 +348,8 @@ function GanttBar({ task, dayWidth, rangeStartIso, isMobile, canEdit, onPress, o
 }
 
 const styles = StyleSheet.create({
-  wrapper: { borderWidth: 1, borderRadius: 20, overflow: "hidden" },
-  emptyCard: { borderRadius: 20, borderWidth: 1, padding: 24, alignItems: "center" },
+  wrapper: { borderWidth: 1, borderRadius: 24, overflow: "hidden" },
+  emptyCard: { borderRadius: 24, borderWidth: 1, padding: 24, alignItems: "center" },
 
   labelHeaderCell: { height: 20 + 28, justifyContent: "flex-end", paddingBottom: 6, paddingHorizontal: 12, borderBottomWidth: 1, borderRightWidth: 1 },
   labelCell: { height: ROW_HEIGHT, justifyContent: "center", paddingHorizontal: 12, borderRightWidth: 1 },
@@ -339,6 +358,6 @@ const styles = StyleSheet.create({
   dayRow: { flexDirection: "row", height: 28, borderBottomWidth: 1 },
   dayCell: { width: DAY_WIDTH, alignItems: "center", justifyContent: "center" },
 
-  barBody: { borderRadius: 8, justifyContent: "center", paddingHorizontal: 8 },
+  barBody: { borderRadius: 10, justifyContent: "center", paddingHorizontal: 8 },
   barText: { color: "#FFF", fontSize: 11, fontWeight: "700" },
 });

@@ -31,6 +31,9 @@ import {
   TEAM_LEADER_ROLE_LABEL,
 } from "../lib/teams";
 
+// Paleta de marca de Nexus (azure del logo) — acento moderado, no cubre áreas grandes.
+const AZURE_DEEP = "#2C7BD1";
+
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "?";
@@ -57,30 +60,33 @@ export default function TeamScreen() {
   const isWeb = Platform.OS === "web";
   const isOwner = !!organization && organization.owner_id === user?.id;
 
-  const bg            = isDark ? "#020617" : "#FAFAFA";
-  const cardBg        = isDark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
-  const border        = isDark ? "rgba(51, 65, 85, 0.5)" : "rgba(226, 232, 240, 0.8)";
-  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
-  const primaryColor  = organization?.color ?? "#2563EB";
-  const inputBg       = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
+  const bg            = isDark ? "#0B1220" : "#F1F5FA";
+  const cardBg        = isDark ? "rgba(17, 24, 39, 0.58)" : "rgba(255, 255, 255, 0.6)";
+  const border        = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
+  const primaryColor  = organization?.color ?? AZURE_DEEP;
+  const inputBg       = isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.5)";
   const dangerColor   = "#EF4444";
 
-  const ultraShadow = Platform.select({
-    web: {
-      boxShadow: isDark
-        ? "0 25px 50px -12px rgba(0,0,0,1), 0 0 0 1px rgba(255,255,255,0.05) inset"
-        : "0 30px 60px -15px rgba(0,0,0,0.08), 0 10px 30px -5px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02) inset",
-      backdropFilter: "blur(12px)",
-    } as any,
-    default: {
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: isDark ? 0.4 : 0.06,
-      shadowRadius: 16,
-      elevation: 6,
-    },
-  });
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: {
+        shadowColor: isDark ? "#000" : "#2C7BD1",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 22,
+        elevation: 6,
+      },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
 
   const [teams, setTeams] = useState<Team[]>([]);
   const [loadingTeams, setLoadingTeams] = useState(true);
@@ -297,7 +303,7 @@ export default function TeamScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: bg }]}>
+    <View style={[styles.container, { backgroundColor: bg, overflow: "hidden" }]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: isMobile ? 16 : 32 }}>
         <View style={{ width: "100%", maxWidth: 1280, alignSelf: "center" }}>
           <View style={styles.header}>
@@ -324,7 +330,7 @@ export default function TeamScreen() {
           ) : (
             <>
               <View style={[styles.searchWrapper, { backgroundColor: inputBg, borderColor: border, marginTop: 20 }]}>
-                <Search size={18} color={textSecondary} />
+                <Search size={18} color={textSecondary} strokeWidth={2.3} />
                 <TextInput
                   value={search}
                   onChangeText={setSearch}
@@ -340,7 +346,7 @@ export default function TeamScreen() {
                 <Text style={{ color: textSecondary, marginTop: 24 }}>Cargando equipos…</Text>
               ) : filteredTeams.length === 0 ? (
                 <View style={[styles.emptyCard, { backgroundColor: cardBg, borderColor: border, marginTop: 20 }, ultraShadow]}>
-                  <Users size={32} color={textSecondary} />
+                  <Users size={32} color={textSecondary} strokeWidth={2.2} />
                   <Text style={[styles.emptyTitle, { color: textPrimary }]}>
                     {teams.length === 0 ? "No tienes ningún equipo todavía" : "Ningún equipo coincide con esa búsqueda"}
                   </Text>
@@ -388,7 +394,7 @@ export default function TeamScreen() {
                               {team.iconUrl ? (
                                 <Image source={{ uri: team.iconUrl }} style={styles.teamIconImage} />
                               ) : (
-                                <Users size={20} color={team.color} />
+                                <Users size={20} color={team.color} strokeWidth={2.3} />
                               )}
                             </View>
                             <View style={{ flexShrink: 1 }}>
@@ -402,10 +408,10 @@ export default function TeamScreen() {
                           {isOwner && (
                             <View style={{ flexDirection: "row", gap: 14 }}>
                               <TouchableOpacity hitSlop={8} onPress={() => openEditModal(team)}>
-                                <Pencil size={16} color={textSecondary} />
+                                <Pencil size={16} color={textSecondary} strokeWidth={2.2} />
                               </TouchableOpacity>
                               <TouchableOpacity hitSlop={8} onPress={() => setConfirmDeleteId(team.id)}>
-                                <Trash2 size={16} color={textSecondary} />
+                                <Trash2 size={16} color={textSecondary} strokeWidth={2.2} />
                               </TouchableOpacity>
                             </View>
                           )}
@@ -423,7 +429,7 @@ export default function TeamScreen() {
                             <Text style={[styles.leaderName, { color: textPrimary }]} numberOfLines={1}>
                               {leader.name}
                             </Text>
-                            <View style={[styles.leaderPill, { backgroundColor: isDark ? "rgba(37,99,235,0.2)" : "#EFF6FF" }]}>
+                            <View style={[styles.leaderPill, { backgroundColor: isDark ? "rgba(126,200,245,0.14)" : "rgba(44,123,209,0.08)" }]}>
                               <Crown size={10} color={primaryColor} />
                               <Text style={[styles.leaderPillText, { color: primaryColor }]}>Encargado/a</Text>
                             </View>
@@ -466,11 +472,11 @@ export default function TeamScreen() {
       <Modal visible={showCreateModal} transparent animationType="fade" onRequestClose={closeModal}>
         <View style={styles.overlay}>
           <ScrollView contentContainerStyle={styles.overlayScroll} showsVerticalScrollIndicator={false}>
-            <View style={[styles.modalCard, { backgroundColor: isDark ? "#0F172A" : "#FFFFFF", borderColor: border }, !isMobile && styles.modalCardWide]}>
+            <View style={[styles.modalCard, { backgroundColor: isDark ? "rgba(15,23,42,0.72)" : "rgba(255,255,255,0.78)", borderColor: border }, ultraShadow, !isMobile && styles.modalCardWide]}>
               <View style={styles.modalHeader}>
                 <Text style={[styles.modalTitle, { color: textPrimary }]}>{editingTeamId ? "Editar equipo" : "Nuevo equipo"}</Text>
                 <TouchableOpacity onPress={closeModal} hitSlop={8}>
-                  <X size={20} color={textSecondary} />
+                  <X size={20} color={textSecondary} strokeWidth={2.3} />
                 </TouchableOpacity>
               </View>
 
@@ -491,7 +497,7 @@ export default function TeamScreen() {
                     <>
                       {availableRoster.length > 0 && (
                         <View style={[styles.searchWrapper, { backgroundColor: inputBg, borderColor: border, marginBottom: 10 }]}>
-                          <Search size={16} color={textSecondary} />
+                          <Search size={16} color={textSecondary} strokeWidth={2.2} />
                           <TextInput
                             value={rosterSearch}
                             onChangeText={setRosterSearch}
@@ -529,7 +535,7 @@ export default function TeamScreen() {
                                   </Text>
                                 )}
                               </View>
-                              <ChevronRight size={16} color={textSecondary} />
+                              <ChevronRight size={16} color={textSecondary} strokeWidth={2.2} />
                             </TouchableOpacity>
                           ))}
                           {availableRoster.length > 0 && filteredAvailableRoster.length === 0 && (
@@ -562,7 +568,7 @@ export default function TeamScreen() {
                                 </Text>
                               </TouchableOpacity>
                               <TouchableOpacity hitSlop={8} onPress={() => toggleLeader(draft.userId)}>
-                                <Crown size={17} color={isLeader ? primaryColor : textSecondary} />
+                                <Crown size={17} color={isLeader ? primaryColor : textSecondary} strokeWidth={2.2} />
                               </TouchableOpacity>
                               <TouchableOpacity hitSlop={8} onPress={() => removeMemberDraft(draft.userId)}>
                                 <X size={15} color={textSecondary} />
@@ -656,7 +662,7 @@ export default function TeamScreen() {
                 style={[styles.createBtn, { backgroundColor: primaryColor, opacity: !newName.trim() || creating ? 0.5 : 1 }]}
                 onPress={handleSubmit}
               >
-                <Users size={16} color="#FFF" />
+                <Users size={16} color="#FFF" strokeWidth={2.2} />
                 <Text style={styles.createBtnText}>
                   {creating ? (editingTeamId ? "Guardando…" : "Creando…") : editingTeamId ? "Guardar cambios" : "Crear equipo"}
                 </Text>
@@ -685,51 +691,51 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   subtitle: { fontSize: 13, fontWeight: "700" },
-  title: { fontSize: 30, fontWeight: "900", letterSpacing: -0.5, marginTop: 2 },
+  title: { fontSize: 30, fontWeight: "700", letterSpacing: -0.5, marginTop: 2 },
 
   newBtn: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 999, paddingHorizontal: 18, paddingVertical: 12 },
   newBtnText: { color: "#FFF", fontWeight: "700", fontSize: 13 },
 
-  searchWrapper: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 16 },
+  searchWrapper: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 18, paddingHorizontal: 16 },
   searchInput: { flex: 1, paddingVertical: 14, fontSize: 15 },
   noOutline: { outlineStyle: "none" } as any,
 
   errorText: { marginTop: 16, fontSize: 13, fontWeight: "600" },
 
-  teamCard: { borderRadius: 22, borderWidth: 1, padding: 20 },
+  teamCard: { borderRadius: 26, borderWidth: 1, padding: 20 },
   teamHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
   teamHeaderLeft: { flexDirection: "row", gap: 12, flex: 1 },
-  teamIcon: { width: 42, height: 42, borderRadius: 13, justifyContent: "center", alignItems: "center", overflow: "hidden" },
+  teamIcon: { width: 42, height: 42, borderRadius: 16, justifyContent: "center", alignItems: "center", overflow: "hidden" },
   teamIconImage: { width: 42, height: 42, resizeMode: "cover" },
-  teamTitle: { fontSize: 16, fontWeight: "800" },
+  teamTitle: { fontSize: 16, fontWeight: "700" },
   teamDate: { fontSize: 11.5, marginTop: 3 },
   teamDescription: { fontSize: 13, lineHeight: 19, marginTop: 14 },
 
   leaderRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 16 },
   leaderName: { fontSize: 13, fontWeight: "700", flexShrink: 1 },
   leaderPill: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
-  leaderPillText: { fontSize: 10, fontWeight: "800" },
+  leaderPillText: { fontSize: 10, fontWeight: "700" },
 
   teamFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 16 },
   membersRow: { flexDirection: "row", alignItems: "center" },
   avatarMini: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  avatarMiniText: { color: "#FFF", fontSize: 11, fontWeight: "800" },
+  avatarMiniText: { color: "#FFF", fontSize: 11, fontWeight: "700" },
 
   confirmDeleteText: { fontSize: 14, fontWeight: "600" },
   confirmDeleteActions: { flexDirection: "row", gap: 10, marginTop: 14 },
   confirmBtn: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9 },
   confirmBtnText: { color: "#FFF", fontWeight: "700", fontSize: 13 },
 
-  emptyCard: { borderRadius: 20, borderWidth: 1, padding: 32, alignItems: "center", gap: 8 },
+  emptyCard: { borderRadius: 24, borderWidth: 1, padding: 32, alignItems: "center", gap: 8 },
   emptyTitle: { fontSize: 15, fontWeight: "700", textAlign: "center" },
   emptySubtitle: { fontSize: 13, textAlign: "center", lineHeight: 20 },
 
   overlay: { flex: 1, backgroundColor: "rgba(2, 6, 23, 0.6)", alignItems: "center", justifyContent: "center", padding: 20 },
   overlayScroll: { flexGrow: 1, alignItems: "center", justifyContent: "center", width: "100%" },
-  modalCard: { width: "100%", maxWidth: 480, borderRadius: 24, borderWidth: 1, padding: 24 },
+  modalCard: { width: "100%", maxWidth: 480, borderRadius: 32, borderWidth: 1, padding: 24 },
   modalCardWide: { maxWidth: 1080, padding: 40 },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
-  modalTitle: { fontSize: 18, fontWeight: "800" },
+  modalTitle: { fontSize: 18, fontWeight: "700" },
   modalLabel: { fontSize: 12, fontWeight: "700", marginBottom: 8, marginTop: 14 },
   modalInput: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14 },
   modalTextarea: { minHeight: 70, textAlignVertical: "top" },
@@ -748,11 +754,11 @@ const styles = StyleSheet.create({
 
   memberDraftsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   memberDraftCardWide: { flexBasis: "48%", flexGrow: 1 },
-  memberDraftCard: { borderWidth: 1, borderRadius: 16, padding: 12 },
+  memberDraftCard: { borderWidth: 1, borderRadius: 18, padding: 12 },
   memberDraftHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   memberDraftIdentity: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
-  rosterCard: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10 },
-  rosterPanel: { borderWidth: 1, borderRadius: 18, padding: 8, maxHeight: 320 },
+  rosterCard: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10 },
+  rosterPanel: { borderWidth: 1, borderRadius: 20, padding: 8, maxHeight: 320 },
   rosterScroll: { maxHeight: 304 },
   rosterScrollContent: { gap: 8, paddingBottom: 2 },
   leaderDraftLabel: { fontSize: 12, fontWeight: "700", marginTop: 8 },

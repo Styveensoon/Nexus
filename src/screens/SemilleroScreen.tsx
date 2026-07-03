@@ -48,6 +48,9 @@ import { createProjectFromSuggestion } from "../lib/projects";
 import { createTeamFromSuggestion } from "../lib/teams";
 import { listOrganizationMembers } from "../lib/organizations";
 
+// Paleta de marca de Nexus (azure) — acento moderado, no cubre áreas grandes.
+const AZURE_DEEP = "#2C7BD1";
+
 // La sugerencia de la IA se guardó hace tiempo y puede referirse a gente que
 // ya no está en la organización (p. ej. usuarios de seed_users.sql borrados
 // después de generar la sugerencia). Insertar directo produce un error de
@@ -89,15 +92,15 @@ export default function SemilleroScreen({ navigation }: any) {
   const isWeb = Platform.OS === "web";
   const isOwner = !!organization && organization.owner_id === user?.id;
 
-  const bg            = isDark ? "#020617" : "#FAFAFA";
-  const panelBg       = isDark ? "#0B1120" : "#FFFFFF";
-  const cardBg        = isDark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
-  const border        = isDark ? "rgba(51, 65, 85, 0.5)" : "rgba(226, 232, 240, 0.8)";
-  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
-  const primaryColor  = organization?.color ?? "#2563EB";
-  const inputBg       = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
-  const bubbleAssistantBg = isDark ? "rgba(255,255,255,0.06)" : "#F1F5F9";
+  const bg            = isDark ? "#0B1220" : "#F1F5FA";
+  const panelBg       = isDark ? "rgba(15, 23, 42, 0.6)" : "rgba(255, 255, 255, 0.7)";
+  const cardBg        = isDark ? "rgba(17, 24, 39, 0.58)" : "rgba(255, 255, 255, 0.6)";
+  const border        = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
+  const primaryColor  = organization?.color ?? AZURE_DEEP;
+  const inputBg       = isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.5)";
+  const bubbleAssistantBg = isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.65)";
   const dangerColor   = "#EF4444";
 
   // En web, el wrapper de pantalla de @react-navigation/stack tiene
@@ -109,20 +112,30 @@ export default function SemilleroScreen({ navigation }: any) {
     ? { position: "fixed", top: 0, left: 0, right: 0, bottom: 0 }
     : { flex: 1 };
 
-  const ultraShadow = Platform.select({
-    web: {
-      boxShadow: isDark
-        ? "0 25px 50px -12px rgba(0,0,0,1), 0 0 0 1px rgba(255,255,255,0.05) inset"
-        : "0 30px 60px -15px rgba(0,0,0,0.08), 0 10px 30px -5px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02) inset",
-      backdropFilter: "blur(12px)",
-    } as any,
-    default: {
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: isDark ? 0.4 : 0.06,
-      shadowRadius: 16,
-      elevation: 6,
-    },
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: {
+        shadowColor: isDark ? "#000" : "#2C7BD1",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 22,
+        elevation: 6,
+      },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
+
+  // Vidrio liviano para las burbujas del chat — mismo criterio de blur que
+  // ultraShadow pero sin sombra grande (las burbujas se apilan muy seguido).
+  const bubbleGlass = Platform.select({
+    web: { backdropFilter: "blur(20px) saturate(180%)" } as any,
+    default: {},
   });
 
   const [chats, setChats] = useState<SemilleroChat[]>([]);
@@ -383,13 +396,13 @@ export default function SemilleroScreen({ navigation }: any) {
 
   if (!organization || !isOwner) {
     return (
-      <View style={[styles.gatedContainer, { backgroundColor: bg }, rootStyle]}>
+      <View style={[styles.gatedContainer, { backgroundColor: bg, overflow: "hidden" }, rootStyle]}>
         <TouchableOpacity style={styles.backLink} onPress={() => navigation.goBack()}>
-          <ArrowLeft size={16} color={textSecondary} />
+          <ArrowLeft size={16} color={textSecondary} strokeWidth={2.2} />
           <Text style={[styles.backLinkText, { color: textSecondary }]}>Volver</Text>
         </TouchableOpacity>
         <View style={[styles.gatedCard, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
-          <Sparkles size={28} color={primaryColor} />
+          <Sparkles size={28} color={primaryColor} strokeWidth={2.2} />
           <Text style={[styles.gatedTitle, { color: textPrimary }]}>El Semillero es cosa del admin</Text>
           <Text style={[styles.gatedSubtitle, { color: textSecondary }]}>
             Por ahora solo el dueño de la organización puede convertir ideas en equipos.
@@ -405,7 +418,7 @@ export default function SemilleroScreen({ navigation }: any) {
         <Text style={[styles.sidebarTitle, { color: textPrimary }]}>Tus ideas</Text>
         {isMobile && (
           <TouchableOpacity onPress={() => setSidebarOpen(false)}>
-            <X size={20} color={textSecondary} />
+            <X size={20} color={textSecondary} strokeWidth={2.2} />
           </TouchableOpacity>
         )}
       </View>
@@ -415,7 +428,7 @@ export default function SemilleroScreen({ navigation }: any) {
         style={[styles.newChatBtn, { backgroundColor: primaryColor }]}
         onPress={startNewChat}
       >
-        <Plus size={16} color="#FFF" />
+        <Plus size={16} color="#FFF" strokeWidth={2.2} />
         <Text style={styles.newChatBtnText}>Nueva idea</Text>
       </TouchableOpacity>
 
@@ -442,10 +455,10 @@ export default function SemilleroScreen({ navigation }: any) {
                       onSubmitEditing={() => commitRename(chat.id)}
                     />
                     <TouchableOpacity hitSlop={8} onPress={() => commitRename(chat.id)}>
-                      <Check size={16} color={primaryColor} />
+                      <Check size={16} color={primaryColor} strokeWidth={2.2} />
                     </TouchableOpacity>
                     <TouchableOpacity hitSlop={8} onPress={() => setRenamingChatId(null)}>
-                      <X size={16} color={textSecondary} />
+                      <X size={16} color={textSecondary} strokeWidth={2.2} />
                     </TouchableOpacity>
                   </View>
                 );
@@ -458,10 +471,10 @@ export default function SemilleroScreen({ navigation }: any) {
                       ¿Borrar esta idea? No se puede deshacer.
                     </Text>
                     <TouchableOpacity hitSlop={8} onPress={() => confirmDeleteChat(chat.id)}>
-                      <Check size={16} color={dangerColor} />
+                      <Check size={16} color={dangerColor} strokeWidth={2.2} />
                     </TouchableOpacity>
                     <TouchableOpacity hitSlop={8} onPress={() => setConfirmDeleteChatId(null)}>
-                      <X size={16} color={textSecondary} />
+                      <X size={16} color={textSecondary} strokeWidth={2.2} />
                     </TouchableOpacity>
                   </View>
                 );
@@ -474,7 +487,7 @@ export default function SemilleroScreen({ navigation }: any) {
                   style={[
                     styles.chatItem,
                     { borderColor: border },
-                    active && { backgroundColor: isDark ? "rgba(37,99,235,0.15)" : "#EFF6FF" },
+                    active && { backgroundColor: isDark ? "rgba(126,200,245,0.14)" : "rgba(44,123,209,0.08)" },
                   ]}
                   onPress={() => openChat(chat)}
                 >
@@ -502,7 +515,7 @@ export default function SemilleroScreen({ navigation }: any) {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: bg }, rootStyle]}>
+    <View style={[styles.container, { backgroundColor: bg, overflow: "hidden" }, rootStyle]}>
       {!isMobile && sidebar}
       {isMobile && sidebarOpen && (
         <View style={styles.mobileSidebarOverlay}>
@@ -516,15 +529,15 @@ export default function SemilleroScreen({ navigation }: any) {
           <View style={styles.topBarLeft}>
             {isMobile ? (
               <TouchableOpacity onPress={() => setSidebarOpen(true)} style={styles.iconBtn}>
-                <Menu size={18} color={textSecondary} />
+                <Menu size={18} color={textSecondary} strokeWidth={2.2} />
               </TouchableOpacity>
             ) : (
               <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
-                <ArrowLeft size={18} color={textSecondary} />
+                <ArrowLeft size={18} color={textSecondary} strokeWidth={2.2} />
               </TouchableOpacity>
             )}
             <View style={[styles.logoIcon, { backgroundColor: primaryColor }]}>
-              <Sparkles size={16} color="#FFF" />
+              <Sparkles size={16} color="#FFF" strokeWidth={2.2} />
             </View>
             <Text style={[styles.logoText, { color: textPrimary }]}>El Semillero</Text>
           </View>
@@ -554,10 +567,11 @@ export default function SemilleroScreen({ navigation }: any) {
                   <View
                     style={[
                       styles.bubble,
+                      bubbleGlass,
                       { alignSelf: msg.role === "user" ? "flex-end" : "flex-start" },
                       msg.role === "user"
-                        ? { backgroundColor: primaryColor, borderBottomRightRadius: 4 }
-                        : { backgroundColor: bubbleAssistantBg, borderBottomLeftRadius: 4 },
+                        ? { backgroundColor: primaryColor, borderBottomRightRadius: 6, borderWidth: 1, borderColor: "rgba(255,255,255,0.22)" }
+                        : { backgroundColor: bubbleAssistantBg, borderBottomLeftRadius: 6, borderWidth: 1, borderColor: border },
                     ]}
                   >
                     <Text style={[styles.bubbleText, { color: msg.role === "user" ? "#FFF" : textPrimary }]}>
@@ -567,7 +581,7 @@ export default function SemilleroScreen({ navigation }: any) {
                   {msg.team_suggestion && (
                     <View style={[styles.teamCard, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
                       <View style={styles.teamCardHeader}>
-                        <Sparkles size={16} color={primaryColor} />
+                        <Sparkles size={16} color={primaryColor} strokeWidth={2.2} />
                         <Text style={[styles.teamCardTitle, { color: textPrimary }]}>
                           Equipo sugerido · {msg.team_suggestion.projectName}
                         </Text>
@@ -582,7 +596,7 @@ export default function SemilleroScreen({ navigation }: any) {
                             <Text style={[styles.memberName, { color: textPrimary }]}>
                               {msg.team_suggestion.leader.name}
                             </Text>
-                            <View style={[styles.leaderPill, { backgroundColor: isDark ? "rgba(37,99,235,0.2)" : "#EFF6FF" }]}>
+                            <View style={[styles.leaderPill, { backgroundColor: isDark ? "rgba(126,200,245,0.18)" : "rgba(44,123,209,0.1)" }]}>
                               <Crown size={10} color={primaryColor} />
                               <Text style={[styles.leaderPillText, { color: primaryColor }]}>Líder</Text>
                             </View>
@@ -609,7 +623,7 @@ export default function SemilleroScreen({ navigation }: any) {
                       ))}
 
                       <View style={styles.stepsHeader}>
-                        <ListChecks size={14} color={textSecondary} />
+                        <ListChecks size={14} color={textSecondary} strokeWidth={2.2} />
                         <Text style={[styles.stepsTitle, { color: textSecondary }]}>Primeros pasos</Text>
                       </View>
                       {msg.team_suggestion.firstSteps.map((step, idx) => (
@@ -629,7 +643,7 @@ export default function SemilleroScreen({ navigation }: any) {
                           ]}
                           onPress={() => handleCreateProject(msg)}
                         >
-                          <Users size={16} color="#FFF" />
+                          <Users size={16} color="#FFF" strokeWidth={2.2} />
                           <Text style={styles.createProjectBtnText}>
                             {msg.team_suggestion.createdProjectId
                               ? "Ver proyecto"
@@ -648,7 +662,7 @@ export default function SemilleroScreen({ navigation }: any) {
                           ]}
                           onPress={() => handleCreateTeam(msg)}
                         >
-                          <Users size={16} color={textPrimary} />
+                          <Users size={16} color={textPrimary} strokeWidth={2.2} />
                           <Text style={[styles.createProjectBtnText, { color: textPrimary }]}>
                             {msg.team_suggestion.createdTeamId
                               ? "Ver equipo"
@@ -687,7 +701,7 @@ export default function SemilleroScreen({ navigation }: any) {
 
             {sending && (
               <View style={styles.bubbleRow}>
-                <View style={[styles.bubble, { backgroundColor: bubbleAssistantBg, flexDirection: "row", gap: 8 }]}>
+                <View style={[styles.bubble, bubbleGlass, { backgroundColor: bubbleAssistantBg, borderWidth: 1, borderColor: border, flexDirection: "row", gap: 8 }]}>
                   <ActivityIndicator size="small" color={textSecondary} />
                   <Text style={[styles.bubbleText, { color: textSecondary }]}>Pensando…</Text>
                 </View>
@@ -721,7 +735,7 @@ export default function SemilleroScreen({ navigation }: any) {
                 style={[styles.sendBtn, { backgroundColor: primaryColor, opacity: !input.trim() || sending ? 0.5 : 1 }]}
                 onPress={handleSend}
               >
-                <Send size={16} color="#FFF" />
+                <Send size={16} color="#FFF" strokeWidth={2.2} />
               </TouchableOpacity>
             </View>
           </View>
@@ -737,21 +751,21 @@ const styles = StyleSheet.create({
   gatedContainer: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   backLink: { position: "absolute", top: 32, left: 40, flexDirection: "row", alignItems: "center", gap: 8 },
   backLinkText: { fontSize: 14, fontWeight: "600" },
-  gatedCard: { borderRadius: 24, borderWidth: 1, padding: 32, alignItems: "center", gap: 10, maxWidth: 420 },
-  gatedTitle: { fontSize: 18, fontWeight: "800", textAlign: "center" },
+  gatedCard: { borderRadius: 28, borderWidth: 1, padding: 32, alignItems: "center", gap: 10, maxWidth: 420 },
+  gatedTitle: { fontSize: 18, fontWeight: "700", textAlign: "center" },
   gatedSubtitle: { fontSize: 14, textAlign: "center", lineHeight: 20 },
 
   sidebar: { width: 280, borderRightWidth: 1, padding: 16 },
   sidebarHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
-  sidebarTitle: { fontSize: 16, fontWeight: "800" },
+  sidebarTitle: { fontSize: 16, fontWeight: "700" },
   newChatBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    borderRadius: 12, paddingVertical: 12,
+    borderRadius: 16, paddingVertical: 12,
   },
   newChatBtnText: { color: "#FFF", fontWeight: "700", fontSize: 13 },
   emptyChatsText: { fontSize: 12.5, lineHeight: 18, textAlign: "center", marginTop: 24, paddingHorizontal: 8 },
   chatItem: {
-    flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 12, borderWidth: 1,
+    flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 16, borderWidth: 1,
     padding: 12, marginBottom: 8,
   },
   chatItemTitle: { fontSize: 13, fontWeight: "700" },
@@ -767,37 +781,37 @@ const styles = StyleSheet.create({
   topBar: { flexDirection: "row", alignItems: "center", borderBottomWidth: 1, paddingHorizontal: 16, height: 60 },
   topBarLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
   iconBtn: { width: 34, height: 34, alignItems: "center", justifyContent: "center" },
-  logoIcon: { width: 28, height: 28, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  logoText: { fontSize: 15, fontWeight: "900", letterSpacing: -0.3 },
+  logoIcon: { width: 28, height: 28, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  logoText: { fontSize: 15, fontWeight: "700", letterSpacing: -0.3 },
 
   heroEmpty: { alignItems: "center", justifyContent: "center", flex: 1, paddingTop: 60 },
-  heroTitle: { fontSize: 26, fontWeight: "900", letterSpacing: -0.8, marginBottom: 10, textAlign: "center" },
+  heroTitle: { fontSize: 26, fontWeight: "700", letterSpacing: -0.8, marginBottom: 10, textAlign: "center" },
   heroSubtitle: { fontSize: 14.5, lineHeight: 21, textAlign: "center", maxWidth: 480 },
 
   bubbleRow: { marginBottom: 16 },
-  bubble: { maxWidth: "85%", borderRadius: 18, paddingHorizontal: 16, paddingVertical: 12, alignSelf: "flex-start" },
+  bubble: { maxWidth: "85%", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12, alignSelf: "flex-start" },
   bubbleText: { fontSize: 14.5, lineHeight: 21 },
 
   regenerateBtn: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", marginBottom: 16, paddingVertical: 4 },
   regenerateBtnText: { fontSize: 12.5, fontWeight: "700" },
 
-  teamCard: { borderRadius: 20, borderWidth: 1, padding: 18, marginTop: 10 },
+  teamCard: { borderRadius: 26, borderWidth: 1, padding: 18, marginTop: 10 },
   teamCardHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
-  teamCardTitle: { fontSize: 14, fontWeight: "800" },
+  teamCardTitle: { fontSize: 14, fontWeight: "700" },
   memberRow: { flexDirection: "row", gap: 12, paddingVertical: 10, borderTopWidth: 1, borderColor: "transparent" },
-  avatar: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  avatarText: { color: "#FFF", fontSize: 12, fontWeight: "800" },
+  avatar: { width: 36, height: 36, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  avatarText: { color: "#FFF", fontSize: 12, fontWeight: "700" },
   memberNameRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
-  memberName: { fontSize: 13.5, fontWeight: "800" },
+  memberName: { fontSize: 13.5, fontWeight: "700" },
   memberRole: { fontSize: 12, fontWeight: "600" },
   memberReason: { fontSize: 12.5, lineHeight: 18, marginTop: 2 },
   leaderPill: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
-  leaderPillText: { fontSize: 10, fontWeight: "800" },
+  leaderPillText: { fontSize: 10, fontWeight: "700" },
 
   stepsHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 12, marginBottom: 6 },
-  stepsTitle: { fontSize: 12, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5 },
+  stepsTitle: { fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
   stepRow: { flexDirection: "row", gap: 8, marginBottom: 6 },
-  stepNumber: { fontSize: 13, fontWeight: "800" },
+  stepNumber: { fontSize: 13, fontWeight: "700" },
   stepText: { flex: 1, fontSize: 13, lineHeight: 19 },
 
   suggestionActionsRow: { flexDirection: "row", gap: 10, marginTop: 16 },

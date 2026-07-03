@@ -27,6 +27,8 @@ import {
   revokeBadge,
 } from "../lib/badges";
 
+const AZURE_DEEP = "#2C7BD1";
+
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "?";
@@ -41,30 +43,33 @@ export default function BadgesScreen({ navigation }: any) {
   const isWeb = Platform.OS === "web";
   const isOwner = !!organization && organization.owner_id === user?.id;
 
-  const bg            = isDark ? "#020617" : "#FAFAFA";
-  const cardBg        = isDark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
-  const border        = isDark ? "rgba(51, 65, 85, 0.5)" : "rgba(226, 232, 240, 0.8)";
-  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
-  const primaryColor  = organization?.color ?? "#2563EB";
-  const inputBg       = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
+  const bg            = isDark ? "#0B1220" : "#F1F5FA";
+  const cardBg        = isDark ? "rgba(17, 24, 39, 0.58)" : "rgba(255, 255, 255, 0.6)";
+  const border        = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
+  const primaryColor  = organization?.color ?? AZURE_DEEP;
+  const inputBg       = isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.5)";
   const dangerColor   = "#EF4444";
 
-  const ultraShadow = Platform.select({
-    web: {
-      boxShadow: isDark
-        ? "0 25px 50px -12px rgba(0,0,0,1), 0 0 0 1px rgba(255,255,255,0.05) inset"
-        : "0 30px 60px -15px rgba(0,0,0,0.08), 0 10px 30px -5px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02) inset",
-      backdropFilter: "blur(12px)",
-    } as any,
-    default: {
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: isDark ? 0.4 : 0.06,
-      shadowRadius: 16,
-      elevation: 6,
-    },
-  });
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: {
+        shadowColor: isDark ? "#000" : "#2C7BD1",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 22,
+        elevation: 6,
+      },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
 
   const [members, setMembers] = useState<OrganizationMemberProfile[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -250,12 +255,12 @@ export default function BadgesScreen({ navigation }: any) {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: bg }]}>
+    <View style={[styles.container, { backgroundColor: bg, overflow: "hidden" }]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: isMobile ? 16 : 32 }}>
         <View style={{ width: "100%", maxWidth: 1280, alignSelf: "center" }}>
           <View style={styles.header}>
             <TouchableOpacity activeOpacity={0.8} style={[styles.backBtn, { backgroundColor: cardBg, borderColor: border }]} onPress={() => navigation.goBack()}>
-              <ArrowLeft size={18} color={textSecondary} />
+              <ArrowLeft size={18} color={textSecondary} strokeWidth={2.2} />
             </TouchableOpacity>
             <View>
               <Text style={[styles.subtitle, { color: textSecondary }]}>{organization?.name ?? "Workspace"}</Text>
@@ -272,8 +277,8 @@ export default function BadgesScreen({ navigation }: any) {
               {canManageAny && (
                 <View style={[styles.aiCard, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
                   <View style={styles.aiHeader}>
-                    <View style={[styles.aiIcon, { backgroundColor: isDark ? "rgba(37,99,235,0.15)" : "#EFF6FF" }]}>
-                      <Sparkles size={18} color={primaryColor} />
+                    <View style={[styles.aiIcon, { backgroundColor: isDark ? "rgba(126,200,245,0.14)" : "rgba(44,123,209,0.08)" }]}>
+                      <Sparkles size={18} color={primaryColor} strokeWidth={2.3} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.aiTitle, { color: textPrimary }]}>Sugerencias de IA</Text>
@@ -329,7 +334,7 @@ export default function BadgesScreen({ navigation }: any) {
                               <Text style={styles.suggestionGrantBtnText}>{isBusy ? "…" : "Otorgar"}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity hitSlop={8} onPress={() => dismissSuggestion(index)}>
-                              <X size={16} color={textSecondary} />
+                              <X size={16} color={textSecondary} strokeWidth={2.2} />
                             </TouchableOpacity>
                           </View>
                         );
@@ -340,7 +345,7 @@ export default function BadgesScreen({ navigation }: any) {
               )}
 
               <View style={[styles.searchWrapper, { backgroundColor: inputBg, borderColor: border, marginTop: 20 }]}>
-                <Search size={18} color={textSecondary} />
+                <Search size={18} color={textSecondary} strokeWidth={2.3} />
                 <TextInput
                   value={search}
                   onChangeText={setSearch}
@@ -356,7 +361,7 @@ export default function BadgesScreen({ navigation }: any) {
                 <Text style={{ color: textSecondary, marginTop: 24 }}>Cargando colaboradores…</Text>
               ) : filteredMembers.length === 0 ? (
                 <View style={[styles.emptyCard, { backgroundColor: cardBg, borderColor: border, marginTop: 20 }, ultraShadow]}>
-                  <BadgeCheck size={32} color={textSecondary} />
+                  <BadgeCheck size={32} color={textSecondary} strokeWidth={2} />
                   <Text style={[styles.emptyTitle, { color: textPrimary }]}>
                     {members.length === 0 ? "Todavía no hay colaboradores en tu organización" : "Nadie coincide con esa búsqueda"}
                   </Text>
@@ -383,11 +388,11 @@ export default function BadgesScreen({ navigation }: any) {
                             {member.customRole || member.role || "Sin rol asignado"}
                           </Text>
                         </View>
-                        <View style={[styles.badgeCountPill, { backgroundColor: isDark ? "rgba(37,99,235,0.15)" : "#EFF6FF" }]}>
-                          <BadgeCheck size={13} color={primaryColor} />
+                        <View style={[styles.badgeCountPill, { backgroundColor: isDark ? "rgba(126,200,245,0.14)" : "rgba(44,123,209,0.08)" }]}>
+                          <BadgeCheck size={13} color={primaryColor} strokeWidth={2.2} />
                           <Text style={[styles.badgeCountText, { color: primaryColor }]}>{badgeCount}</Text>
                         </View>
-                        <ChevronRight size={18} color={textSecondary} />
+                        <ChevronRight size={18} color={textSecondary} strokeWidth={2.2} />
                       </TouchableOpacity>
                     );
                   })}
@@ -419,20 +424,20 @@ export default function BadgesScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", gap: 14 },
-  backBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  subtitle: { fontSize: 13, fontWeight: "700" },
-  title: { fontSize: 30, fontWeight: "900", letterSpacing: -0.5, marginTop: 2 },
+  backBtn: { width: 40, height: 40, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  subtitle: { fontSize: 13, fontWeight: "600" },
+  title: { fontSize: 30, fontWeight: "700", letterSpacing: -0.5, marginTop: 2 },
 
-  aiCard: { borderRadius: 22, borderWidth: 1, padding: 20, marginTop: 24 },
+  aiCard: { borderRadius: 26, borderWidth: 1, padding: 20, marginTop: 24 },
   aiHeader: { flexDirection: "row", alignItems: "center", gap: 14 },
-  aiIcon: { width: 40, height: 40, borderRadius: 13, alignItems: "center", justifyContent: "center" },
-  aiTitle: { fontSize: 15, fontWeight: "800" },
+  aiIcon: { width: 40, height: 40, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  aiTitle: { fontSize: 15, fontWeight: "700" },
   aiDesc: { fontSize: 12, lineHeight: 17, marginTop: 3 },
   aiBtn: { borderRadius: 999, paddingHorizontal: 16, paddingVertical: 11 },
   aiBtnText: { color: "#FFF", fontWeight: "700", fontSize: 12.5 },
   aiEmptyText: { fontSize: 12.5, lineHeight: 18, marginTop: 14 },
 
-  suggestionRow: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, padding: 12 },
+  suggestionRow: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 16, padding: 12 },
   suggestionName: { fontSize: 13, fontWeight: "700" },
   suggestionReason: { fontSize: 11.5, lineHeight: 16, marginTop: 3 },
   suggestionGrantBtn: { borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
@@ -444,14 +449,14 @@ const styles = StyleSheet.create({
 
   errorText: { marginTop: 16, fontSize: 13, fontWeight: "600" },
 
-  emptyCard: { borderRadius: 20, borderWidth: 1, padding: 32, alignItems: "center", gap: 8 },
+  emptyCard: { borderRadius: 24, borderWidth: 1, padding: 32, alignItems: "center", gap: 8 },
   emptyTitle: { fontSize: 15, fontWeight: "700", textAlign: "center" },
 
-  memberCard: { flexDirection: "row", alignItems: "center", gap: 14, borderRadius: 18, borderWidth: 1, padding: 16 },
-  avatar: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  avatarText: { color: "#FFF", fontWeight: "800", fontSize: 14 },
-  memberName: { fontSize: 14, fontWeight: "800" },
+  memberCard: { flexDirection: "row", alignItems: "center", gap: 14, borderRadius: 24, borderWidth: 1, padding: 16 },
+  avatar: { width: 42, height: 42, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  avatarText: { color: "#FFF", fontWeight: "700", fontSize: 14 },
+  memberName: { fontSize: 14, fontWeight: "700" },
   memberRole: { fontSize: 12, marginTop: 2 },
   badgeCountPill: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 },
-  badgeCountText: { fontSize: 12, fontWeight: "800" },
+  badgeCountText: { fontSize: 12, fontWeight: "700" },
 });

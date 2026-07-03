@@ -12,6 +12,8 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { Check, X } from "lucide-react-native";
 
+const AZURE_DEEP = "#2C7BD1";
+
 const HUE_GRADIENT = ["#FF0000", "#FFFF00", "#00FF00", "#00FFFF", "#0000FF", "#FF00FF", "#FF0000"] as const;
 const BAR_HEIGHT = 16;
 const THUMB_SIZE = 24;
@@ -66,12 +68,31 @@ export default function ColorPickerModal({ visible, initialColor, isDark, onClos
   const barWidthRef = useRef(0);
   const barPageXRef = useRef(0);
 
-  const cardBg        = isDark ? "#0F172A" : "#FFFFFF";
-  const border         = isDark ? "rgba(51, 65, 85, 0.6)" : "rgba(226, 232, 240, 0.9)";
-  const textPrimary    = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary  = isDark ? "#94A3B8" : "#475569";
-  const primaryColor   = "#2563EB";
-  const inputBg        = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
+  const cardBg        = isDark ? "rgba(15,23,42,0.85)" : "rgba(255,255,255,0.85)";
+  const border         = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary    = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary  = isDark ? "#94A3B8" : "#5B6472";
+  const primaryColor   = AZURE_DEEP;
+  const inputBg        = isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.5)";
+
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: {
+        shadowColor: isDark ? "#000" : "#2C7BD1",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 22,
+        elevation: 6,
+      },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
 
   useEffect(() => {
     if (visible) {
@@ -124,17 +145,17 @@ export default function ColorPickerModal({ visible, initialColor, isDark, onClos
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={[styles.card, { backgroundColor: cardBg, borderColor: border }]}>
+        <View style={[styles.card, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
           <View style={styles.header}>
             <Text style={[styles.title, { color: textPrimary }]}>Personalizar color</Text>
             <TouchableOpacity onPress={onClose} hitSlop={8}>
-              <X size={20} color={textSecondary} />
+              <X size={20} color={textSecondary} strokeWidth={2.2} />
             </TouchableOpacity>
           </View>
 
           <View style={styles.previewRow}>
             <View style={[styles.previewCircle, { backgroundColor: isValidHex ? hex : "#CBD5E1", borderColor: border }]}>
-              {isValidHex && <Check size={20} color="#FFF" />}
+              {isValidHex && <Check size={20} color="#FFF" strokeWidth={2.3} />}
             </View>
             <Text style={[styles.previewHex, { color: textSecondary }]}>{hex}</Text>
           </View>
@@ -167,7 +188,7 @@ export default function ColorPickerModal({ visible, initialColor, isDark, onClos
               onChangeText={(v) => handleHexChange(v)}
               autoCapitalize="characters"
               maxLength={6}
-              placeholder="2563EB"
+              placeholder="2C7BD1"
               placeholderTextColor={textSecondary}
               style={[styles.hexInput, { color: textPrimary }, Platform.OS === "web" && styles.noOutline]}
             />
@@ -194,16 +215,21 @@ export default function ColorPickerModal({ visible, initialColor, isDark, onClos
 
 const styles = StyleSheet.create({
   overlay: {
-    flex: 1, backgroundColor: "rgba(2, 6, 23, 0.6)", alignItems: "center", justifyContent: "center", padding: 20,
+    flex: 1,
+    backgroundColor: "rgba(2, 6, 23, 0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+    ...Platform.select({ web: { backdropFilter: "blur(4px)" } as any, default: {} }),
   },
   card: {
-    width: "100%", maxWidth: 360, borderRadius: 24, borderWidth: 1, padding: 24,
+    width: "100%", maxWidth: 360, borderRadius: 28, borderWidth: 1, padding: 24,
   },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
-  title: { fontSize: 18, fontWeight: "800", letterSpacing: -0.3 },
+  title: { fontSize: 17, fontWeight: "700", letterSpacing: -0.3 },
   previewRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 20 },
   previewCircle: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  previewHex: { fontSize: 14, fontWeight: "700", letterSpacing: 1 },
+  previewHex: { fontSize: 14, fontWeight: "600", letterSpacing: 1 },
   hueBar: {
     height: BAR_HEIGHT, borderRadius: BAR_HEIGHT / 2, borderWidth: 1, overflow: "visible", marginBottom: 20, justifyContent: "center",
   },
@@ -214,7 +240,7 @@ const styles = StyleSheet.create({
   hexInputWrapper: {
     flexDirection: "row", alignItems: "center", borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, marginBottom: 24,
   },
-  hexPrefix: { fontSize: 15, fontWeight: "700" },
+  hexPrefix: { fontSize: 15, fontWeight: "600" },
   hexInput: { flex: 1, paddingVertical: 14, paddingLeft: 4, fontSize: 15, letterSpacing: 1 },
   noOutline: { outlineStyle: "none" } as any,
   actions: { flexDirection: "row", gap: 12 },

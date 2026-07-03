@@ -3,6 +3,8 @@ import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpac
 import { Check, Search, X } from "lucide-react-native";
 import { LANGUAGE_OPTIONS } from "../lib/profiles";
 
+const AZURE_DEEP = "#2C7BD1";
+
 // Mismo patrón que TimezoneModal.tsx (overlay + buscador + lista), pero
 // multi-selección: tocar una fila la agrega/quita en vez de cerrar el modal.
 type Props = {
@@ -16,12 +18,31 @@ type Props = {
 export default function LanguageModal({ visible, isDark, selected, onClose, onToggle }: Props) {
   const [query, setQuery] = useState("");
 
-  const cardBg        = isDark ? "#0F172A" : "#FFFFFF";
-  const border        = isDark ? "rgba(51, 65, 85, 0.6)" : "rgba(226, 232, 240, 0.9)";
-  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
-  const primaryColor  = "#2563EB";
-  const inputBg       = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
+  const cardBg        = isDark ? "rgba(15,23,42,0.85)" : "rgba(255,255,255,0.85)";
+  const border        = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
+  const primaryColor  = AZURE_DEEP;
+  const inputBg       = isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.5)";
+
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: {
+        shadowColor: isDark ? "#000" : "#2C7BD1",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 22,
+        elevation: 6,
+      },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -32,16 +53,16 @@ export default function LanguageModal({ visible, isDark, selected, onClose, onTo
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={[styles.card, { backgroundColor: cardBg, borderColor: border }]}>
+        <View style={[styles.card, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
           <View style={styles.header}>
             <Text style={[styles.title, { color: textPrimary }]}>Idiomas</Text>
             <TouchableOpacity onPress={onClose} hitSlop={8}>
-              <X size={20} color={textSecondary} />
+              <X size={20} color={textSecondary} strokeWidth={2.2} />
             </TouchableOpacity>
           </View>
 
           <View style={[styles.searchWrapper, { backgroundColor: inputBg, borderColor: border }]}>
-            <Search size={16} color={textSecondary} />
+            <Search size={16} color={textSecondary} strokeWidth={2.2} />
             <TextInput
               placeholder="Busca un idioma"
               placeholderTextColor={textSecondary}
@@ -55,11 +76,11 @@ export default function LanguageModal({ visible, isDark, selected, onClose, onTo
             {filtered.map((lang) => {
               const active = selected.includes(lang);
               return (
-                <TouchableOpacity key={lang} activeOpacity={0.8} onPress={() => onToggle(lang)} style={styles.row}>
+                <TouchableOpacity key={lang} activeOpacity={0.8} onPress={() => onToggle(lang)} style={[styles.row, { borderBottomColor: border }]}>
                   <Text style={[styles.rowLabel, { color: textPrimary }]} numberOfLines={1}>
                     {lang}
                   </Text>
-                  {active && <Check size={18} color={primaryColor} />}
+                  {active && <Check size={18} color={primaryColor} strokeWidth={2.3} />}
                 </TouchableOpacity>
               );
             })}
@@ -75,11 +96,16 @@ export default function LanguageModal({ visible, isDark, selected, onClose, onTo
 
 const styles = StyleSheet.create({
   overlay: {
-    flex: 1, backgroundColor: "rgba(2, 6, 23, 0.6)", alignItems: "center", justifyContent: "center", padding: 20,
+    flex: 1,
+    backgroundColor: "rgba(2, 6, 23, 0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+    ...Platform.select({ web: { backdropFilter: "blur(4px)" } as any, default: {} }),
   },
-  card: { width: "100%", maxWidth: 380, maxHeight: "80%", borderRadius: 24, borderWidth: 1, padding: 24 },
+  card: { width: "100%", maxWidth: 380, maxHeight: "80%", borderRadius: 28, borderWidth: 1, padding: 24 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
-  title: { fontSize: 18, fontWeight: "800", letterSpacing: -0.3 },
+  title: { fontSize: 17, fontWeight: "700", letterSpacing: -0.3 },
   searchWrapper: {
     flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, marginBottom: 12,
   },
@@ -87,8 +113,8 @@ const styles = StyleSheet.create({
   noOutline: { outlineStyle: "none" } as any,
   list: { maxHeight: 320 },
   row: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "rgba(148,163,184,0.25)",
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  rowLabel: { fontSize: 14, fontWeight: "700" },
+  rowLabel: { fontSize: 14, fontWeight: "600" },
   empty: { textAlign: "center", fontSize: 13, paddingVertical: 24 },
 });

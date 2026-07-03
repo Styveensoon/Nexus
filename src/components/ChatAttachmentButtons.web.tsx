@@ -32,7 +32,7 @@ export default function ChatAttachmentButtons({ color, disabled, onAttachmentRea
   return (
     <>
       <TouchableOpacity hitSlop={8} disabled={disabled} onPress={() => imageInputRef.current?.click()} style={styles.btn}>
-        <ImageIcon size={18} color={color} />
+        <ImageIcon size={18} color={color} strokeWidth={2.2} />
       </TouchableOpacity>
       <input
         ref={imageInputRef}
@@ -46,7 +46,7 @@ export default function ChatAttachmentButtons({ color, disabled, onAttachmentRea
       />
 
       <TouchableOpacity hitSlop={8} disabled={disabled} onPress={() => fileInputRef.current?.click()} style={styles.btn}>
-        <Paperclip size={18} color={color} />
+        <Paperclip size={18} color={color} strokeWidth={2.2} />
       </TouchableOpacity>
       <input
         ref={fileInputRef}

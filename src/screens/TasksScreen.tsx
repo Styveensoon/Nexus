@@ -83,6 +83,9 @@ import {
   uploadTaskAttachment,
 } from "../lib/tasks";
 
+// Paleta de marca de Nexus (azure) — acento moderado, no cubre áreas grandes.
+const AZURE_DEEP = "#2C7BD1";
+
 const REACTION_ICONS: Record<ReactionType, any> = {
   like: ThumbsUp,
   heart: Heart,
@@ -90,8 +93,10 @@ const REACTION_ICONS: Record<ReactionType, any> = {
   question: HelpCircle,
 };
 
+// like usa el acento azure de marca (no tiene un significado funcional propio
+// como sí lo tienen prioridad/status) — heart/dislike/question no se tocan.
 const REACTION_COLORS: Record<ReactionType, string> = {
-  like: "#2563EB",
+  like: AZURE_DEEP,
   heart: "#EF4444",
   dislike: "#F97316",
   question: "#94A3B8",
@@ -154,30 +159,34 @@ export default function TasksScreen({ navigation }: any) {
   const isMobile = width < 768;
   const isWeb = Platform.OS === "web";
 
-  const bg            = isDark ? "#020617" : "#FAFAFA";
-  const cardBg        = isDark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
-  const border        = isDark ? "rgba(51, 65, 85, 0.5)" : "rgba(226, 232, 240, 0.8)";
-  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
-  const primaryColor  = organization?.color ?? "#2563EB";
-  const inputBg       = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
+  const bg            = isDark ? "#0B1220" : "#F1F5FA";
+  const cardBg        = isDark ? "rgba(17, 24, 39, 0.58)" : "rgba(255, 255, 255, 0.6)";
+  const border        = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
+  const primaryColor  = AZURE_DEEP;
+  const inputBg       = isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.5)";
   const dangerColor   = "#EF4444";
+  const orgColor      = organization?.color ?? primaryColor;
 
-  const ultraShadow = Platform.select({
-    web: {
-      boxShadow: isDark
-        ? "0 25px 50px -12px rgba(0,0,0,1), 0 0 0 1px rgba(255,255,255,0.05) inset"
-        : "0 30px 60px -15px rgba(0,0,0,0.08), 0 10px 30px -5px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02) inset",
-      backdropFilter: "blur(12px)",
-    } as any,
-    default: {
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: isDark ? 0.4 : 0.06,
-      shadowRadius: 16,
-      elevation: 6,
-    },
-  });
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: {
+        shadowColor: isDark ? "#000" : "#2C7BD1",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 22,
+        elevation: 6,
+      },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [orgTeams, setOrgTeams] = useState<Team[]>([]);
@@ -835,7 +844,7 @@ export default function TasksScreen({ navigation }: any) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: bg }]}>
+    <View style={[styles.container, { backgroundColor: bg, overflow: "hidden" }]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: isMobile ? 16 : 32 }}>
         <View style={{ width: "100%", maxWidth: 1280, alignSelf: "center" }}>
           <View style={styles.header}>
@@ -870,7 +879,7 @@ export default function TasksScreen({ navigation }: any) {
             <Text style={{ color: textSecondary, marginTop: 24 }}>Cargando…</Text>
           ) : projects.length === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: cardBg, borderColor: border, marginTop: 20 }, ultraShadow]}>
-              <Folder size={32} color={textSecondary} />
+              <Folder size={32} color={textSecondary} strokeWidth={2.2} />
               <Text style={[styles.emptyTitle, { color: textPrimary }]}>Todavía no hay proyectos</Text>
               <Text style={[styles.emptySubtitle, { color: textSecondary }]}>
                 Las tareas viven dentro de un proyecto. Crea uno primero desde Proyectos o El Semillero.
@@ -989,7 +998,7 @@ export default function TasksScreen({ navigation }: any) {
               {viewMode === "kanban" ? (
                 !selectedProject ? (
                   <View style={[styles.emptyCard, { backgroundColor: cardBg, borderColor: border, marginTop: 20 }, ultraShadow]}>
-                    <Kanban size={32} color={textSecondary} />
+                    <Kanban size={32} color={textSecondary} strokeWidth={2.2} />
                     <Text style={[styles.emptyTitle, { color: textPrimary }]}>Elige un proyecto para ver su tablero</Text>
                     <Text style={[styles.emptySubtitle, { color: textSecondary }]}>
                       El Kanban muestra las tareas de un proyecto a la vez. Lista, Calendario y Gantt sí pueden mostrar todos juntos.
@@ -1045,11 +1054,11 @@ export default function TasksScreen({ navigation }: any) {
       <Modal visible={showCreateModal} transparent animationType="fade" onRequestClose={() => setShowCreateModal(false)}>
         <View style={styles.overlay}>
           <ScrollView contentContainerStyle={styles.overlayScroll} showsVerticalScrollIndicator={false}>
-            <View style={[styles.modalCard, { backgroundColor: isDark ? "#0F172A" : "#FFFFFF", borderColor: border }, !isMobile && styles.modalCardWide]}>
+            <View style={[styles.modalCard, { backgroundColor: isDark ? "rgba(15,23,42,0.82)" : "rgba(255,255,255,0.82)", borderColor: border }, !isMobile && styles.modalCardWide, ultraShadow]}>
               <View style={styles.modalHeader}>
                 <Text style={[styles.modalTitle, { color: textPrimary }]}>Nueva task</Text>
                 <TouchableOpacity onPress={() => setShowCreateModal(false)} hitSlop={8}>
-                  <X size={20} color={textSecondary} />
+                  <X size={20} color={textSecondary} strokeWidth={2.2} />
                 </TouchableOpacity>
               </View>
 
@@ -1306,7 +1315,7 @@ export default function TasksScreen({ navigation }: any) {
         <View style={styles.overlay}>
           <ScrollView contentContainerStyle={styles.overlayScroll} showsVerticalScrollIndicator={false}>
             {selectedTask && (
-              <View style={[styles.modalCard, { backgroundColor: isDark ? "#0F172A" : "#FFFFFF", borderColor: border }, !isMobile && styles.modalCardWide]}>
+              <View style={[styles.modalCard, { backgroundColor: isDark ? "rgba(15,23,42,0.82)" : "rgba(255,255,255,0.82)", borderColor: border }, !isMobile && styles.modalCardWide, ultraShadow]}>
                 <View style={[styles.modalHeader, { justifyContent: "flex-end", marginBottom: 12, gap: 16 }]}>
                   {selectedTaskCanEdit && !editingTask && (
                     <TouchableOpacity onPress={startEditTask} hitSlop={8}>
@@ -1314,7 +1323,7 @@ export default function TasksScreen({ navigation }: any) {
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity onPress={closeTaskDetail} hitSlop={8}>
-                    <X size={20} color={textSecondary} />
+                    <X size={20} color={textSecondary} strokeWidth={2.2} />
                   </TouchableOpacity>
                 </View>
 
@@ -1968,7 +1977,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   subtitle: { fontSize: 13, fontWeight: "700" },
-  title: { fontSize: 30, fontWeight: "900", letterSpacing: -0.5, marginTop: 2 },
+  title: { fontSize: 30, fontWeight: "700", letterSpacing: -0.5, marginTop: 2 },
 
   newBtn: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 999, paddingHorizontal: 18, paddingVertical: 12 },
   newBtnText: { color: "#FFF", fontWeight: "700", fontSize: 13 },
@@ -1986,16 +1995,16 @@ const styles = StyleSheet.create({
   errorText: { marginTop: 16, fontSize: 13, fontWeight: "600" },
 
   kanbanRow: { flexDirection: "row", flexWrap: "wrap", gap: 16, marginTop: 20, alignItems: "flex-start" },
-  kanbanColumn: { flexGrow: 1, flexBasis: 280, minWidth: 260, maxWidth: 340, borderRadius: 22, borderWidth: 1, padding: 18 },
+  kanbanColumn: { flexGrow: 1, flexBasis: 280, minWidth: 260, maxWidth: 340, borderRadius: 24, borderWidth: 1, padding: 18 },
 
   columnHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
   statusDot: { width: 9, height: 9, borderRadius: 5 },
-  columnTitle: { fontSize: 15, fontWeight: "800" },
-  columnCount: { fontSize: 12, fontWeight: "700" },
+  columnTitle: { fontSize: 15, fontWeight: "600" },
+  columnCount: { fontSize: 12, fontWeight: "600" },
 
-  taskCard: { borderRadius: 18, borderWidth: 1, padding: 16 },
+  taskCard: { borderRadius: 20, borderWidth: 1, padding: 16 },
   taskCardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-  taskTitle: { fontSize: 14.5, fontWeight: "800", flex: 1 },
+  taskTitle: { fontSize: 14.5, fontWeight: "700", flex: 1 },
   taskDescription: { fontSize: 12.5, lineHeight: 18, marginTop: 6 },
   taskFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 14 },
   assigneeRow: { flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 1 },
@@ -2003,7 +2012,7 @@ const styles = StyleSheet.create({
   metaChip: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
 
   avatarMini: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center" },
-  avatarMiniText: { color: "#FFF", fontSize: 10.5, fontWeight: "800" },
+  avatarMiniText: { color: "#FFF", fontSize: 10.5, fontWeight: "700" },
 
   statusBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
   statusPill: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
@@ -2011,17 +2020,17 @@ const styles = StyleSheet.create({
   confirmBtn: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9 },
   confirmBtnText: { color: "#FFF", fontWeight: "700", fontSize: 13 },
 
-  emptyCard: { borderRadius: 20, borderWidth: 1, padding: 32, alignItems: "center", gap: 8 },
+  emptyCard: { borderRadius: 24, borderWidth: 1, padding: 32, alignItems: "center", gap: 8 },
   emptyTitle: { fontSize: 15, fontWeight: "700", textAlign: "center" },
   emptySubtitle: { fontSize: 13, textAlign: "center", lineHeight: 20 },
   emptyLink: { fontSize: 13, fontWeight: "700", textAlign: "center", marginTop: 6 },
 
   overlay: { flex: 1, backgroundColor: "rgba(2, 6, 23, 0.6)", alignItems: "center", justifyContent: "center", padding: 20 },
   overlayScroll: { flexGrow: 1, alignItems: "center", justifyContent: "center", width: "100%" },
-  modalCard: { width: "100%", maxWidth: 460, borderRadius: 24, borderWidth: 1, padding: 24 },
+  modalCard: { width: "100%", maxWidth: 460, borderRadius: 32, borderWidth: 1, padding: 24 },
   modalCardWide: { maxWidth: 1080, padding: 40 },
   modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20, gap: 10 },
-  modalTitle: { fontSize: 18, fontWeight: "800" },
+  modalTitle: { fontSize: 18, fontWeight: "700" },
   modalLabel: { fontSize: 12, fontWeight: "700", marginBottom: 8, marginTop: 14 },
   modalInput: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14 },
   modalTextarea: { minHeight: 80, textAlignVertical: "top" },
@@ -2035,16 +2044,16 @@ const styles = StyleSheet.create({
   formMain: { flex: 1.5, minWidth: 0 },
   formSide: { width: 300 },
 
-  taskInfoCard: { borderWidth: 1, borderRadius: 18, padding: 18, marginBottom: 16 },
-  taskInfoTitle: { fontSize: 19, fontWeight: "800", letterSpacing: -0.3, marginBottom: 8 },
+  taskInfoCard: { borderWidth: 1, borderRadius: 20, padding: 18, marginBottom: 16 },
+  taskInfoTitle: { fontSize: 19, fontWeight: "700", letterSpacing: -0.3, marginBottom: 8 },
   taskInfoDescription: { fontSize: 13.5, lineHeight: 20 },
 
-  taskFormCard: { borderWidth: 1, borderRadius: 18, padding: 16 },
+  taskFormCard: { borderWidth: 1, borderRadius: 20, padding: 16 },
   taskFormTitleInput: { fontSize: 16, fontWeight: "700", paddingVertical: 6 },
   taskFormDescInput: { fontSize: 13.5, lineHeight: 19, paddingVertical: 6, minHeight: 70, textAlignVertical: "top" },
 
   modeChip: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9 },
-  listItemRow: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10 },
+  listItemRow: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10 },
   listItemRowHalf: { flexBasis: "48%", flexGrow: 1 },
 
   divider: { height: 1, marginTop: 4 },
@@ -2056,7 +2065,7 @@ const styles = StyleSheet.create({
   attachmentFileChip: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, marginTop: 8, alignSelf: "flex-start", maxWidth: 260 },
   attachmentPreviewThumb: { width: 32, height: 32, borderRadius: 8 },
 
-  chatContainer: { borderWidth: 1, borderRadius: 18, marginBottom: 12, overflow: "hidden" },
+  chatContainer: { borderWidth: 1, borderRadius: 20, marginBottom: 12, overflow: "hidden" },
   chatScrollContent: { padding: 14, gap: 16 },
 
   // Burbujas de chat estilo WhatsApp: mías a la derecha (sin avatar, tinte del
@@ -2076,9 +2085,9 @@ const styles = StyleSheet.create({
   reactionPickerMine: { alignSelf: "flex-end" },
   reactionPickerBtn: { padding: 6, borderRadius: 999 },
 
-  inlineBar: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10 },
+  inlineBar: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10 },
 
-  chipInputRow: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 4 },
+  chipInputRow: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 4 },
   chipInput: { flex: 1, paddingVertical: 12, fontSize: 13 },
   composerIconBtn: { padding: 2 },
 

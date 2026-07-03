@@ -17,6 +17,8 @@ import {
 } from "../lib/profiles";
 import { ProfileBadge, getBadgeDefinition, listProfileBadges } from "../lib/badges";
 
+const AZURE_DEEP = "#2C7BD1";
+
 type Props = {
   visible: boolean;
   userId: string | null;
@@ -36,13 +38,32 @@ export default function MemberProfileModal({ visible, userId, organizationId, fa
   const [loading, setLoading] = useState(false);
   const [fetchErrorMsg, setFetchErrorMsg] = useState<string | null>(null);
 
-  const cardBg        = isDark ? "#0F172A" : "#FFFFFF";
-  const border        = isDark ? "rgba(51, 65, 85, 0.6)" : "rgba(226, 232, 240, 0.9)";
-  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
-  const inputBg       = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
-  const primaryColor  = "#2563EB";
+  const cardBg        = isDark ? "rgba(15,23,42,0.85)" : "rgba(255,255,255,0.85)";
+  const border        = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
+  const inputBg       = isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.5)";
+  const primaryColor  = AZURE_DEEP;
   const dangerColor   = "#EF4444";
+
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: {
+        shadowColor: isDark ? "#000" : "#2C7BD1",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 22,
+        elevation: 6,
+      },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
 
   useEffect(() => {
     if (!visible || !userId) return;
@@ -74,11 +95,11 @@ export default function MemberProfileModal({ visible, userId, organizationId, fa
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <ScrollView contentContainerStyle={styles.overlayScroll} showsVerticalScrollIndicator={false}>
-          <View style={[styles.card, { backgroundColor: cardBg, borderColor: border }]}>
+          <View style={[styles.card, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
             <View style={styles.header}>
               <Text style={[styles.title, { color: textPrimary }]}>Perfil</Text>
               <TouchableOpacity onPress={onClose} hitSlop={8}>
-                <X size={20} color={textSecondary} />
+                <X size={20} color={textSecondary} strokeWidth={2.2} />
               </TouchableOpacity>
             </View>
 
@@ -97,7 +118,7 @@ export default function MemberProfileModal({ visible, userId, organizationId, fa
               <>
                 <View style={[styles.previewRow, { backgroundColor: avatarColor }]}>
                   <View style={[styles.previewAvatar, { backgroundColor: "rgba(255,255,255,0.22)", borderColor: "rgba(255,255,255,0.5)" }]}>
-                    {avatarSource ? <Image source={avatarSource} style={styles.previewAvatarImage} /> : <User size={24} color={previewTextColor} />}
+                    {avatarSource ? <Image source={avatarSource} style={styles.previewAvatarImage} /> : <User size={24} color={previewTextColor} strokeWidth={2.2} />}
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.previewName, { color: previewTextColor }]} numberOfLines={1}>
@@ -115,7 +136,7 @@ export default function MemberProfileModal({ visible, userId, organizationId, fa
                 </View>
 
                 <View style={[styles.infoRow, { backgroundColor: inputBg, borderColor: border }]}>
-                  <Clock size={14} color={textSecondary} />
+                  <Clock size={14} color={textSecondary} strokeWidth={2.2} />
                   <Text style={[styles.infoText, { color: textSecondary }]} numberOfLines={1}>
                     {getTimezoneLabel(profile.timezone) ?? "Sin zona horaria configurada"}
                   </Text>
@@ -187,31 +208,38 @@ export default function MemberProfileModal({ visible, userId, organizationId, fa
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(2, 6, 23, 0.6)", alignItems: "center", justifyContent: "center", padding: 20 },
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(2, 6, 23, 0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+    ...Platform.select({ web: { backdropFilter: "blur(4px)" } as any, default: {} }),
+  },
   overlayScroll: { flexGrow: 1, alignItems: "center", justifyContent: "center", width: "100%" },
-  card: { width: "100%", maxWidth: 420, borderRadius: 24, borderWidth: 1, padding: 24 },
+  card: { width: "100%", maxWidth: 420, borderRadius: 28, borderWidth: 1, padding: 24 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
-  title: { fontSize: 18, fontWeight: "800" },
+  title: { fontSize: 17, fontWeight: "700" },
 
-  previewRow: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 18, padding: 16, marginBottom: 16 },
+  previewRow: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 20, padding: 16, marginBottom: 16 },
   previewAvatar: { width: 56, height: 56, borderRadius: 16, justifyContent: "center", alignItems: "center", overflow: "hidden", borderWidth: 2 },
   previewAvatarImage: { width: 64, height: 64, resizeMode: "cover" },
-  previewName: { fontSize: 16, fontWeight: "800" },
+  previewName: { fontSize: 16, fontWeight: "700" },
   previewRoleText: { fontSize: 12.5, fontWeight: "600", marginTop: 2 },
   previewBio: { fontSize: 12.5, marginTop: 6, lineHeight: 17 },
 
-  infoRow: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 20 },
+  infoRow: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 20 },
   infoText: { fontSize: 12.5, fontWeight: "600", flex: 1 },
 
   sectionLabel: { fontSize: 12, fontWeight: "700", marginBottom: 10 },
   emptyText: { fontSize: 12.5, lineHeight: 18, marginBottom: 20 },
-  readRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
+  readRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9 },
   readRowName: { flexShrink: 1, flexGrow: 1, fontSize: 12.5, fontWeight: "700" },
   chipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 },
   langPill: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderRadius: 999, paddingVertical: 6, paddingHorizontal: 6, paddingLeft: 12 },
   langPillText: { fontSize: 12, fontWeight: "700" },
   langLevelBadge: { borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 },
-  langLevelText: { color: "#FFF", fontSize: 9, fontWeight: "800" },
+  langLevelText: { color: "#FFF", fontSize: 9, fontWeight: "700" },
 
   actionBtn: { borderRadius: 999, paddingVertical: 14, alignItems: "center", marginTop: 4 },
   actionBtnText: { color: "#FFF", fontWeight: "700", fontSize: 14 },

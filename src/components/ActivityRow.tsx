@@ -62,12 +62,12 @@ export default function ActivityRow({
 
   return (
     <View style={[styles.row, { borderColor: border, backgroundColor: cardBg }]}>
-      <View style={[styles.iconWrap, { backgroundColor: isDark ? "rgba(37,99,235,0.15)" : "#EFF6FF" }]}>
-        <Icon size={16} color={primaryColor} />
+      <View style={[styles.iconWrap, { backgroundColor: isDark ? "rgba(126,200,245,0.14)" : "rgba(44,123,209,0.08)" }]}>
+        <Icon size={16} color={primaryColor} strokeWidth={2.2} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={{ color: textPrimary, fontSize: 13, lineHeight: 18 }}>
-          <Text style={{ fontWeight: "800" }}>{entry.actorName}</Text> {describeActivity(entry)}
+          <Text style={{ fontWeight: "700" }}>{entry.actorName}</Text> {describeActivity(entry)}
         </Text>
         <Text style={{ color: textSecondary, fontSize: 11.5, marginTop: 4 }}>{formatDateTime(entry.createdAt)}</Text>
       </View>
@@ -76,6 +76,6 @@ export default function ActivityRow({
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", gap: 12, borderWidth: 1, borderRadius: 14, padding: 12, alignItems: "flex-start" },
-  iconWrap: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  row: { flexDirection: "row", gap: 12, borderWidth: 1, borderRadius: 16, padding: 12, alignItems: "flex-start" },
+  iconWrap: { width: 32, height: 32, borderRadius: 12, alignItems: "center", justifyContent: "center" },
 });

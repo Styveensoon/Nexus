@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { ArrowLeft, BadgeCheck, Clock, Folder, LogOut, Settings, User, Users } from "lucide-react-native";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
@@ -19,6 +20,9 @@ import {
   isUploadedAvatar,
 } from "../lib/profiles";
 import { ProfileBadge, listProfileBadges, getBadgeDefinition } from "../lib/badges";
+
+// Paleta de marca de Nexus (azure del logo) — acento moderado, no cubre áreas grandes.
+const AZURE_DEEP = "#2C7BD1";
 
 function SectionCard({
   icon,
@@ -76,29 +80,33 @@ export default function ProfileScreen({ navigation }: any) {
     loadProfile();
   }, [loadProfile]);
 
-  const bg            = isDark ? "#020617" : "#FAFAFA";
-  const cardBg        = isDark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
-  const border        = isDark ? "rgba(51, 65, 85, 0.5)" : "rgba(226, 232, 240, 0.8)";
-  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
-  const primaryColor  = "#2563EB";
-  const inputBg       = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
+  const bg            = isDark ? "#0B1220" : "#F1F5FA";
+  const cardBg        = isDark ? "rgba(17, 24, 39, 0.58)" : "rgba(255, 255, 255, 0.6)";
+  const border        = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
+  const primaryColor  = AZURE_DEEP;
+  const inputBg       = isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.5)";
+  const orgColor      = organization?.color ?? primaryColor;
 
-  const ultraShadow = Platform.select({
-    web: {
-      boxShadow: isDark
-        ? "0 25px 50px -12px rgba(0,0,0,1), 0 0 0 1px rgba(255,255,255,0.05) inset"
-        : "0 30px 60px -15px rgba(0,0,0,0.08), 0 10px 30px -5px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02) inset",
-      backdropFilter: "blur(12px)",
-    } as any,
-    default: {
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: isDark ? 0.4 : 0.06,
-      shadowRadius: 16,
-      elevation: 6,
-    },
-  });
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: {
+        shadowColor: isDark ? "#000" : "#2C7BD1",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 22,
+        elevation: 6,
+      },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -117,7 +125,7 @@ export default function ProfileScreen({ navigation }: any) {
 
   if (editing) {
     return (
-      <View style={[styles.container, { backgroundColor: bg }]}>
+      <View style={[styles.container, { backgroundColor: bg, overflow: "hidden" }]}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: isMobile ? 16 : 32 }}>
           <View style={{ width: "100%", maxWidth: 760, alignSelf: "center" }}>
             <TouchableOpacity style={styles.backLink} onPress={() => setEditing(false)}>
@@ -154,7 +162,7 @@ export default function ProfileScreen({ navigation }: any) {
     profile?.role === CUSTOM_ROLE_VALUE ? profile.custom_role?.trim() || CUSTOM_ROLE_VALUE : profile?.role ?? null;
 
   return (
-    <View style={[styles.container, { backgroundColor: bg }]}>
+    <View style={[styles.container, { backgroundColor: bg, overflow: "hidden" }]}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: isMobile ? 16 : 32 }}>
         <View style={{ width: "100%", maxWidth: 760, alignSelf: "center" }}>
           <View style={styles.header}>
@@ -164,11 +172,18 @@ export default function ProfileScreen({ navigation }: any) {
               style={[styles.iconBtn, { backgroundColor: cardBg, borderColor: border }]}
               onPress={() => setEditing(true)}
             >
-              <Settings size={18} color={textSecondary} />
+              <Settings size={18} color={textSecondary} strokeWidth={2.2} />
             </TouchableOpacity>
           </View>
 
-          <View style={[styles.previewRow, { backgroundColor: avatarColor }, ultraShadow]}>
+          <View style={[styles.previewRow, { backgroundColor: avatarColor, overflow: "hidden" }, ultraShadow]}>
+            <LinearGradient
+              colors={["rgba(255,255,255,0.30)", "rgba(255,255,255,0)"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0.65, y: 0.9 }}
+              style={StyleSheet.absoluteFillObject}
+              pointerEvents="none"
+            />
             <View style={[styles.previewAvatar, { backgroundColor: "rgba(255,255,255,0.22)", borderColor: "rgba(255,255,255,0.5)" }]}>
               {avatarSource ? <Image source={avatarSource} style={styles.previewAvatarImage} /> : <User size={28} color={previewTextColor} />}
             </View>
@@ -188,14 +203,14 @@ export default function ProfileScreen({ navigation }: any) {
           </View>
 
           <View style={[styles.infoRow, { backgroundColor: inputBg, borderColor: border }]}>
-            <Clock size={16} color={textSecondary} />
+            <Clock size={16} color={textSecondary} strokeWidth={2.2} />
             <Text style={[styles.infoText, { color: textSecondary }]} numberOfLines={1}>
               {getTimezoneLabel(profile?.timezone ?? null) ?? "Sin zona horaria configurada"}
             </Text>
           </View>
 
           <SectionCard
-            icon={<BadgeCheck size={18} color={primaryColor} />}
+            icon={<BadgeCheck size={18} color={primaryColor} strokeWidth={2.2} />}
             title="Habilidades"
             cardBg={cardBg}
             border={border}
@@ -224,7 +239,7 @@ export default function ProfileScreen({ navigation }: any) {
           </SectionCard>
 
           <SectionCard
-            icon={<Users size={18} color={primaryColor} />}
+            icon={<Users size={18} color={primaryColor} strokeWidth={2.2} />}
             title="Idiomas"
             cardBg={cardBg}
             border={border}
@@ -248,7 +263,7 @@ export default function ProfileScreen({ navigation }: any) {
           </SectionCard>
 
           <SectionCard
-            icon={<BadgeCheck size={18} color={primaryColor} />}
+            icon={<BadgeCheck size={18} color={primaryColor} strokeWidth={2.2} />}
             title="Badges"
             cardBg={cardBg}
             border={border}
@@ -271,7 +286,7 @@ export default function ProfileScreen({ navigation }: any) {
           </SectionCard>
 
           <SectionCard
-            icon={<Users size={18} color={primaryColor} />}
+            icon={<Users size={18} color={primaryColor} strokeWidth={2.2} />}
             title="Equipos"
             cardBg={cardBg}
             border={border}
@@ -284,7 +299,7 @@ export default function ProfileScreen({ navigation }: any) {
           </SectionCard>
 
           <SectionCard
-            icon={<Folder size={18} color={primaryColor} />}
+            icon={<Folder size={18} color={primaryColor} strokeWidth={2.2} />}
             title="Proyectos"
             cardBg={cardBg}
             border={border}
@@ -310,36 +325,36 @@ export default function ProfileScreen({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
-  title: { fontSize: 26, fontWeight: "900", letterSpacing: -0.7 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 22 },
+  title: { fontSize: 25, fontWeight: "600", letterSpacing: -0.5 },
   iconBtn: {
-    width: 40, height: 40, borderRadius: 14, borderWidth: 1, alignItems: "center", justifyContent: "center",
+    width: 40, height: 40, borderRadius: 15, borderWidth: 1, alignItems: "center", justifyContent: "center",
   },
   backLink: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 20 },
   backLinkText: { fontSize: 14, fontWeight: "600" },
   previewRow: {
-    flexDirection: "row", alignItems: "center", gap: 14, borderRadius: 20, padding: 20, marginBottom: 20,
+    flexDirection: "row", alignItems: "center", gap: 14, borderRadius: 24, padding: 20, marginBottom: 20,
   },
   previewAvatar: {
-    width: 68, height: 68, borderRadius: 18, justifyContent: "center", alignItems: "center", overflow: "hidden", borderWidth: 2,
+    width: 68, height: 68, borderRadius: 20, justifyContent: "center", alignItems: "center", overflow: "hidden", borderWidth: 2,
   },
   previewAvatarImage: { width: 78, height: 78, resizeMode: "cover" },
-  previewName: { fontSize: 19, fontWeight: "800" },
+  previewName: { fontSize: 19, fontWeight: "600" },
   previewRoleText: { fontSize: 13, fontWeight: "600", marginTop: 2 },
   previewBio: { fontSize: 13, marginTop: 8, lineHeight: 18 },
   infoRow: {
-    flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14,
+    flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 18,
     paddingHorizontal: 16, paddingVertical: 12, marginBottom: 20,
   },
   infoText: { fontSize: 13, fontWeight: "600", flex: 1 },
-  sectionCard: { borderRadius: 20, borderWidth: 1, padding: 20, marginBottom: 16 },
+  sectionCard: { borderRadius: 24, borderWidth: 1, padding: 20, marginBottom: 16 },
   sectionHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 14 },
-  sectionIconWrap: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  sectionTitle: { fontSize: 16, fontWeight: "800" },
+  sectionIconWrap: { width: 32, height: 32, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  sectionTitle: { fontSize: 16, fontWeight: "600" },
   emptyText: { fontSize: 13, lineHeight: 19 },
   readRow: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12,
-    borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10,
+    borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10,
   },
   readRowName: { flexShrink: 1, flexGrow: 1, fontSize: 13, fontWeight: "700" },
   chipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },

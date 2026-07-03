@@ -60,10 +60,10 @@ export default function ChatAttachmentButtons({ color, disabled, onAttachmentRea
   return (
     <>
       <TouchableOpacity hitSlop={8} disabled={disabled} onPress={pickImage} style={styles.btn}>
-        <ImageIcon size={18} color={color} />
+        <ImageIcon size={18} color={color} strokeWidth={2.2} />
       </TouchableOpacity>
       <TouchableOpacity hitSlop={8} disabled={disabled} onPress={pickFile} style={styles.btn}>
-        <Paperclip size={18} color={color} />
+        <Paperclip size={18} color={color} strokeWidth={2.2} />
       </TouchableOpacity>
     </>
   );

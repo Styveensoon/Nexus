@@ -34,7 +34,7 @@ import {
   uploadAvatarFile,
 } from "../lib/profiles";
 
-const CARD_COLORS = ["#2563EB", "#7C3AED", "#10B981", "#F59E0B", "#EF4444", "#EC4899"];
+const CARD_COLORS = ["#2C7BD1", "#7C3AED", "#10B981", "#F59E0B", "#EF4444", "#EC4899"];
 
 type Props = {
   isDark: boolean;
@@ -92,30 +92,33 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
     })();
   }, [userId]);
 
-  const cardBg        = isDark ? "rgba(15, 23, 42, 0.8)" : "rgba(255, 255, 255, 0.9)";
-  const border        = isDark ? "rgba(51, 65, 85, 0.5)" : "rgba(226, 232, 240, 0.8)";
-  const textPrimary   = isDark ? "#F8FAFC" : "#020617";
-  const textSecondary = isDark ? "#94A3B8" : "#475569";
+  const cardBg        = isDark ? "rgba(15,23,42,0.85)" : "rgba(255,255,255,0.85)";
+  const border        = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
+  const textPrimary   = isDark ? "#F8FAFC" : "#101828";
+  const textSecondary = isDark ? "#94A3B8" : "#5B6472";
   // El acento de este formulario sigue el color de card que elige el usuario
-  // (no afecta al resto de la app, que sigue usando el azul de marca fijo).
+  // (no afecta al resto de la app, que sigue usando el azure de marca fijo).
   const primaryColor  = avatarColor;
-  const inputBg       = isDark ? "rgba(255,255,255,0.04)" : "#F8FAFC";
+  const inputBg       = isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.5)";
 
-  const ultraShadow = Platform.select({
-    web: {
-      boxShadow: isDark
-        ? "0 25px 50px -12px rgba(0,0,0,1), 0 0 0 1px rgba(255,255,255,0.05) inset"
-        : "0 30px 60px -15px rgba(0,0,0,0.08), 0 10px 30px -5px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02) inset",
-      backdropFilter: "blur(12px)",
-    } as any,
-    default: {
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: isDark ? 0.4 : 0.06,
-      shadowRadius: 16,
-      elevation: 6,
-    },
-  });
+  const ultraShadow = {
+    ...Platform.select({
+      web: {
+        boxShadow: isDark
+          ? "0 30px 60px -25px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.08) inset"
+          : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
+        backdropFilter: "blur(32px) saturate(200%)",
+      } as any,
+      default: {
+        shadowColor: isDark ? "#000" : "#2C7BD1",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: isDark ? 0.35 : 0.1,
+        shadowRadius: 22,
+        elevation: 6,
+      },
+    }),
+    borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
+  };
 
   const previewSource = uploadedAvatarUrl
     ? { uri: uploadedAvatarUrl }
@@ -224,7 +227,7 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
           {previewSource ? (
             <Image source={previewSource} style={styles.previewAvatarImage} />
           ) : (
-            <User size={26} color={previewTextColor} />
+            <User size={26} color={previewTextColor} strokeWidth={2.2} />
           )}
         </View>
         <View style={{ flex: 1 }}>
@@ -239,7 +242,7 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
 
       <Text style={[styles.label, { color: textSecondary }]}>¿Cómo quieres que te llamen?</Text>
       <View style={[styles.inputWrapper, { backgroundColor: inputBg, borderColor: focusedField === "nickname" ? primaryColor : border }]}>
-        <User size={18} color={textSecondary} />
+        <User size={18} color={textSecondary} strokeWidth={2.2} />
         <TextInput
           placeholder={displayName ? `Ej. ${displayName.split(" ")[0]}, o el mote que prefieras` : "Tu mote o apodo"}
           placeholderTextColor={textSecondary}
@@ -286,7 +289,7 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
             <Image source={avatar.source} style={styles.avatarImage} />
             {selectedAvatarId === avatar.id && (
               <View style={[styles.checkBadge, { backgroundColor: primaryColor }]}>
-                <Check size={12} color={previewTextColor} />
+                <Check size={12} color={previewTextColor} strokeWidth={2.3} />
               </View>
             )}
           </TouchableOpacity>
@@ -304,12 +307,12 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
       <View style={styles.colorRow}>
         {CARD_COLORS.map((c) => (
           <TouchableOpacity key={c} activeOpacity={0.8} onPress={() => setAvatarColor(c)} style={[styles.colorSwatch, { backgroundColor: c }]}>
-            {avatarColor === c && <Check size={16} color={getContrastTextColor(c)} />}
+            {avatarColor === c && <Check size={16} color={getContrastTextColor(c)} strokeWidth={2.3} />}
           </TouchableOpacity>
         ))}
         {!CARD_COLORS.includes(avatarColor) && (
           <View style={[styles.colorSwatch, { backgroundColor: avatarColor, borderWidth: 2, borderColor: isDark ? "#F8FAFC" : "#FFFFFF" }]}>
-            <Check size={16} color={previewTextColor} />
+            <Check size={16} color={previewTextColor} strokeWidth={2.3} />
           </View>
         )}
       </View>
@@ -318,7 +321,7 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
         style={[styles.customColorBtn, { borderColor: border, backgroundColor: inputBg }]}
         onPress={() => setShowColorPicker(true)}
       >
-        <Palette size={16} color={primaryColor} />
+        <Palette size={16} color={primaryColor} strokeWidth={2.2} />
         <Text style={[styles.customColorText, { color: textPrimary }]}>Personalizar color</Text>
       </TouchableOpacity>
 
@@ -328,11 +331,11 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
         onPress={() => setShowTimezoneModal(true)}
         style={[styles.selectorBtn, { backgroundColor: inputBg, borderColor: border }]}
       >
-        <Clock size={18} color={textSecondary} />
+        <Clock size={18} color={textSecondary} strokeWidth={2.2} />
         <Text style={[styles.selectorText, { color: timezone ? textPrimary : textSecondary }]} numberOfLines={1}>
           {getTimezoneLabel(timezone) ?? "Selecciona tu zona horaria"}
         </Text>
-        <ChevronDown size={18} color={textSecondary} />
+        <ChevronDown size={18} color={textSecondary} strokeWidth={2.2} />
       </TouchableOpacity>
 
       <Text style={[styles.label, { color: textSecondary }]}>Tu rol</Text>
@@ -364,7 +367,7 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
 
       {role === CUSTOM_ROLE_VALUE && (
         <View style={[styles.inputWrapper, { backgroundColor: inputBg, borderColor: focusedField === "customRole" ? primaryColor : border, marginTop: 4 }]}>
-          <Briefcase size={18} color={textSecondary} />
+          <Briefcase size={18} color={textSecondary} strokeWidth={2.2} />
           <TextInput
             placeholder="Escribe tu cargo"
             placeholderTextColor={textSecondary}
@@ -383,11 +386,11 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
         onPress={() => setShowLanguageModal(true)}
         style={[styles.selectorBtn, { backgroundColor: inputBg, borderColor: border, marginBottom: languages.length > 0 ? 12 : 24 }]}
       >
-        <Globe size={18} color={textSecondary} />
+        <Globe size={18} color={textSecondary} strokeWidth={2.2} />
         <Text style={[styles.selectorText, { color: languages.length ? textPrimary : textSecondary }]} numberOfLines={1}>
           {languages.length ? languages.join(", ") : "Selecciona los idiomas que hablas"}
         </Text>
-        <ChevronDown size={18} color={textSecondary} />
+        <ChevronDown size={18} color={textSecondary} strokeWidth={2.2} />
       </TouchableOpacity>
 
       {languages.length > 0 && (
@@ -419,7 +422,7 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
                     })}
                   </View>
                   <TouchableOpacity onPress={() => toggleLanguage(lang)} hitSlop={8}>
-                    <X size={14} color={textSecondary} />
+                    <X size={14} color={textSecondary} strokeWidth={2.2} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -430,7 +433,7 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
 
       <Text style={[styles.label, { color: textSecondary, marginTop: 4 }]}>Habilidades</Text>
       <View style={[styles.inputWrapper, { backgroundColor: inputBg, borderColor: focusedField === "skill" ? primaryColor : border }]}>
-        <Sparkles size={18} color={textSecondary} />
+        <Sparkles size={18} color={textSecondary} strokeWidth={2.2} />
         <TextInput
           placeholder="Ej. Figma, React, Copywriting"
           placeholderTextColor={textSecondary}
@@ -442,7 +445,7 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
           style={[styles.input, { color: textPrimary }, isWeb && styles.inputNoOutline]}
         />
         <TouchableOpacity onPress={addSkill} hitSlop={8}>
-          <Plus size={20} color={primaryColor} />
+          <Plus size={20} color={primaryColor} strokeWidth={2.3} />
         </TouchableOpacity>
       </View>
 
@@ -463,7 +466,7 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
                     onChange={(next) => setSkillLevel(skill, next)}
                   />
                   <TouchableOpacity onPress={() => removeSkill(skill)} hitSlop={8}>
-                    <X size={14} color={textSecondary} />
+                    <X size={14} color={textSecondary} strokeWidth={2.2} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -492,7 +495,7 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
           onPress={handleSave}
         >
           <Text style={[styles.btnPrimaryText, { color: previewTextColor }]}>{saving ? "Guardando…" : submitLabel}</Text>
-          {!saving && <ArrowRight size={18} color={previewTextColor} />}
+          {!saving && <ArrowRight size={18} color={previewTextColor} strokeWidth={2.2} />}
         </TouchableOpacity>
       </View>
 
@@ -530,7 +533,7 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
 }
 
 const styles = StyleSheet.create({
-  card: { borderRadius: 24, borderWidth: 1, padding: 28 },
+  card: { borderRadius: 28, borderWidth: 1, padding: 28 },
   previewRow: {
     flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 28, borderRadius: 20, padding: 18,
   },
@@ -538,20 +541,20 @@ const styles = StyleSheet.create({
     width: 64, height: 64, borderRadius: 18, justifyContent: "center", alignItems: "center", overflow: "hidden", borderWidth: 2,
   },
   previewAvatarImage: { width: 74, height: 74, resizeMode: "cover" },
-  previewName: { fontSize: 18, fontWeight: "800" },
+  previewName: { fontSize: 18, fontWeight: "700" },
   previewRoleText: { fontSize: 13, fontWeight: "600", marginTop: 2 },
   label: { fontSize: 13, fontWeight: "700", marginBottom: 10 },
   labelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
   charCount: { fontSize: 11, fontWeight: "600" },
-  textAreaWrapper: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 24 },
+  textAreaWrapper: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 24 },
   textArea: { minHeight: 56, fontSize: 15, textAlignVertical: "top" },
   selectorBtn: {
-    flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14,
+    flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 16,
     paddingHorizontal: 16, paddingVertical: 16, marginBottom: 24,
   },
   selectorText: { flex: 1, fontSize: 15 },
   skillRow: {
-    flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderRadius: 14,
+    flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderRadius: 16,
     paddingHorizontal: 14, paddingVertical: 12,
   },
   skillRowMobile: { flexDirection: "column", alignItems: "stretch", gap: 10 },
@@ -560,7 +563,7 @@ const styles = StyleSheet.create({
   skillControlsMobile: { justifyContent: "space-between" },
   levelSegments: { flexDirection: "row", gap: 4, flexShrink: 0 },
   levelSegment: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 4 },
-  levelSegmentText: { fontSize: 10, fontWeight: "800" },
+  levelSegmentText: { fontSize: 10, fontWeight: "700" },
   avatarGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 24 },
   avatarTile: {
     width: AVATAR_TILE_SIZE, height: AVATAR_TILE_SIZE, borderRadius: 20, borderWidth: 2,
@@ -575,14 +578,14 @@ const styles = StyleSheet.create({
   colorSwatch: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" },
   customColorBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    borderWidth: 1, borderRadius: 14, paddingVertical: 12, marginBottom: 24,
+    borderWidth: 1, borderRadius: 16, paddingVertical: 12, marginBottom: 24,
   },
   customColorText: { fontWeight: "700", fontSize: 14 },
   chipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 20 },
   chip: { borderWidth: 1, borderRadius: 999, paddingVertical: 10, paddingHorizontal: 16 },
   chipText: { fontSize: 13, fontWeight: "700" },
   inputWrapper: {
-    flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, marginBottom: 20,
+    flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 16, paddingHorizontal: 16, marginBottom: 20,
   },
   input: { flex: 1, paddingVertical: 16, fontSize: 15 },
   inputNoOutline: { outlineStyle: "none" } as any,
