@@ -2,6 +2,7 @@ import { supabase } from "./supabase";
 import { CUSTOM_ROLE_VALUE } from "./profiles";
 import type { TeamSuggestion } from "./semillero";
 import { logActivity } from "./activity";
+import { getDisplayName, notifyTeamMembersAdded } from "./emails";
 
 export const TEAM_ROLE_OPTIONS = [
   "Desarrollador/a",
@@ -164,6 +165,14 @@ export async function createTeam(params: {
   if (rows.length) {
     const { error: membersError } = await supabase.from("team_members").insert(rows);
     if (membersError) return { data: team, error: membersError };
+
+    const addedByName = await getDisplayName(params.createdBy);
+    await notifyTeamMembersAdded(
+      params.members.map((m) => m.userId),
+      params.name,
+      addedByName,
+      params.organizationId
+    );
   }
 
   return { data: team, error: null };
@@ -213,14 +222,39 @@ export async function updateTeam(
 }
 
 export async function setTeamMembers(teamId: string, members: { userId: string; roleInTeam: string | null }[]) {
+  // Antes de borrar, se guarda quién ya estaba para poder avisar (3.1) solo a
+  // los integrantes REALMENTE nuevos — no a los que ya formaban parte del
+  // equipo y solo se están re-guardando en este mismo edit.
+  const { data: beforeRows } = await supabase.from("team_members").select("user_id").eq("team_id", teamId);
+  const beforeIds = new Set((beforeRows ?? []).map((r) => r.user_id));
+
   const { error: deleteError } = await supabase.from("team_members").delete().eq("team_id", teamId);
   if (deleteError) return { error: deleteError };
 
-  if (!members.length) return { error: null };
+  if (members.length) {
+    const rows = members.map((m) => ({ team_id: teamId, user_id: m.userId, role_in_team: m.roleInTeam }));
+    const { error } = await supabase.from("team_members").insert(rows);
+    if (error) return { error };
+  }
 
-  const rows = members.map((m) => ({ team_id: teamId, user_id: m.userId, role_in_team: m.roleInTeam }));
-  const { error } = await supabase.from("team_members").insert(rows);
-  return { error };
+  const newlyAdded = members.filter((m) => !beforeIds.has(m.userId));
+  if (newlyAdded.length) {
+    const [{ data: team }, { data: { user } }] = await Promise.all([
+      supabase.from("teams").select("name, organization_id").eq("id", teamId).maybeSingle(),
+      supabase.auth.getUser(),
+    ]);
+    if (team && user) {
+      const addedByName = await getDisplayName(user.id);
+      await notifyTeamMembersAdded(
+        newlyAdded.map((m) => m.userId),
+        team.name,
+        addedByName,
+        team.organization_id
+      );
+    }
+  }
+
+  return { error: null };
 }
 
 export async function deleteTeam(teamId: string) {

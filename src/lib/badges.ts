@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { logActivity } from "./activity";
+import { notifyBadgeGranted } from "./emails";
 
 // Catálogo fijo de tipos de badge — no hay tabla de tipos porque hoy no son
 // personalizables (ver docs/PATRONES.md sobre catálogos fijos como
@@ -228,14 +229,16 @@ export async function grantBadge(params: {
   });
 
   if (!error) {
+    const definition = getBadgeDefinition(params.badgeKey);
     await logActivity({
       organizationId: params.organizationId,
       actorId: params.grantedBy,
       action: "badge_granted",
       entityType: "badge",
-      entityName: getBadgeDefinition(params.badgeKey)?.label ?? params.badgeKey,
+      entityName: definition?.label ?? params.badgeKey,
       targetUserId: params.profileId,
     });
+    await notifyBadgeGranted(params.profileId, definition?.label ?? params.badgeKey, definition?.description ?? "", params.organizationId);
   }
 
   return { error };

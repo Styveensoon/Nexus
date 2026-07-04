@@ -975,3 +975,56 @@ drop policy if exists "activity_log_insert_self" on activity_log;
 create policy "activity_log_insert_self" on activity_log
   for insert to authenticated
   with check (auth.uid() = actor_id and organization_id in (select my_organization_ids()));
+
+-- ----------------------------------------------------------------------------
+-- Correos transaccionales (docs/EMAILS.md) — infraestructura nueva. La mayoría
+-- se dispara desde src/lib/*.ts justo después de una mutación exitosa (mismo
+-- patrón que logActivity), vía la Edge Function `send-email`. Este bloque solo
+-- cubre lo que SÍ necesita algo en la base de datos: la columna de dedup para
+-- el recordatorio de vencimiento (5.4) y el cron que lo dispara. No se
+-- construyó nada para la sección 6 (Módulo de Clientes) porque ese módulo
+-- todavía no existe (ver docs/CLIENTE.md) — queda pendiente para cuando se
+-- construya.
+-- ----------------------------------------------------------------------------
+
+-- Evita reenviar el mismo aviso de "vence pronto" (5.4) más de una vez. Se
+-- resetea a null en updateTask (src/lib/tasks.ts) cada vez que cambia
+-- due_date, para que una task pospuesta vuelva a avisar con la fecha nueva.
+-- Deliberadamente NO se agregó a la comparación de columnas de
+-- enforce_task_update_permissions (arriba): es un campo de sistema que ni el
+-- asignado ni el líder/owner tocan a mano nunca, solo la Edge Function
+-- task-due-reminders (con la service role key, que no pasa por auth.uid()) y
+-- el reset automático de updateTask.
+alter table tasks add column if not exists due_reminder_sent_at timestamptz;
+
+-- Cron diario que llama a la Edge Function task-due-reminders (correo 5.4).
+-- Requiere:
+--   1. Habilitar las extensiones "pg_cron" y "pg_net" (Database → Extensions
+--      en el dashboard de Supabase).
+--   2. Guardar la Service Role Key en Vault UNA VEZ, a mano, en el SQL Editor
+--      (nunca commitear el valor real a git):
+--        select vault.create_secret('TU_SERVICE_ROLE_KEY_REAL', 'service_role_key');
+--   3. Reemplazar <PROJECT_REF> por el ref de tu proyecto (Project Settings →
+--      General) antes de correr este bloque.
+-- Ver docs/SETUP.md para el detalle completo de estos 3 pasos.
+do $$
+begin
+  if exists (select 1 from cron.job where jobname = 'task-due-reminders-daily') then
+    perform cron.unschedule('task-due-reminders-daily');
+  end if;
+end $$;
+
+select cron.schedule(
+  'task-due-reminders-daily',
+  '0 13 * * *', -- todos los días, ajustar la hora UTC según tu zona horaria
+  $$
+  select net.http_post(
+    url := 'https://oygyntlhzhvbdfglzulx.functions.supabase.co/task-due-reminders',
+    headers := jsonb_build_object(
+      'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'service_role_key'),
+      'Content-Type', 'application/json'
+    ),
+    body := '{}'::jsonb
+  );
+  $$
+);

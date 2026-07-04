@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { logActivity } from "./activity";
+import { notifyOrganizationCreated, notifyOrganizationJoined } from "./emails";
 
 export type Organization = {
   id: string;
@@ -44,6 +45,7 @@ export async function createOrganization(params: {
       await supabase
         .from("organization_members")
         .insert({ organization_id: data.id, user_id: ownerId, role: "owner" });
+      await notifyOrganizationCreated(ownerId, data.name, data.invite_code, data.id);
       return { data: data as Organization, error: null };
     }
 
@@ -102,6 +104,7 @@ export async function joinOrganization(params: { organizationId: string; userId:
       entityName: org?.name ?? "la organización",
       targetUserId: userId,
     });
+    await notifyOrganizationJoined(userId, org?.name ?? "tu organización", organizationId);
   }
 
   return { error };

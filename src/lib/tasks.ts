@@ -2,6 +2,13 @@ import { supabase } from "./supabase";
 import { Team, getTeamsByIds } from "./teams";
 import { uploadFile } from "./icons";
 import { logActivity } from "./activity";
+import {
+  getDisplayName,
+  notifyTaskAssigned,
+  notifyTaskTeamAssigned,
+  notifyTaskCollaboratorAdded,
+  notifyTaskBlockedToggle,
+} from "./emails";
 
 export type TaskStatus =
   | "backlog"
@@ -230,7 +237,7 @@ export async function createTask(params: {
     .single();
 
   if (!error && data) {
-    const { data: project } = await supabase.from("projects").select("organization_id").eq("id", params.projectId).maybeSingle();
+    const { data: project } = await supabase.from("projects").select("organization_id, name").eq("id", params.projectId).maybeSingle();
     if (project) {
       await logActivity({
         organizationId: project.organization_id,
@@ -241,6 +248,20 @@ export async function createTask(params: {
         entityId: data.id,
         projectId: params.projectId,
       });
+
+      if (params.assignedUserId) {
+        const assignedByName = await getDisplayName(params.createdBy);
+        await notifyTaskAssigned(
+          params.assignedUserId,
+          params.title,
+          project.name,
+          assignedByName,
+          params.dueDate ?? null,
+          project.organization_id
+        );
+      } else if (params.assignedTeamId) {
+        await notifyTaskTeamAssigned(params.assignedTeamId, params.title, project.name, project.organization_id);
+      }
     }
   }
 
@@ -248,7 +269,11 @@ export async function createTask(params: {
 }
 
 export async function updateTaskStatus(taskId: string, status: TaskStatus) {
-  const { data: taskBefore } = await supabase.from("tasks").select("project_id, title, status").eq("id", taskId).maybeSingle();
+  const { data: taskBefore } = await supabase
+    .from("tasks")
+    .select("project_id, title, status, assigned_user_id, assigned_team_id")
+    .eq("id", taskId)
+    .maybeSingle();
   const { error } = await supabase.from("tasks").update({ status }).eq("id", taskId);
 
   if (!error && taskBefore) {
@@ -272,6 +297,32 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
           fromLabel: TASK_STATUS_LABELS[taskBefore.status as TaskStatus],
         },
       });
+
+      // 5.5: aviso al asignado (persona o equipo) al entrar o salir del
+      // estado "bloqueada" — no en cualquier otro cambio de status.
+      const enteringBlocked = status === "blocked" && taskBefore.status !== "blocked";
+      const leavingBlocked = status !== "blocked" && taskBefore.status === "blocked";
+      if (enteringBlocked || leavingBlocked) {
+        const changedByName = await getDisplayName(user.id);
+        if (taskBefore.assigned_user_id) {
+          await notifyTaskBlockedToggle(
+            [taskBefore.assigned_user_id],
+            taskBefore.title,
+            enteringBlocked,
+            changedByName,
+            project.organization_id
+          );
+        } else if (taskBefore.assigned_team_id) {
+          const { data: teamMembers } = await supabase.from("team_members").select("user_id").eq("team_id", taskBefore.assigned_team_id);
+          await notifyTaskBlockedToggle(
+            (teamMembers ?? []).map((m) => m.user_id),
+            taskBefore.title,
+            enteringBlocked,
+            changedByName,
+            project.organization_id
+          );
+        }
+      }
     }
   }
 
@@ -290,6 +341,14 @@ export async function updateTask(
     dueDate: string | null;
   }>
 ) {
+  // Se necesita el estado previo solo si cambia la asignación (para saber a
+  // quién avisar) o la fecha límite (para resetear el aviso de vencimiento
+  // ya mandado — ver due_reminder_sent_at en schema.sql).
+  const needsBefore = updates.assignedUserId !== undefined || updates.assignedTeamId !== undefined || updates.dueDate !== undefined;
+  const { data: before } = needsBefore
+    ? await supabase.from("tasks").select("project_id, title, assigned_user_id, assigned_team_id, due_date").eq("id", taskId).maybeSingle()
+    : { data: null };
+
   const { error } = await supabase
     .from("tasks")
     .update({
@@ -299,9 +358,41 @@ export async function updateTask(
       ...(updates.assignedTeamId !== undefined && { assigned_team_id: updates.assignedTeamId, assigned_user_id: null }),
       ...(updates.priority !== undefined && { priority: updates.priority }),
       ...(updates.startDate !== undefined && { start_date: updates.startDate }),
-      ...(updates.dueDate !== undefined && { due_date: updates.dueDate }),
+      ...(updates.dueDate !== undefined && {
+        due_date: updates.dueDate,
+        ...(updates.dueDate !== before?.due_date && { due_reminder_sent_at: null }),
+      }),
     })
     .eq("id", taskId);
+
+  if (!error && before) {
+    const assigneeChanged =
+      (updates.assignedUserId !== undefined && updates.assignedUserId !== before.assigned_user_id) ||
+      (updates.assignedTeamId !== undefined && updates.assignedTeamId !== before.assigned_team_id);
+
+    if (assigneeChanged) {
+      const [{ data: project }, { data: { user } }] = await Promise.all([
+        supabase.from("projects").select("name, organization_id").eq("id", before.project_id).maybeSingle(),
+        supabase.auth.getUser(),
+      ]);
+      const title = updates.title ?? before.title;
+      if (project && user) {
+        const assignedByName = await getDisplayName(user.id);
+        if (updates.assignedUserId) {
+          await notifyTaskAssigned(
+            updates.assignedUserId,
+            title,
+            project.name,
+            assignedByName,
+            updates.dueDate ?? null,
+            project.organization_id
+          );
+        } else if (updates.assignedTeamId) {
+          await notifyTaskTeamAssigned(updates.assignedTeamId, title, project.name, project.organization_id);
+        }
+      }
+    }
+  }
 
   return { error };
 }
@@ -571,6 +662,18 @@ export async function listTaskCollaborators(taskId: string) {
 
 export async function addTaskCollaborator(taskId: string, userId: string, addedBy: string) {
   const { error } = await supabase.from("task_collaborators").insert({ task_id: taskId, user_id: userId, added_by: addedBy });
+
+  if (!error) {
+    const { data: task } = await supabase.from("tasks").select("title, project_id").eq("id", taskId).maybeSingle();
+    if (task) {
+      const { data: project } = await supabase.from("projects").select("organization_id").eq("id", task.project_id).maybeSingle();
+      if (project) {
+        const addedByName = await getDisplayName(addedBy);
+        await notifyTaskCollaboratorAdded(userId, task.title, addedByName, project.organization_id);
+      }
+    }
+  }
+
   return { error };
 }
 

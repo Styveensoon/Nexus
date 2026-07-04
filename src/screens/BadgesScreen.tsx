@@ -471,7 +471,12 @@ export default function BadgesScreen({ navigation }: any) {
                   </Text>
                 </View>
               ) : (
-                <View style={{ marginTop: 20, gap: 12 }}>
+                <ScrollView
+                  style={{ marginTop: 20, maxHeight: 560 }}
+                  contentContainerStyle={{ gap: 12 }}
+                  showsVerticalScrollIndicator={false}
+                  nestedScrollEnabled
+                >
                   {filteredMembers.map((member) => {
                     const badgeCount = (badgesByProfile.get(member.userId) ?? []).length;
                     return (
@@ -500,7 +505,7 @@ export default function BadgesScreen({ navigation }: any) {
                       </TouchableOpacity>
                     );
                   })}
-                </View>
+                </ScrollView>
               )}
             </>
           )}

@@ -2,6 +2,7 @@ import { supabase } from "./supabase";
 import type { TeamSuggestion } from "./semillero";
 import { getTeamsByIds, Team } from "./teams";
 import { logActivity } from "./activity";
+import { getDisplayName, notifyProjectMemberAdded, notifyProjectTeamAssigned } from "./emails";
 
 // De 4 a 8 valores (mismo criterio que TaskStatus en lib/tasks.ts) — con el
 // selector directo (ProjectStatusPickerModal, ver docs/PATRONES.md) ya no
@@ -198,6 +199,10 @@ export async function createProject(params: {
       .from("project_teams")
       .insert(teamIds.map((teamId) => ({ project_id: project.id, team_id: teamId })));
     if (teamsError) return { data: project, error: teamsError };
+
+    for (const teamId of teamIds) {
+      await notifyProjectTeamAssigned(teamId, params.name, params.organizationId);
+    }
   }
 
   await logActivity({
@@ -246,6 +251,11 @@ export async function createProjectFromSuggestion(
 
   const { error: membersError } = await supabase.from("project_members").insert(members);
   if (membersError) return { data: project, error: membersError };
+
+  const addedByName = await getDisplayName(createdBy);
+  for (const m of members) {
+    await notifyProjectMemberAdded(m.user_id, suggestion.projectName, addedByName, organizationId);
+  }
 
   await logActivity({
     organizationId,
@@ -320,14 +330,31 @@ export async function updateProject(
 // que setTeamMembers en teams.ts) — borra y vuelve a insertar en vez de
 // diffear, porque project_teams no guarda más que el vínculo project<->team.
 export async function setProjectTeams(projectId: string, teamIds: string[]) {
+  // Igual que setTeamMembers en teams.ts: se guarda quién ya estaba vinculado
+  // antes de borrar, para avisar (4.2) solo a los equipos REALMENTE nuevos.
+  const { data: beforeRows } = await supabase.from("project_teams").select("team_id").eq("project_id", projectId);
+  const beforeTeamIds = new Set((beforeRows ?? []).map((r) => r.team_id));
+
   const { error: deleteError } = await supabase.from("project_teams").delete().eq("project_id", projectId);
   if (deleteError) return { error: deleteError };
 
-  if (!teamIds.length) return { error: null };
+  if (teamIds.length) {
+    const rows = teamIds.map((teamId) => ({ project_id: projectId, team_id: teamId }));
+    const { error } = await supabase.from("project_teams").insert(rows);
+    if (error) return { error };
+  }
 
-  const rows = teamIds.map((teamId) => ({ project_id: projectId, team_id: teamId }));
-  const { error } = await supabase.from("project_teams").insert(rows);
-  return { error };
+  const newlyLinkedTeamIds = teamIds.filter((id) => !beforeTeamIds.has(id));
+  if (newlyLinkedTeamIds.length) {
+    const { data: project } = await supabase.from("projects").select("name, organization_id").eq("id", projectId).maybeSingle();
+    if (project) {
+      for (const teamId of newlyLinkedTeamIds) {
+        await notifyProjectTeamAssigned(teamId, project.name, project.organization_id);
+      }
+    }
+  }
+
+  return { error: null };
 }
 
 export async function deleteProject(projectId: string) {
