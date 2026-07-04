@@ -257,11 +257,23 @@ create table if not exists projects (
   color text not null default '#2563EB',
   status text not null default 'planning' check (status in ('planning', 'active', 'on_hold', 'completed')),
   leader_id uuid references auth.users(id) on delete set null,
+  -- (el constraint de status se amplía más abajo, ver projects_status_check)
   -- primeros pasos sugeridos por la IA al crear el proyecto (si aplica)
   first_steps text[] not null default '{}',
   created_by uuid not null references auth.users(id) on delete cascade,
   created_at timestamptz not null default now()
 );
+
+-- status pasó de 4 a 8 valores (se agregaron in_review/blocked/cancelled/
+-- archived) después del `create table` original — mismo criterio que
+-- tasks_status_check: drop + add en vez de un DO $$ IF NOT EXISTS $$, así se
+-- actualiza el constraint si ya existía con la lista vieja de valores. El
+-- nombre "projects_status_check" es el que Postgres le asigna por default a
+-- un check de columna sin nombre explícito (el de `create table` de arriba).
+alter table projects drop constraint if exists projects_status_check;
+alter table projects
+  add constraint projects_status_check
+  check (status in ('planning', 'active', 'in_review', 'on_hold', 'blocked', 'completed', 'cancelled', 'archived'));
 
 alter table projects enable row level security;
 
@@ -638,11 +650,67 @@ create trigger tasks_enforce_update_permissions
   for each row execute function enforce_task_update_permissions();
 
 -- ----------------------------------------------------------------------------
+-- task_collaborators: gente extra agregada a una task además del asignado
+-- (Punto 3 del feedback del profesor) — a diferencia de assigned_user_id/
+-- assigned_team_id (exclusivo entre sí, tasks_assignee_xor, y la única persona/
+-- equipo responsable de cambiar el status), un colaborador solo gana
+-- visibilidad + poder comentar (ver task_is_involved más abajo), no permisos
+-- de edición. Solo el líder del proyecto o el owner de la organización pueden
+-- agregar/quitar colaboradores, igual que crear/editar la task.
+-- ----------------------------------------------------------------------------
+create table if not exists task_collaborators (
+  id uuid primary key default gen_random_uuid(),
+  task_id uuid not null references tasks(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  added_by uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (task_id, user_id)
+);
+
+alter table task_collaborators enable row level security;
+
+drop policy if exists "task_collaborators_select_org" on task_collaborators;
+create policy "task_collaborators_select_org" on task_collaborators
+  for select to authenticated
+  using (
+    exists (
+      select 1 from tasks t
+      join projects p on p.id = t.project_id
+      where t.id = task_id and p.organization_id in (select my_organization_ids())
+    )
+  );
+
+drop policy if exists "task_collaborators_insert_leader_owner" on task_collaborators;
+create policy "task_collaborators_insert_leader_owner" on task_collaborators
+  for insert to authenticated
+  with check (
+    auth.uid() = added_by
+    and exists (
+      select 1 from tasks t
+      join projects p on p.id = t.project_id
+      join organizations o on o.id = p.organization_id
+      where t.id = task_id and (p.leader_id = auth.uid() or o.owner_id = auth.uid())
+    )
+  );
+
+drop policy if exists "task_collaborators_delete_leader_owner" on task_collaborators;
+create policy "task_collaborators_delete_leader_owner" on task_collaborators
+  for delete to authenticated
+  using (
+    exists (
+      select 1 from tasks t
+      join projects p on p.id = t.project_id
+      join organizations o on o.id = p.organization_id
+      where t.id = task_id and (p.leader_id = auth.uid() or o.owner_id = auth.uid())
+    )
+  );
+
+-- ----------------------------------------------------------------------------
 -- task_comments: chat de una task. A diferencia de projects/teams, NO es
 -- visible para toda la organización — solo para quien está involucrado
--- (líder del proyecto, owner de la organización, o el asignado: la persona o
--- cualquier integrante del equipo asignado). Es un chat de trabajo, no un
--- feed público.
+-- (líder del proyecto, owner de la organización, el asignado: la persona o
+-- cualquier integrante del equipo asignado, o un colaborador agregado vía
+-- task_collaborators). Es un chat de trabajo, no un feed público.
 -- ----------------------------------------------------------------------------
 create or replace function task_is_involved(target_task_id uuid)
 returns boolean
@@ -658,6 +726,7 @@ as $$
         or o.owner_id = auth.uid()
         or t.assigned_user_id = auth.uid()
         or (t.assigned_team_id is not null and exists (select 1 from team_members tm where tm.team_id = t.assigned_team_id and tm.user_id = auth.uid()))
+        or exists (select 1 from task_collaborators tc where tc.task_id = t.id and tc.user_id = auth.uid())
       )
   )
 $$;
@@ -816,6 +885,51 @@ drop policy if exists "profile_badges_delete_manager" on profile_badges;
 create policy "profile_badges_delete_manager" on profile_badges
   for delete to authenticated
   using (is_badge_manager_for(organization_id, profile_id));
+
+-- ----------------------------------------------------------------------------
+-- badge_definitions: catálogo de badges PERSONALIZADOS por organización
+-- (Punto 5 del feedback del profesor — CRUD completo, no solo ver/asignar).
+-- Los 10 badges "de fábrica" (BADGE_CATALOG en src/lib/badges.ts) siguen
+-- fijos en código y disponibles para toda organización sin fila acá; esta
+-- tabla es solo para los que cada organización crea de más. `key` es un slug
+-- generado en el cliente (nunca choca con los keys fijos porque siempre
+-- empieza con "custom_"). Solo el owner de la organización puede crear/borrar
+-- — mismo criterio de gobierno que Equipos/Proyectos, no el más laxo de
+-- otorgar/quitar un badge ya existente (profile_badges, que además permite al
+-- encargado de equipo).
+-- ----------------------------------------------------------------------------
+create table if not exists badge_definitions (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  key text not null,
+  label text not null,
+  description text not null default '',
+  icon text not null default 'BadgeCheck',
+  color text not null default '#2C7BD1',
+  created_by uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (organization_id, key)
+);
+
+alter table badge_definitions enable row level security;
+
+drop policy if exists "badge_definitions_select_org" on badge_definitions;
+create policy "badge_definitions_select_org" on badge_definitions
+  for select to authenticated
+  using (organization_id in (select my_organization_ids()));
+
+drop policy if exists "badge_definitions_insert_owner" on badge_definitions;
+create policy "badge_definitions_insert_owner" on badge_definitions
+  for insert to authenticated
+  with check (
+    auth.uid() = created_by
+    and exists (select 1 from organizations o where o.id = organization_id and o.owner_id = auth.uid())
+  );
+
+drop policy if exists "badge_definitions_delete_owner" on badge_definitions;
+create policy "badge_definitions_delete_owner" on badge_definitions
+  for delete to authenticated
+  using (exists (select 1 from organizations o where o.id = organization_id and o.owner_id = auth.uid()));
 
 -- ----------------------------------------------------------------------------
 -- activity_log: feed curado de actividad de la organización (creaciones +

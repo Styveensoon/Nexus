@@ -33,12 +33,14 @@ import {
   Pencil,
   Plus,
   Reply,
+  Search,
   Send,
   SmilePlus,
   ThumbsDown,
   ThumbsUp,
   Trash2,
   User,
+  UserPlus,
   Users,
   X,
 } from "lucide-react-native";
@@ -47,14 +49,18 @@ import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { listProjects, setProjectTeams, Project } from "../lib/projects";
 import { listTeams, Team } from "../lib/teams";
+import { listOrganizationMembers, OrganizationMemberProfile } from "../lib/organizations";
 import ChatAttachmentButtons from "../components/ChatAttachmentButtons";
 import DatePickerModal from "../components/DatePickerModal";
 import TaskStatusPickerModal from "../components/TaskStatusPickerModal";
 import TaskCalendarView from "../components/TaskCalendarView";
 import TaskListView from "../components/TaskListView";
 import TaskGanttChart from "../components/TaskGanttChart";
+import TaskCollaboratorsModal from "../components/TaskCollaboratorsModal";
+import UserTasksModal from "../components/UserTasksModal";
 import {
   addTaskComment,
+  addTaskCollaborator,
   createTask,
   deleteTask,
   deleteTaskComment,
@@ -63,11 +69,14 @@ import {
   isDueSoon,
   isOverdue,
   listTaskComments,
+  listTaskCollaborators,
   listTasksForProjects,
   reactToComment,
   ReactionType,
   REACTION_TYPES,
+  removeTaskCollaborator,
   Task,
+  TaskCollaborator,
   TaskComment,
   TaskCommentAttachment,
   TaskPriority,
@@ -190,9 +199,21 @@ export default function TasksScreen({ navigation }: any) {
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [orgTeams, setOrgTeams] = useState<Team[]>([]);
+  const [orgMembers, setOrgMembers] = useState<OrganizationMemberProfile[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [errorText, setErrorText] = useState<string | null>(null);
+
+  // Buscador de usuarios de Tasks (Punto 3 del feedback): tocar un resultado
+  // abre UserTasksModal (tareas actuales + histórico de esa persona).
+  const [userSearchQuery, setUserSearchQuery] = useState("");
+  const [userSearchResultsOpen, setUserSearchResultsOpen] = useState(false);
+  const [searchedMember, setSearchedMember] = useState<OrganizationMemberProfile | null>(null);
+
+  // Colaboradores adicionales de la task seleccionada (Punto 3 del feedback).
+  const [taskCollaborators, setTaskCollaborators] = useState<TaskCollaborator[]>([]);
+  const [showCollaboratorPicker, setShowCollaboratorPicker] = useState(false);
+  const [collaboratorBusyId, setCollaboratorBusyId] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -267,6 +288,9 @@ export default function TasksScreen({ navigation }: any) {
 
     const { data: teamRows, error: teamsError } = await listTeams(organization.id);
     if (!teamsError) setOrgTeams(teamRows);
+
+    const { data: memberRows, error: membersError } = await listOrganizationMembers(organization.id);
+    if (!membersError) setOrgMembers(memberRows);
 
     const { data: taskRows, error: tasksError } = await listTasksForProjects(projectRows.map((p) => p.id));
     if (tasksError) setErrorText("No se pudieron cargar las tareas.");
@@ -484,6 +508,7 @@ export default function TasksScreen({ navigation }: any) {
         attachmentUrl: attachment.url,
         attachmentType: attachment.type,
         attachmentName: attachment.name,
+        skipActivityLog: true,
       });
     }
     setCreating(false);
@@ -519,6 +544,8 @@ export default function TasksScreen({ navigation }: any) {
     setLinkInputValue("");
     setConfirmDeleteCommentId(null);
     setReactionPickerFor(null);
+    setTaskCollaborators([]);
+    listTaskCollaborators(task.id).then(({ data }) => setTaskCollaborators(data));
     if (!isInvolvedInTask(task, projects.find((p) => p.id === task.projectId) ?? null)) return;
     setLoadingComments(true);
     const { data, error } = await listTaskComments(task.id);
@@ -537,6 +564,28 @@ export default function TasksScreen({ navigation }: any) {
     setLinkInputValue("");
     setConfirmDeleteCommentId(null);
     setReactionPickerFor(null);
+    setTaskCollaborators([]);
+    setShowCollaboratorPicker(false);
+  };
+
+  const handleToggleCollaborator = async (member: OrganizationMemberProfile) => {
+    if (!selectedTask || !user) return;
+    setCollaboratorBusyId(member.userId);
+    const isCollaborator = taskCollaborators.some((c) => c.userId === member.userId);
+
+    if (isCollaborator) {
+      const { error } = await removeTaskCollaborator(selectedTask.id, member.userId);
+      if (!error) setTaskCollaborators((prev) => prev.filter((c) => c.userId !== member.userId));
+    } else {
+      const { error } = await addTaskCollaborator(selectedTask.id, member.userId, user.id);
+      if (!error) {
+        setTaskCollaborators((prev) => [
+          ...prev,
+          { userId: member.userId, name: member.name, avatarUrl: member.avatarUrl, avatarColor: member.avatarColor, createdAt: new Date().toISOString() },
+        ]);
+      }
+    }
+    setCollaboratorBusyId(null);
   };
 
   const startEditTask = () => {
@@ -870,6 +919,68 @@ export default function TasksScreen({ navigation }: any) {
               </TouchableOpacity>
             )}
           </View>
+
+          {organization && orgMembers.length > 0 && (
+            <View style={{ marginTop: 16, zIndex: 5 }}>
+              <View style={[styles.userSearchWrapper, { backgroundColor: inputBg, borderColor: border }]}>
+                <Search size={16} color={textSecondary} strokeWidth={2.2} />
+                <TextInput
+                  value={userSearchQuery}
+                  onChangeText={(v) => {
+                    setUserSearchQuery(v);
+                    setUserSearchResultsOpen(v.trim().length > 0);
+                  }}
+                  onFocus={() => setUserSearchResultsOpen(userSearchQuery.trim().length > 0)}
+                  placeholder="Buscar un usuario de la organización…"
+                  placeholderTextColor={textSecondary}
+                  style={[styles.userSearchInput, { color: textPrimary }, isWeb && styles.noOutline]}
+                />
+                {userSearchQuery.length > 0 && (
+                  <TouchableOpacity
+                    hitSlop={8}
+                    onPress={() => {
+                      setUserSearchQuery("");
+                      setUserSearchResultsOpen(false);
+                    }}
+                  >
+                    <X size={15} color={textSecondary} />
+                  </TouchableOpacity>
+                )}
+              </View>
+              {userSearchResultsOpen &&
+                (() => {
+                  const query = userSearchQuery.trim().toLowerCase();
+                  const matches = orgMembers.filter((m) => m.name.toLowerCase().includes(query)).slice(0, 8);
+                  return (
+                    <View style={[styles.userSearchResults, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
+                      {matches.length === 0 ? (
+                        <Text style={{ color: textSecondary, fontSize: 12.5, padding: 12 }}>No se encontró a nadie con ese nombre.</Text>
+                      ) : (
+                        matches.map((m) => (
+                          <TouchableOpacity
+                            key={m.userId}
+                            activeOpacity={0.8}
+                            onPress={() => {
+                              setSearchedMember(m);
+                              setUserSearchResultsOpen(false);
+                              setUserSearchQuery("");
+                            }}
+                            style={styles.userSearchResultRow}
+                          >
+                            <View style={[styles.avatarMini, { backgroundColor: m.avatarColor }]}>
+                              <Text style={styles.avatarMiniText}>{initials(m.name)}</Text>
+                            </View>
+                            <Text style={{ color: textPrimary, fontSize: 13, fontWeight: "600" }} numberOfLines={1}>
+                              {m.name}
+                            </Text>
+                          </TouchableOpacity>
+                        ))
+                      )}
+                    </View>
+                  );
+                })()}
+            </View>
+          )}
 
           {!organization ? (
             <View style={[styles.emptyCard, { backgroundColor: cardBg, borderColor: border, marginTop: 24 }, ultraShadow]}>
@@ -1542,6 +1653,33 @@ export default function TasksScreen({ navigation }: any) {
                         )}
                       </View>
 
+                      <View style={{ marginTop: 12 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                          <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 0, marginBottom: 6 }]}>Colaboradores</Text>
+                          {selectedTaskCanEdit && (
+                            <TouchableOpacity activeOpacity={0.7} onPress={() => setShowCollaboratorPicker(true)} hitSlop={8}>
+                              <UserPlus size={15} color={primaryColor} strokeWidth={2.3} />
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                        {taskCollaborators.length === 0 ? (
+                          <Text style={{ color: textSecondary, fontSize: 12 }}>Sin colaboradores adicionales.</Text>
+                        ) : (
+                          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                            {taskCollaborators.map((c) => (
+                              <View key={c.userId} style={[styles.listItemRow, { backgroundColor: inputBg, borderColor: border, paddingVertical: 6 }]}>
+                                <View style={[styles.avatarMini, { backgroundColor: c.avatarColor }]}>
+                                  <Text style={styles.avatarMiniText}>{initials(c.name)}</Text>
+                                </View>
+                                <Text style={{ color: textPrimary, fontSize: 12.5, fontWeight: "600" }} numberOfLines={1}>
+                                  {c.name}
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
+                        )}
+                      </View>
+
                       <View style={[styles.taskMetaRow, { marginTop: 12 }]}>
                         <View style={[styles.metaChip, { backgroundColor: TASK_PRIORITY_COLORS[selectedTask.priority] + "20" }]}>
                           <Flag size={11} color={TASK_PRIORITY_COLORS[selectedTask.priority]} />
@@ -1969,6 +2107,27 @@ export default function TasksScreen({ navigation }: any) {
           setStatusPickerTask(null);
         }}
       />
+
+      <TaskCollaboratorsModal
+        visible={showCollaboratorPicker}
+        isDark={isDark}
+        primaryColor={primaryColor}
+        orgMembers={orgMembers}
+        collaborators={taskCollaborators}
+        busyUserId={collaboratorBusyId}
+        onToggle={handleToggleCollaborator}
+        onClose={() => setShowCollaboratorPicker(false)}
+      />
+
+      <UserTasksModal
+        visible={!!searchedMember}
+        isDark={isDark}
+        primaryColor={primaryColor}
+        organizationId={organization?.id ?? ""}
+        member={searchedMember}
+        projects={projects}
+        onClose={() => setSearchedMember(null)}
+      />
     </View>
   );
 }
@@ -1986,6 +2145,13 @@ const styles = StyleSheet.create({
   viewSwitchChip: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9 },
 
   projectScroll: { marginTop: 16 },
+  userSearchWrapper: {
+    flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 16,
+    paddingHorizontal: 14, paddingVertical: 12,
+  },
+  userSearchInput: { flex: 1, fontSize: 13.5 },
+  userSearchResults: { borderWidth: 1, borderRadius: 16, marginTop: 8, paddingVertical: 6, maxHeight: 280 },
+  userSearchResultRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
   filterRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 14 },
   filterChip: { flexDirection: "row", alignItems: "center", gap: 5, borderWidth: 1, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 7 },
   filterDivider: { width: 1, height: 16, backgroundColor: "rgba(148, 163, 184, 0.4)" },

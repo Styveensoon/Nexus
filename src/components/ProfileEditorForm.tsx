@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   Image,
+  Keyboard,
   Platform,
   StyleSheet,
   Text,
@@ -373,10 +374,14 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
             placeholderTextColor={textSecondary}
             value={customRole}
             onChangeText={setCustomRole}
+            onSubmitEditing={() => Keyboard.dismiss()}
             onFocus={() => setFocusedField("customRole")}
             onBlur={() => setFocusedField(null)}
             style={[styles.input, { color: textPrimary }, isWeb && styles.inputNoOutline]}
           />
+          <TouchableOpacity onPress={() => Keyboard.dismiss()} hitSlop={8}>
+            <Check size={18} color={primaryColor} strokeWidth={2.3} />
+          </TouchableOpacity>
         </View>
       )}
 

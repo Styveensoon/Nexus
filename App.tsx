@@ -13,6 +13,7 @@ import ProfileSetupScreen from './src/screens/ProfileSetupScreen'
 import SemilleroScreen from './src/screens/SemilleroScreen'
 import BadgesScreen from './src/screens/BadgesScreen'
 import ActivityScreen from './src/screens/ActivityScreen'
+import OrganizationSettingsScreen from './src/screens/OrganizationSettingsScreen'
 import BottomTabs from './src/navigation/BottomTabs'
 
 const Stack = createStackNavigator()
@@ -49,6 +50,7 @@ function RootNavigator() {
       <Stack.Screen name="Semillero" component={SemilleroScreen} />
       <Stack.Screen name="Badges" component={BadgesScreen} />
       <Stack.Screen name="Activity" component={ActivityScreen} />
+      <Stack.Screen name="OrganizationSettings" component={OrganizationSettingsScreen} />
     </Stack.Navigator>
   )
 }

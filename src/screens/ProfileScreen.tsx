@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { ArrowLeft, BadgeCheck, Clock, Folder, LogOut, Settings, User, Users } from "lucide-react-native";
+import { ArrowLeft, BadgeCheck, ChevronRight, Clock, Folder, LogOut, Settings, User, Users } from "lucide-react-native";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import ProfileEditorForm from "../components/ProfileEditorForm";
 import LevelDots from "../components/LevelDots";
 import BadgePill from "../components/BadgePill";
 import BadgeDetailModal from "../components/BadgeDetailModal";
+import ProjectMembershipModal from "../components/ProjectMembershipModal";
 import {
   CUSTOM_ROLE_VALUE,
   DEFAULT_LANGUAGE_LEVEL,
@@ -20,6 +21,8 @@ import {
   isUploadedAvatar,
 } from "../lib/profiles";
 import { ProfileBadge, listProfileBadges, getBadgeDefinition } from "../lib/badges";
+import { Project, STATUS_COLORS, STATUS_LABELS, listMyProjects } from "../lib/projects";
+import { Team, listMyTeams } from "../lib/teams";
 
 // Paleta de marca de Nexus (azure del logo) — acento moderado, no cubre áreas grandes.
 const AZURE_DEEP = "#2C7BD1";
@@ -62,6 +65,9 @@ export default function ProfileScreen({ navigation }: any) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [badges, setBadges] = useState<ProfileBadge[]>([]);
   const [detailBadge, setDetailBadge] = useState<ProfileBadge | null>(null);
+  const [myTeams, setMyTeams] = useState<Team[]>([]);
+  const [myProjects, setMyProjects] = useState<Project[]>([]);
+  const [membershipProject, setMembershipProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
 
@@ -72,6 +78,10 @@ export default function ProfileScreen({ navigation }: any) {
     if (organization) {
       const { data: badgeData } = await listProfileBadges(organization.id, user.id);
       setBadges(badgeData);
+      const { data: teamsData } = await listMyTeams(organization.id, user.id);
+      setMyTeams(teamsData);
+      const { data: projectsData } = await listMyProjects(organization.id, user.id);
+      setMyProjects(projectsData);
     }
     setLoading(false);
   }, [user, organization]);
@@ -293,9 +303,31 @@ export default function ProfileScreen({ navigation }: any) {
             textPrimary={textPrimary}
             ultraShadow={ultraShadow}
           >
-            <Text style={[styles.emptyText, { color: textSecondary }]}>
-              Aún no perteneces a ningún equipo. Esto se conecta cuando construyamos Equipos en Nexus.
-            </Text>
+            {myTeams.length ? (
+              <View style={{ gap: 8 }}>
+                {myTeams.map((team) => (
+                  <View key={team.id} style={[styles.readRow, { backgroundColor: inputBg, borderColor: border }]}>
+                    <View style={styles.entityRowLeft}>
+                      <View style={[styles.entityIcon, { backgroundColor: team.color + "20" }]}>
+                        {team.iconUrl ? (
+                          <Image source={{ uri: team.iconUrl }} style={styles.entityIconImage} />
+                        ) : (
+                          <Users size={14} color={team.color} strokeWidth={2.2} />
+                        )}
+                      </View>
+                      <Text style={[styles.readRowName, { color: textPrimary }]} numberOfLines={1}>
+                        {team.name}
+                      </Text>
+                    </View>
+                    <Text style={[styles.entityRoleText, { color: textSecondary }]} numberOfLines={1}>
+                      {team.members.find((m) => m.userId === user.id)?.roleInTeam ?? ""}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={[styles.emptyText, { color: textSecondary }]}>Aún no perteneces a ningún equipo.</Text>
+            )}
           </SectionCard>
 
           <SectionCard
@@ -306,9 +338,41 @@ export default function ProfileScreen({ navigation }: any) {
             textPrimary={textPrimary}
             ultraShadow={ultraShadow}
           >
-            <Text style={[styles.emptyText, { color: textSecondary }]}>
-              Aún no estás en ningún proyecto. Esto se conecta cuando construyamos Proyectos en Nexus.
-            </Text>
+            {myProjects.length ? (
+              <View style={{ gap: 8 }}>
+                {myProjects.map((project) => (
+                  <TouchableOpacity
+                    key={project.id}
+                    activeOpacity={0.8}
+                    style={[styles.readRow, { backgroundColor: inputBg, borderColor: border }]}
+                    onPress={() => setMembershipProject(project)}
+                  >
+                    <View style={styles.entityRowLeft}>
+                      <View style={[styles.entityIcon, { backgroundColor: project.color + "20" }]}>
+                        {project.iconUrl ? (
+                          <Image source={{ uri: project.iconUrl }} style={styles.entityIconImage} />
+                        ) : (
+                          <Folder size={14} color={project.color} strokeWidth={2.2} />
+                        )}
+                      </View>
+                      <Text style={[styles.readRowName, { color: textPrimary }]} numberOfLines={1}>
+                        {project.name}
+                      </Text>
+                    </View>
+                    <View style={styles.entityRowRight}>
+                      <View style={[styles.projectStatusBadge, { backgroundColor: STATUS_COLORS[project.status] + "20" }]}>
+                        <Text style={{ color: STATUS_COLORS[project.status], fontWeight: "700", fontSize: 10 }} numberOfLines={1}>
+                          {STATUS_LABELS[project.status]}
+                        </Text>
+                      </View>
+                      <ChevronRight size={16} color={textSecondary} strokeWidth={2.2} />
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : (
+              <Text style={[styles.emptyText, { color: textSecondary }]}>Aún no estás en ningún proyecto.</Text>
+            )}
           </SectionCard>
 
           <TouchableOpacity activeOpacity={0.8} style={styles.signOutRow} onPress={handleSignOut}>
@@ -319,6 +383,13 @@ export default function ProfileScreen({ navigation }: any) {
       </ScrollView>
 
       <BadgeDetailModal visible={!!detailBadge} badge={detailBadge} isDark={isDark} onClose={() => setDetailBadge(null)} />
+      <ProjectMembershipModal
+        visible={!!membershipProject}
+        project={membershipProject}
+        userId={user.id}
+        isDark={isDark}
+        onClose={() => setMembershipProject(null)}
+      />
     </View>
   );
 }
@@ -357,6 +428,12 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10,
   },
   readRowName: { flexShrink: 1, flexGrow: 1, fontSize: 13, fontWeight: "700" },
+  entityRowLeft: { flexDirection: "row", alignItems: "center", gap: 10, flexShrink: 1, flexGrow: 1 },
+  entityRowRight: { flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0 },
+  entityIcon: { width: 26, height: 26, borderRadius: 9, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  entityIconImage: { width: 26, height: 26, resizeMode: "cover" },
+  entityRoleText: { fontSize: 11.5, fontWeight: "600", flexShrink: 0 },
+  projectStatusBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
   chipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   langPill: {
     flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 999,

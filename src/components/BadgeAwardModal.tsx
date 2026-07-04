@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { X } from "lucide-react-native";
-import { BADGE_CATALOG, BadgeDefinition, ProfileBadge } from "../lib/badges";
+import { BadgeDefinition, ProfileBadge } from "../lib/badges";
 import { OrganizationMemberProfile } from "../lib/organizations";
 import { getContrastTextColor } from "../lib/profiles";
 import { BADGE_ICONS } from "./BadgePill";
@@ -19,6 +19,7 @@ type Props = {
   visible: boolean;
   member: OrganizationMemberProfile | null;
   isDark: boolean;
+  catalog: BadgeDefinition[];
   grantedBadges: ProfileBadge[];
   canManage: boolean;
   busyKey: string | null;
@@ -35,6 +36,7 @@ export default function BadgeAwardModal({
   visible,
   member,
   isDark,
+  catalog,
   grantedBadges,
   canManage,
   busyKey,
@@ -84,8 +86,8 @@ export default function BadgeAwardModal({
   if (!member) return null;
 
   const grantedByKey = new Map(grantedBadges.map((b) => [b.badgeKey, b]));
-  const grantedDefinitions = BADGE_CATALOG.filter((b) => grantedByKey.has(b.key));
-  const availableBadges = BADGE_CATALOG.filter((b) => !grantedByKey.has(b.key));
+  const grantedDefinitions = catalog.filter((b) => grantedByKey.has(b.key));
+  const availableBadges = catalog.filter((b) => !grantedByKey.has(b.key));
 
   const renderIcon = (badge: BadgeDefinition, color: string, size = 16) => {
     const Icon = BADGE_ICONS[badge.icon] ?? BADGE_ICONS.Users;

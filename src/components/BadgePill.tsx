@@ -1,12 +1,41 @@
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { Clock, Crown, Flame, GraduationCap, Lightbulb, LucideIcon, MessageCircle, Puzzle, ShieldCheck, Target, Users } from "lucide-react-native";
+import {
+  Award,
+  BookOpen,
+  Clock,
+  Compass,
+  Crown,
+  Eye,
+  Flame,
+  Gem,
+  GraduationCap,
+  Handshake,
+  Heart,
+  Lightbulb,
+  LucideIcon,
+  Medal,
+  MessageCircle,
+  Puzzle,
+  Rocket,
+  ShieldCheck,
+  Smile,
+  Star,
+  Target,
+  ThumbsUp,
+  Trophy,
+  Users,
+  Zap,
+} from "lucide-react-native";
 import { BadgeDefinition } from "../lib/badges";
 import { getContrastTextColor } from "../lib/profiles";
 
 // Nombre de ícono (string, ver BadgeDefinition.icon) -> componente real.
 // Vive acá (no en lib/badges.ts, que es lógica pura sin componentes de React)
-// y se reusa desde BadgeAwardModal para no duplicar el mapa dos veces.
+// y se reusa desde BadgeAwardModal/CreateBadgeModal para no duplicar el mapa.
+// Los primeros 10 son los del catálogo fijo (BADGE_CATALOG); el resto se
+// sumó para que los badges personalizados de cada organización (Punto 5 del
+// feedback) no queden limitados a los mismos 10 íconos de siempre.
 export const BADGE_ICONS: Record<string, LucideIcon> = {
   Crown,
   Users,
@@ -18,6 +47,20 @@ export const BADGE_ICONS: Record<string, LucideIcon> = {
   Clock,
   Flame,
   Target,
+  Star,
+  Award,
+  Trophy,
+  Rocket,
+  Heart,
+  ThumbsUp,
+  Zap,
+  Compass,
+  Handshake,
+  Eye,
+  BookOpen,
+  Smile,
+  Gem,
+  Medal,
 };
 
 type Props = {

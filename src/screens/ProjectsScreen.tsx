@@ -14,6 +14,7 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 import {
   Check,
+  ChevronDown,
   Crown,
   Folder,
   Layers,
@@ -30,6 +31,7 @@ import {
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import IconColorPicker from "../components/IconColorPicker";
+import ProjectStatusPickerModal from "../components/ProjectStatusPickerModal";
 import {
   createProject,
   deleteProject,
@@ -38,19 +40,13 @@ import {
   PROJECT_AREA_OPTIONS,
   ProjectStatus,
   setProjectTeams,
+  STATUS_COLORS,
   STATUS_LABELS,
   STATUS_ORDER,
   updateProject,
   updateProjectStatus,
 } from "../lib/projects";
 import { listTeams, Team } from "../lib/teams";
-
-const STATUS_COLORS: Record<ProjectStatus, string> = {
-  planning: "#F59E0B",
-  active: "#10B981",
-  on_hold: "#94A3B8",
-  completed: "#2563EB",
-};
 
 // Paleta de marca de Nexus (azure) — acento moderado, no cubre áreas grandes.
 const AZURE_DEEP = "#2C7BD1";
@@ -63,11 +59,6 @@ function initials(name: string) {
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
-}
-
-function nextStatus(status: ProjectStatus): ProjectStatus {
-  const idx = STATUS_ORDER.indexOf(status);
-  return STATUS_ORDER[(idx + 1) % STATUS_ORDER.length];
 }
 
 export default function ProjectsScreen({ navigation }: any) {
@@ -112,6 +103,7 @@ export default function ProjectsScreen({ navigation }: any) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "all">("all");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [statusPickerProject, setStatusPickerProject] = useState<Project | null>(null);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
@@ -299,10 +291,10 @@ export default function ProjectsScreen({ navigation }: any) {
     if (!error) setProjects((prev) => prev.filter((p) => p.id !== projectId));
   };
 
-  const handleCycleStatus = async (project: Project) => {
+  const handleSetStatus = async (project: Project, status: ProjectStatus) => {
     if (!isOwner) return;
-    const status = nextStatus(project.status);
     setProjects((prev) => prev.map((p) => (p.id === project.id ? { ...p, status } : p)));
+    setStatusPickerProject(null);
     await updateProjectStatus(project.id, status);
   };
 
@@ -555,12 +547,13 @@ export default function ProjectsScreen({ navigation }: any) {
                           <TouchableOpacity
                             activeOpacity={isOwner ? 0.7 : 1}
                             disabled={!isOwner}
-                            onPress={() => handleCycleStatus(project)}
-                            style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[project.status] + "20" }]}
+                            onPress={() => setStatusPickerProject(project)}
+                            style={[styles.statusBadge, { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: STATUS_COLORS[project.status] + "20" }]}
                           >
                             <Text style={{ color: STATUS_COLORS[project.status], fontWeight: "700", fontSize: 12 }}>
                               {STATUS_LABELS[project.status]}
                             </Text>
+                            {isOwner && <ChevronDown size={11} color={STATUS_COLORS[project.status]} />}
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -748,6 +741,16 @@ export default function ProjectsScreen({ navigation }: any) {
           </ScrollView>
         </View>
       </Modal>
+
+      <ProjectStatusPickerModal
+        visible={!!statusPickerProject}
+        isDark={isDark}
+        currentStatus={statusPickerProject?.status ?? null}
+        onClose={() => setStatusPickerProject(null)}
+        onSelect={(status) => {
+          if (statusPickerProject) handleSetStatus(statusPickerProject, status);
+        }}
+      />
     </View>
   );
 }

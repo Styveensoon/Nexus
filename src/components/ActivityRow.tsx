@@ -1,8 +1,9 @@
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import {
   BadgeCheck,
   BadgeX,
+  ChevronRight,
   FolderMinus,
   FolderPlus,
   ListPlus,
@@ -49,6 +50,7 @@ export default function ActivityRow({
   textPrimary,
   textSecondary,
   cardBg,
+  onPress,
 }: {
   entry: ActivityEntry;
   isDark: boolean;
@@ -57,11 +59,17 @@ export default function ActivityRow({
   textPrimary: string;
   textSecondary: string;
   cardBg: string;
+  onPress?: () => void;
 }) {
   const Icon = ACTIVITY_ICONS[entry.action] ?? Users;
 
   return (
-    <View style={[styles.row, { borderColor: border, backgroundColor: cardBg }]}>
+    <TouchableOpacity
+      activeOpacity={onPress ? 0.8 : 1}
+      disabled={!onPress}
+      onPress={onPress}
+      style={[styles.row, { borderColor: border, backgroundColor: cardBg }]}
+    >
       <View style={[styles.iconWrap, { backgroundColor: isDark ? "rgba(126,200,245,0.14)" : "rgba(44,123,209,0.08)" }]}>
         <Icon size={16} color={primaryColor} strokeWidth={2.2} />
       </View>
@@ -71,7 +79,8 @@ export default function ActivityRow({
         </Text>
         <Text style={{ color: textSecondary, fontSize: 11.5, marginTop: 4 }}>{formatDateTime(entry.createdAt)}</Text>
       </View>
-    </View>
+      {onPress && <ChevronRight size={16} color={textSecondary} strokeWidth={2.2} />}
+    </TouchableOpacity>
   );
 }
 

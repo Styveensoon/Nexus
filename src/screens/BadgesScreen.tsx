@@ -10,22 +10,28 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import { ArrowLeft, BadgeCheck, ChevronRight, Search, Sparkles, X } from "lucide-react-native";
+import { ArrowLeft, BadgeCheck, ChevronRight, Plus, Search, Sparkles, Trash2, X } from "lucide-react-native";
 
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import BadgeAwardModal from "../components/BadgeAwardModal";
+import CreateBadgeModal from "../components/CreateBadgeModal";
 import { listOrganizationMembers, OrganizationMemberProfile } from "../lib/organizations";
 import { listTeams, Team } from "../lib/teams";
 import {
+  BadgeDefinition,
   BadgeSuggestion,
   ProfileBadge,
+  createBadgeDefinition,
+  deleteBadgeDefinition,
   getBadgeDefinition,
   grantBadge,
+  listOrgBadgeDefinitions,
   listOrgBadges,
   requestBadgeSuggestions,
   revokeBadge,
 } from "../lib/badges";
+import { BADGE_ICONS } from "../components/BadgePill";
 
 const AZURE_DEEP = "#2C7BD1";
 
@@ -88,15 +94,25 @@ export default function BadgesScreen({ navigation }: any) {
   const [suggestionBusyId, setSuggestionBusyId] = useState<string | null>(null);
   const [suggestionActionError, setSuggestionActionError] = useState<string | null>(null);
 
+  // CRUD de badges (Punto 5 del feedback): catálogo real = fijo (BADGE_CATALOG)
+  // + los personalizados de esta organización (badge_definitions).
+  const [catalog, setCatalog] = useState<BadgeDefinition[]>([]);
+  const [showCreateBadge, setShowCreateBadge] = useState(false);
+  const [creatingBadge, setCreatingBadge] = useState(false);
+  const [createBadgeError, setCreateBadgeError] = useState<string | null>(null);
+  const [confirmDeleteBadgeKey, setConfirmDeleteBadgeKey] = useState<string | null>(null);
+  const [deletingBadgeKey, setDeletingBadgeKey] = useState<string | null>(null);
+
   const loadData = useCallback(async () => {
     if (!organization) return;
     setLoading(true);
     setErrorText(null);
 
-    const [membersRes, teamsRes, badgesRes] = await Promise.all([
+    const [membersRes, teamsRes, badgesRes, catalogRes] = await Promise.all([
       listOrganizationMembers(organization.id),
       listTeams(organization.id),
       listOrgBadges(organization.id),
+      listOrgBadgeDefinitions(organization.id),
     ]);
 
     if (membersRes.error || teamsRes.error || badgesRes.error) {
@@ -105,8 +121,34 @@ export default function BadgesScreen({ navigation }: any) {
     setMembers(membersRes.data);
     setTeams(teamsRes.data);
     setBadgesByProfile(badgesRes.data);
+    setCatalog(catalogRes.data);
     setLoading(false);
   }, [organization]);
+
+  const customBadges = catalog.filter((b) => b.key.startsWith("custom_"));
+
+  const handleCreateBadge = async (params: { label: string; description: string; icon: string; color: string }) => {
+    if (!organization || !user) return;
+    setCreatingBadge(true);
+    setCreateBadgeError(null);
+    const { error } = await createBadgeDefinition({ organizationId: organization.id, createdBy: user.id, ...params });
+    setCreatingBadge(false);
+    if (error) {
+      setCreateBadgeError("No se pudo crear el badge. Intenta de nuevo.");
+      return;
+    }
+    await loadData();
+    setShowCreateBadge(false);
+  };
+
+  const handleDeleteBadge = async (key: string) => {
+    if (!organization) return;
+    setDeletingBadgeKey(key);
+    const { error } = await deleteBadgeDefinition(organization.id, key);
+    setDeletingBadgeKey(null);
+    setConfirmDeleteBadgeKey(null);
+    if (!error) setCatalog((prev) => prev.filter((b) => b.key !== key));
+  };
 
   // useFocusEffect (no useEffect) para refrescar cada vez que se vuelve a esta
   // pantalla, mismo criterio que el resto de las pestañas del Dashboard.
@@ -274,6 +316,68 @@ export default function BadgesScreen({ navigation }: any) {
             </View>
           ) : (
             <>
+              {isOwner && (
+                <View style={[styles.customBadgesCard, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
+                  <View style={styles.customBadgesHeader}>
+                    <Text style={[styles.aiTitle, { color: textPrimary }]}>Tus badges personalizados</Text>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      style={[styles.createBadgeBtn, { backgroundColor: primaryColor }]}
+                      onPress={() => {
+                        setCreateBadgeError(null);
+                        setShowCreateBadge(true);
+                      }}
+                    >
+                      <Plus size={14} color="#FFF" strokeWidth={2.3} />
+                      <Text style={styles.createBadgeBtnText}>Crear badge</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {customBadges.length === 0 ? (
+                    <Text style={[styles.aiDesc, { color: textSecondary, marginTop: 10 }]}>
+                      Además de los 10 badges de fábrica, puedes crear los que quieras para tu organización.
+                    </Text>
+                  ) : (
+                    <View style={[styles.chipsRow, { marginTop: 12 }]}>
+                      {customBadges.map((badge) => {
+                        const Icon = BADGE_ICONS[badge.icon] ?? BadgeCheck;
+                        const isConfirming = confirmDeleteBadgeKey === badge.key;
+                        const isBusy = deletingBadgeKey === badge.key;
+                        if (isConfirming) {
+                          return (
+                            <View key={badge.key} style={[styles.confirmPill, { borderColor: dangerColor, backgroundColor: inputBg }]}>
+                              <Text style={{ color: textPrimary, fontSize: 11.5, fontWeight: "700" }} numberOfLines={1}>
+                                ¿Borrar "{badge.label}"?
+                              </Text>
+                              <TouchableOpacity
+                                activeOpacity={0.85}
+                                disabled={isBusy}
+                                onPress={() => handleDeleteBadge(badge.key)}
+                                style={[styles.confirmPillBtn, { backgroundColor: dangerColor, opacity: isBusy ? 0.6 : 1 }]}
+                              >
+                                <Text style={{ color: "#FFF", fontSize: 11, fontWeight: "700" }}>Borrar</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity hitSlop={6} onPress={() => setConfirmDeleteBadgeKey(null)}>
+                                <X size={13} color={textSecondary} strokeWidth={2.2} />
+                              </TouchableOpacity>
+                            </View>
+                          );
+                        }
+                        return (
+                          <View key={badge.key} style={[styles.grantedPill, { backgroundColor: badge.color }]}>
+                            <Icon size={13} color="#FFF" strokeWidth={2.2} />
+                            <Text style={{ color: "#FFF", fontSize: 12, fontWeight: "700" }}>{badge.label}</Text>
+                            <TouchableOpacity hitSlop={6} onPress={() => setConfirmDeleteBadgeKey(badge.key)}>
+                              <Trash2 size={13} color="#FFF" strokeWidth={2.2} />
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+              )}
+
               {canManageAny && (
                 <View style={[styles.aiCard, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
                   <View style={styles.aiHeader}>
@@ -409,6 +513,7 @@ export default function BadgesScreen({ navigation }: any) {
         visible={!!selectedMemberId}
         member={selectedMember}
         isDark={isDark}
+        catalog={catalog}
         grantedBadges={selectedGrantedBadges}
         canManage={selectedMemberId ? canManageMember(selectedMemberId) : false}
         busyKey={busyKey}
@@ -416,6 +521,15 @@ export default function BadgesScreen({ navigation }: any) {
         onClose={closeMemberModal}
         onGrant={handleGrant}
         onRevoke={handleRevoke}
+      />
+
+      <CreateBadgeModal
+        visible={showCreateBadge}
+        isDark={isDark}
+        saving={creatingBadge}
+        errorText={createBadgeError}
+        onClose={() => setShowCreateBadge(false)}
+        onCreate={handleCreateBadge}
       />
     </View>
   );
@@ -427,6 +541,15 @@ const styles = StyleSheet.create({
   backBtn: { width: 40, height: 40, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   subtitle: { fontSize: 13, fontWeight: "600" },
   title: { fontSize: 30, fontWeight: "700", letterSpacing: -0.5, marginTop: 2 },
+
+  customBadgesCard: { borderRadius: 26, borderWidth: 1, padding: 20, marginTop: 24 },
+  customBadgesHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  createBadgeBtn: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9 },
+  createBadgeBtnText: { color: "#FFF", fontWeight: "700", fontSize: 12.5 },
+  chipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  grantedPill: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, paddingVertical: 7, paddingHorizontal: 12 },
+  confirmPill: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 999, borderWidth: 1.5, paddingVertical: 6, paddingHorizontal: 10, maxWidth: 260 },
+  confirmPillBtn: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
 
   aiCard: { borderRadius: 26, borderWidth: 1, padding: 20, marginTop: 24 },
   aiHeader: { flexDirection: "row", alignItems: "center", gap: 14 },

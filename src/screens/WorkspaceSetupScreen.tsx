@@ -11,11 +11,11 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { ArrowLeft, ArrowRight, Building2, Check, Image as ImageIcon, Palette } from "lucide-react-native";
+import { ArrowLeft, ArrowRight, Building2 } from "lucide-react-native";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { createOrganization } from "../lib/organizations";
-import ColorPickerModal from "../components/ColorPickerModal";
+import IconColorPicker from "../components/IconColorPicker";
 
 // El acento único de la app (azure) no restringe qué color de marca puede elegir
 // una organización para SU workspace — ese es un dato de negocio, no un color de
@@ -36,7 +36,6 @@ export default function WorkspaceSetupScreen({ navigation, route }: any) {
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showColorPicker, setShowColorPicker] = useState(false);
 
   // Paleta "vidrio azure" — mismo lenguaje visual que Dashboard/Profile
   const AZURE_DEEP    = "#2C7BD1";
@@ -131,8 +130,12 @@ export default function WorkspaceSetupScreen({ navigation, route }: any) {
 
             <View style={[styles.card, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
               <View style={styles.previewRow}>
-                <View style={[styles.previewLogo, { backgroundColor: color }]}>
-                  <Building2 size={22} color="#FFF" strokeWidth={2.3} />
+                <View style={[styles.previewLogo, { backgroundColor: color, overflow: "hidden" }]}>
+                  {logoUrl ? (
+                    <Image source={{ uri: logoUrl }} style={styles.previewLogoImage} />
+                  ) : (
+                    <Building2 size={22} color="#FFF" strokeWidth={2.3} />
+                  )}
                 </View>
                 <Text style={[styles.previewName, { color: textPrimary }]} numberOfLines={1}>
                   {name.trim() || "Mi organización"}
@@ -153,45 +156,18 @@ export default function WorkspaceSetupScreen({ navigation, route }: any) {
                 />
               </View>
 
-              <Text style={[styles.label, { color: textSecondary }]}>Color de marca</Text>
-              <View style={styles.colorRow}>
-                {WORKSPACE_COLORS.map((c) => (
-                  <TouchableOpacity key={c} activeOpacity={0.8} onPress={() => setColor(c)} style={[styles.colorSwatch, { backgroundColor: c }]}>
-                    {color === c && <Check size={16} color="#FFF" strokeWidth={2.4} />}
-                  </TouchableOpacity>
-                ))}
-                {!WORKSPACE_COLORS.includes(color) && (
-                  <View style={[styles.colorSwatch, { backgroundColor: color, borderWidth: 2, borderColor: isDark ? "#F8FAFC" : "#FFFFFF" }]}>
-                    <Check size={16} color="#FFF" strokeWidth={2.4} />
-                  </View>
-                )}
-              </View>
+              <Text style={[styles.label, { color: textSecondary }]}>Logo y color de marca</Text>
+              <IconColorPicker
+                isDark={isDark}
+                userId={user?.id ?? ""}
+                color={color}
+                onColorChange={setColor}
+                iconUrl={logoUrl || null}
+                onIconChange={(url) => setLogoUrl(url ?? "")}
+                fallbackIcon={Building2}
+              />
 
-              <TouchableOpacity
-                activeOpacity={0.85}
-                style={[styles.customColorBtn, { borderColor: border, backgroundColor: inputBg }]}
-                onPress={() => setShowColorPicker(true)}
-              >
-                <Palette size={16} color={primaryColor} strokeWidth={2.2} />
-                <Text style={[styles.customColorText, { color: textPrimary }]}>Personalizar color</Text>
-              </TouchableOpacity>
-
-              <Text style={[styles.label, { color: textSecondary }]}>Logo (opcional)</Text>
-              <View style={[styles.inputWrapper, { backgroundColor: inputBg, borderColor: focusedField === "logo" ? primaryColor : border }]}>
-                <ImageIcon size={18} color={textSecondary} strokeWidth={2.2} />
-                <TextInput
-                  placeholder="URL de tu logo"
-                  placeholderTextColor={textSecondary}
-                  autoCapitalize="none"
-                  value={logoUrl}
-                  onChangeText={setLogoUrl}
-                  onFocus={() => setFocusedField("logo")}
-                  onBlur={() => setFocusedField(null)}
-                  style={[styles.input, { color: textPrimary }, isWeb && styles.inputNoOutline]}
-                />
-              </View>
-
-              {errorMsg && <Text style={styles.errorText}>{errorMsg}</Text>}
+              {errorMsg && <Text style={[styles.errorText, { marginTop: 20 }]}>{errorMsg}</Text>}
 
               <TouchableOpacity
                 activeOpacity={0.85}
@@ -206,17 +182,6 @@ export default function WorkspaceSetupScreen({ navigation, route }: any) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-
-      <ColorPickerModal
-        visible={showColorPicker}
-        initialColor={color}
-        isDark={isDark}
-        onClose={() => setShowColorPicker(false)}
-        onConfirm={(hex) => {
-          setColor(hex);
-          setShowColorPicker(false);
-        }}
-      />
     </View>
   );
 }
@@ -234,6 +199,7 @@ const styles = StyleSheet.create({
   card: { borderRadius: 32, borderWidth: 1, padding: 28 },
   previewRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 24 },
   previewLogo: { width: 48, height: 48, borderRadius: 16, justifyContent: "center", alignItems: "center" },
+  previewLogoImage: { width: 48, height: 48, resizeMode: "cover" },
   previewName: { flex: 1, fontSize: 18, fontWeight: "600" },
   label: { fontSize: 13, fontWeight: "700", marginBottom: 8 },
   inputWrapper: {
@@ -241,13 +207,6 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, paddingVertical: 16, fontSize: 15 },
   inputNoOutline: { outlineStyle: "none" } as any,
-  colorRow: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 20 },
-  colorSwatch: { width: 36, height: 36, borderRadius: 18, justifyContent: "center", alignItems: "center" },
-  customColorBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    borderWidth: 1, borderRadius: 14, paddingVertical: 12, marginBottom: 20,
-  },
-  customColorText: { fontWeight: "700", fontSize: 14 },
   errorText: { color: "#EF4444", fontSize: 13, fontWeight: "600", marginBottom: 14 },
   btnPrimary: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 999,

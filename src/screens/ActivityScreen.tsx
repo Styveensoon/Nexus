@@ -6,6 +6,7 @@ import { Activity, ArrowLeft, Clock, Folder, Search, Users as UsersIcon, UserRou
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import ActivityRow from "../components/ActivityRow";
+import ActivityDetailModal from "../components/ActivityDetailModal";
 import { listActivity, ActivityEntry } from "../lib/activity";
 import { listTeams, Team } from "../lib/teams";
 import { listProjects, Project } from "../lib/projects";
@@ -76,6 +77,7 @@ export default function ActivityScreen({ navigation }: any) {
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [detailEntry, setDetailEntry] = useState<ActivityEntry | null>(null);
 
   // Roster de equipos/proyectos/usuarios para los selectores — se carga una
   // vez por visita a la pantalla, igual que en TeamScreen/ProjectsScreen.
@@ -344,7 +346,12 @@ export default function ActivityScreen({ navigation }: any) {
                   </Text>
                 </View>
               ) : (
-                <View style={{ marginTop: 20, gap: 10 }}>
+                <ScrollView
+                  style={{ marginTop: 20, maxHeight: 560 }}
+                  contentContainerStyle={{ gap: 10 }}
+                  showsVerticalScrollIndicator={false}
+                  nestedScrollEnabled
+                >
                   {entries.map((entry) => (
                     <ActivityRow
                       key={entry.id}
@@ -355,9 +362,10 @@ export default function ActivityScreen({ navigation }: any) {
                       textPrimary={textPrimary}
                       textSecondary={textSecondary}
                       cardBg={cardBg}
+                      onPress={() => setDetailEntry(entry)}
                     />
                   ))}
-                </View>
+                </ScrollView>
               )}
             </>
           )}
@@ -365,6 +373,14 @@ export default function ActivityScreen({ navigation }: any) {
           <View style={{ height: 40 }} />
         </View>
       </ScrollView>
+
+      <ActivityDetailModal
+        visible={!!detailEntry}
+        entry={detailEntry}
+        isDark={isDark}
+        primaryColor={primaryColor}
+        onClose={() => setDetailEntry(null)}
+      />
     </View>
   );
 }

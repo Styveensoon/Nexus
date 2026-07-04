@@ -2,9 +2,11 @@
 // que el formato de respuesta será idéntico al migrar, ver semillero-chat)
 // analiza señales reales de desempeño de la organización (tasks completadas/
 // vencidas, liderazgo de equipos/proyectos, participación en comentarios) y
-// sugiere a quién otorgarle qué badge del catálogo fijo (BADGE_CATALOG en
-// src/lib/badges.ts, duplicado acá porque esta función corre en Deno, no
-// puede importar código de la app React Native).
+// sugiere a quién otorgarle qué badge del catálogo COMPLETO: el fijo
+// (BADGE_CATALOG en src/lib/badges.ts, duplicado acá porque esta función
+// corre en Deno, no puede importar código de la app React Native) + los
+// personalizados que esa organización haya creado (tabla badge_definitions,
+// ver Punto 5 del feedback — la IA también debe poder sugerirlos).
 //
 // A diferencia de semillero-chat, no es un chat con historial: una sola
 // llamada, una sola respuesta JSON, nada se persiste (se recalcula cada vez
@@ -57,8 +59,8 @@ type MemberStats = {
   badgesActuales: string[];
 };
 
-function buildPrompt(orgName: string, roster: MemberStats[]) {
-  const catalogText = BADGE_CATALOG.map((b) => `- ${b.key} ("${b.label}"): ${b.description}`).join("\n");
+function buildPrompt(orgName: string, roster: MemberStats[], catalog: { key: string; label: string; description: string }[]) {
+  const catalogText = catalog.map((b) => `- ${b.key} ("${b.label}"): ${b.description}`).join("\n");
 
   const rosterText = roster
     .map(
@@ -219,6 +221,16 @@ Deno.serve(async (req) => {
       .eq("organization_id", organizationId);
     if (badgesError) return json({ error: "No se pudo leer los badges actuales" }, 500);
 
+    // Badges personalizados de esta organización (Punto 5 del feedback: la
+    // IA también debe poder sugerirlos, no solo los 10 del catálogo fijo).
+    const { data: customBadgeRows, error: customBadgesError } = await admin
+      .from("badge_definitions")
+      .select("key, label, description")
+      .eq("organization_id", organizationId);
+    if (customBadgesError) return json({ error: "No se pudo leer los badges personalizados" }, 500);
+
+    const catalog = [...BADGE_CATALOG, ...(customBadgeRows ?? [])];
+
     const today = new Date().toISOString().slice(0, 10);
 
     const roster: MemberStats[] = (profiles ?? []).map((p: any) => {
@@ -227,7 +239,7 @@ Deno.serve(async (req) => {
       const overdue = myTasks.filter((t: any) => t.status !== "completed" && t.due_date && t.due_date < today).length;
       const comments = (commentRows ?? []).filter((c: any) => c.user_id === p.id).length;
       const currentBadgeKeys = (badgeRows ?? []).filter((b: any) => b.profile_id === p.id).map((b: any) => b.badge_key);
-      const currentBadgeLabels = currentBadgeKeys.map((k: string) => BADGE_CATALOG.find((b) => b.key === k)?.label ?? k);
+      const currentBadgeLabels = currentBadgeKeys.map((k: string) => catalog.find((b) => b.key === k)?.label ?? k);
 
       return {
         userId: p.id,
@@ -243,7 +255,7 @@ Deno.serve(async (req) => {
       };
     });
 
-    const prompt = buildPrompt(org.name, roster);
+    const prompt = buildPrompt(org.name, roster, catalog);
 
     const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
@@ -269,7 +281,7 @@ Deno.serve(async (req) => {
 
     if (parsed === null) return json({ error: "La IA no devolvió un formato válido, intenta de nuevo" }, 502);
 
-    const validKeys = new Set(BADGE_CATALOG.map((b) => b.key));
+    const validKeys = new Set(catalog.map((b) => b.key));
     const validUserIds = new Set(roster.map((m) => m.userId));
     const suggestions = parsed.filter(
       (s) => s && typeof s.userId === "string" && typeof s.badgeKey === "string" && validKeys.has(s.badgeKey) && validUserIds.has(s.userId)

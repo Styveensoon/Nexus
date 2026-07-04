@@ -11,7 +11,6 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import { LinearGradient } from "expo-linear-gradient";
 import * as Clipboard from "expo-clipboard";
 import {
   Activity,
@@ -22,6 +21,7 @@ import {
   Folder,
   LogOut,
   Search,
+  Settings,
   Sparkles,
   UserCheck,
   Users,
@@ -30,24 +30,16 @@ import {
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { countTeams } from "../lib/teams";
-import { listProjects, Project, ProjectStatus, STATUS_LABELS } from "../lib/projects";
+import { listProjects, Project, STATUS_COLORS, STATUS_LABELS } from "../lib/projects";
 import { countOrgBadges } from "../lib/badges";
 import { listActivity, ActivityEntry } from "../lib/activity";
 import ActivityRow from "../components/ActivityRow";
+import ActivityDetailModal from "../components/ActivityDetailModal";
 
 // Paleta de marca de Nexus (azure del logo) — acento moderado, no cubre áreas grandes.
 // El color de la organización (organization.color) sigue siendo el que manda en el
 // hero card y el avatar, esa es una feature de branding por workspace aparte.
 const AZURE_DEEP = "#2C7BD1";
-
-// Mismo mapa que ProjectsScreen.tsx — color funcional por status, no se toca con el
-// acento de marca (ver docs/PATRONES.md, "primaryColor vs orgColor").
-const STATUS_COLORS: Record<ProjectStatus, string> = {
-  planning: "#F59E0B",
-  active: "#10B981",
-  on_hold: "#94A3B8",
-  completed: "#2563EB",
-};
 
 const WELCOME_PHRASES: Array<(name: string) => string> = [
   (n) => `¡Qué bueno verte, ${n}! 👋`,
@@ -60,16 +52,6 @@ const WELCOME_PHRASES: Array<(name: string) => string> = [
   (n) => `${n}, vamos con todo hoy`,
   (n) => `Un gusto tenerte aquí, ${n} 👋`,
 ];
-
-function darkenHex(hex: string, amount = 0.25) {
-  const clean = hex.replace("#", "");
-  if (!/^[0-9A-Fa-f]{6}$/.test(clean)) return "#1D4ED8";
-  const num = parseInt(clean, 16);
-  const r = Math.round(((num >> 16) & 0xff) * (1 - amount));
-  const g = Math.round(((num >> 8) & 0xff) * (1 - amount));
-  const b = Math.round((num & 0xff) * (1 - amount));
-  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
-}
 
 function mixHex(hex: string, base: string, weight = 0.14) {
   const parse = (h: string) => {
@@ -102,6 +84,7 @@ export default function DashboardScreen({ navigation }: any) {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [badgeCount, setBadgeCount] = useState<number | null>(null);
   const [recentActivity, setRecentActivity] = useState<ActivityEntry[]>([]);
+  const [detailEntry, setDetailEntry] = useState<ActivityEntry | null>(null);
 
   // useFocusEffect (no useEffect) para que los conteos se refresquen cada vez
   // que se vuelve a esta pestaña (p. ej. después de crear un proyecto en otra
@@ -186,7 +169,6 @@ export default function DashboardScreen({ navigation }: any) {
           <View style={styles.header}>
             <View style={styles.headerLeft}>
               <View style={styles.avatarWrap}>
-                <View style={[styles.avatarGlow, { backgroundColor: mixHex(orgColor, isDark ? "#0B1220" : "#F1F5FA", 0.4) }]} />
                 <View style={[styles.avatar, { backgroundColor: orgColor }]}>
                   {organization?.logo_url ? (
                     <Image source={{ uri: organization.logo_url }} style={styles.avatarImage} />
@@ -244,21 +226,22 @@ export default function DashboardScreen({ navigation }: any) {
                 />
               </View>
 
-              {/* HERO */}
-              <LinearGradient
-                colors={[organization.color, darkenHex(organization.color)]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.heroCard, { overflow: "hidden" }]}
-              >
-                <LinearGradient
-                  colors={["rgba(255,255,255,0.32)", "rgba(255,255,255,0)"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 0.65, y: 0.9 }}
-                  style={StyleSheet.absoluteFillObject}
-                  pointerEvents="none"
-                />
-                <Text style={styles.heroLabel}>TU WORKSPACE</Text>
+              {/* HERO — color sólido original de la organización, sin degradado
+                  ni overlay de brillo (se probó y con ciertos colores de marca
+                  se veía mal, ver feedback del usuario). */}
+              <View style={[styles.heroCard, { backgroundColor: organization.color, overflow: "hidden" }]}>
+                <View style={styles.heroTopRow}>
+                  <Text style={styles.heroLabel}>TU WORKSPACE</Text>
+                  {organization.owner_id === user?.id && (
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      style={styles.heroSettingsBtn}
+                      onPress={() => navigation.navigate("OrganizationSettings")}
+                    >
+                      <Settings size={16} color="#FFF" strokeWidth={2.3} />
+                    </TouchableOpacity>
+                  )}
+                </View>
                 <Text style={styles.heroTitle} numberOfLines={1}>{organization.name}</Text>
 
                 <View style={styles.heroCodeRow}>
@@ -268,7 +251,7 @@ export default function DashboardScreen({ navigation }: any) {
                     <Text style={styles.heroCopyText}>{copied ? "¡Copiado!" : "Copiar código"}</Text>
                   </TouchableOpacity>
                 </View>
-              </LinearGradient>
+              </View>
 
               {/* EL SEMILLERO (solo el owner puede usarlo) */}
               {organization.owner_id === user?.id && (
@@ -427,6 +410,7 @@ export default function DashboardScreen({ navigation }: any) {
                             textPrimary={textPrimary}
                             textSecondary={textSecondary}
                             cardBg={cardBg}
+                            onPress={() => setDetailEntry(entry)}
                           />
                         ))}
                       </View>
@@ -443,6 +427,14 @@ export default function DashboardScreen({ navigation }: any) {
           <View style={{ height: 40 }} />
         </View>
       </ScrollView>
+
+      <ActivityDetailModal
+        visible={!!detailEntry}
+        entry={detailEntry}
+        isDark={isDark}
+        primaryColor={AZURE_DEEP}
+        onClose={() => setDetailEntry(null)}
+      />
     </View>
   );
 }
@@ -452,7 +444,6 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   headerLeft: { flexDirection: "row", alignItems: "center", gap: 16, flexShrink: 1 },
   avatarWrap: { width: 64, height: 64, alignItems: "center", justifyContent: "center" },
-  avatarGlow: { position: "absolute", width: 88, height: 88, borderRadius: 30 },
   avatar: { width: 64, height: 64, borderRadius: 22, justifyContent: "center", alignItems: "center" },
   avatarImage: { width: 64, height: 64, borderRadius: 22 },
   greetingBig: { fontSize: 21, fontWeight: "600", letterSpacing: -0.4, maxWidth: 420 },
@@ -472,6 +463,11 @@ const styles = StyleSheet.create({
   noOutline: { outlineStyle: "none" } as any,
 
   heroCard: { borderRadius: 28, padding: 24, marginTop: 22 },
+  heroTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  heroSettingsBtn: {
+    width: 28, height: 28, borderRadius: 10, alignItems: "center", justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
   heroLabel: { color: "rgba(255,255,255,0.85)", fontWeight: "700", fontSize: 12, letterSpacing: 1 },
   heroTitle: { color: "#FFF", fontSize: 25, fontWeight: "600", marginTop: 6, letterSpacing: -0.4 },
   heroCodeRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 20 },

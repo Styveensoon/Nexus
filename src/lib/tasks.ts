@@ -248,7 +248,7 @@ export async function createTask(params: {
 }
 
 export async function updateTaskStatus(taskId: string, status: TaskStatus) {
-  const { data: taskBefore } = await supabase.from("tasks").select("project_id, title").eq("id", taskId).maybeSingle();
+  const { data: taskBefore } = await supabase.from("tasks").select("project_id, title, status").eq("id", taskId).maybeSingle();
   const { error } = await supabase.from("tasks").update({ status }).eq("id", taskId);
 
   if (!error && taskBefore) {
@@ -265,7 +265,12 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
         entityName: taskBefore.title,
         entityId: taskId,
         projectId: taskBefore.project_id,
-        metadata: { toStatus: status, toLabel: TASK_STATUS_LABELS[status] },
+        metadata: {
+          toStatus: status,
+          toLabel: TASK_STATUS_LABELS[status],
+          fromStatus: taskBefore.status,
+          fromLabel: TASK_STATUS_LABELS[taskBefore.status as TaskStatus],
+        },
       });
     }
   }
@@ -457,6 +462,12 @@ export async function addTaskComment(params: {
   attachmentUrl?: string | null;
   attachmentType?: TaskAttachmentType | null;
   attachmentName?: string | null;
+  // true solo para los adjuntos iniciales que se agregan AL CREAR una task
+  // (ver el loop sobre newAttachments en handleCreate, TasksScreen.tsx) — esos
+  // pasan por esta misma función con content:"" y no deben aparecer en
+  // Actividad como "comentó en la tarea". Un comentario real del chat (con
+  // texto, con adjunto, o ambos) siempre deja rastro.
+  skipActivityLog?: boolean;
 }) {
   const { data, error } = await supabase
     .from("task_comments")
@@ -472,11 +483,7 @@ export async function addTaskComment(params: {
     .select("id")
     .single();
 
-  // Solo si hay texto real: al crear una task, sus adjuntos iniciales pasan
-  // por esta misma función con content:"" (ver handleCreate en
-  // TasksScreen.tsx) y no queremos que cada adjunto de creación aparezca
-  // como "comentó en la tarea" en el log.
-  if (!error && data && params.content.trim()) {
+  if (!error && data && !params.skipActivityLog && (params.content.trim() || params.attachmentUrl)) {
     const { data: task } = await supabase.from("tasks").select("project_id, title").eq("id", params.taskId).maybeSingle();
     if (task) {
       const { data: project } = await supabase.from("projects").select("organization_id").eq("id", task.project_id).maybeSingle();
@@ -489,6 +496,16 @@ export async function addTaskComment(params: {
           entityName: task.title,
           entityId: params.taskId,
           projectId: task.project_id,
+          // El comentario real (+ su adjunto, si tiene), para que el detalle
+          // de Actividad (Punto 4 del feedback) pueda mostrar el contenido
+          // real en vez de solo "comentó en la tarea" — incluida la imagen/
+          // link/archivo, no un texto genérico de "tal vez fue un adjunto".
+          metadata: {
+            commentContent: params.content,
+            attachmentUrl: params.attachmentUrl ?? null,
+            attachmentType: params.attachmentType ?? null,
+            attachmentName: params.attachmentName ?? null,
+          },
         });
       }
     }
@@ -504,4 +521,97 @@ export async function uploadTaskAttachment(ownerUserId: string, data: ArrayBuffe
 export async function deleteTaskComment(commentId: string) {
   const { error } = await supabase.from("task_comments").delete().eq("id", commentId);
   return { error };
+}
+
+// Colaboradores adicionales de una task (Punto 3 del feedback) — a
+// diferencia del asignado (persona O equipo, exclusivo, ver
+// tasks_assignee_xor), un colaborador es gente extra que también puede ver y
+// comentar la task sin ser la responsable de cambiar su status. Solo el
+// líder del proyecto o el owner de la organización pueden agregar/quitar
+// colaboradores (mismo criterio que crear/editar la task, ver
+// task_collaborators_insert_leader_owner en schema.sql).
+export type TaskCollaborator = {
+  userId: string;
+  name: string;
+  avatarUrl: string | null;
+  avatarColor: string;
+  createdAt: string;
+};
+
+export async function listTaskCollaborators(taskId: string) {
+  const { data: rows, error } = await supabase
+    .from("task_collaborators")
+    .select("user_id, created_at")
+    .eq("task_id", taskId);
+
+  if (error) return { data: [] as TaskCollaborator[], error };
+
+  const userIds = (rows ?? []).map((r) => r.user_id);
+  const { data: profileRows, error: profilesError } = await supabase
+    .from("profiles")
+    .select("id, full_name, nickname, avatar_url, avatar_color")
+    .in("id", userIds.length ? userIds : ["00000000-0000-0000-0000-000000000000"]);
+
+  if (profilesError) return { data: [] as TaskCollaborator[], error: profilesError };
+
+  const profileById = new Map((profileRows ?? []).map((p) => [p.id, p]));
+  const collaborators: TaskCollaborator[] = (rows ?? []).map((r) => {
+    const profile = profileById.get(r.user_id);
+    return {
+      userId: r.user_id,
+      name: profile?.nickname || profile?.full_name || "Miembro",
+      avatarUrl: profile?.avatar_url ?? null,
+      avatarColor: profile?.avatar_color ?? "#2563EB",
+      createdAt: r.created_at,
+    };
+  });
+
+  return { data: collaborators, error: null };
+}
+
+export async function addTaskCollaborator(taskId: string, userId: string, addedBy: string) {
+  const { error } = await supabase.from("task_collaborators").insert({ task_id: taskId, user_id: userId, added_by: addedBy });
+  return { error };
+}
+
+export async function removeTaskCollaborator(taskId: string, userId: string) {
+  const { error } = await supabase.from("task_collaborators").delete().eq("task_id", taskId).eq("user_id", userId);
+  return { error };
+}
+
+// Tareas de un usuario puntual en toda la organización (Punto 3 del
+// feedback, buscador de usuarios en Tasks) — asignado directo, integrante de
+// un equipo asignado, o colaborador. Reusa listTasksForProjects/hydrateTasks
+// en vez de duplicar la hidratación de asignado.
+export async function listTasksForUser(organizationId: string, userId: string) {
+  const { data: projectRows, error: projectsError } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("organization_id", organizationId);
+
+  if (projectsError) return { data: [] as Task[], error: projectsError };
+
+  const projectIds = (projectRows ?? []).map((p) => p.id);
+  const { data: allTasks, error } = await listTasksForProjects(projectIds);
+  if (error) return { data: [] as Task[], error };
+
+  const { data: teamMemberRows } = await supabase.from("team_members").select("team_id").eq("user_id", userId);
+  const myTeamIds = new Set((teamMemberRows ?? []).map((t) => t.team_id));
+
+  const taskIds = allTasks.map((t) => t.id);
+  const { data: collabRows } = await supabase
+    .from("task_collaborators")
+    .select("task_id")
+    .eq("user_id", userId)
+    .in("task_id", taskIds.length ? taskIds : ["00000000-0000-0000-0000-000000000000"]);
+  const collabTaskIds = new Set((collabRows ?? []).map((c) => c.task_id));
+
+  const tasks = allTasks.filter(
+    (t) =>
+      (t.assignee.type === "user" && t.assignee.userId === userId) ||
+      (t.assignee.type === "team" && myTeamIds.has(t.assignee.teamId)) ||
+      collabTaskIds.has(t.id)
+  );
+
+  return { data: tasks, error: null };
 }

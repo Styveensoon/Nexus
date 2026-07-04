@@ -56,6 +56,26 @@ export async function createOrganization(params: {
   return { data: null, error: new Error("No se pudo generar un código de invitación único.") };
 }
 
+// Personalización de la organización ya creada (Punto 2 del feedback): solo
+// el owner puede tocar estos campos, impuesto por la policy ya existente
+// "organizations_update_owner" en schema.sql (no requiere ningún cambio de
+// esquema ni nueva migración).
+export async function updateOrganization(
+  organizationId: string,
+  updates: Partial<{ name: string; color: string; logoUrl: string | null }>
+) {
+  const { error } = await supabase
+    .from("organizations")
+    .update({
+      ...(updates.name !== undefined && { name: updates.name }),
+      ...(updates.color !== undefined && { color: updates.color }),
+      ...(updates.logoUrl !== undefined && { logo_url: updates.logoUrl }),
+    })
+    .eq("id", organizationId);
+
+  return { error };
+}
+
 export async function getOrganizationByCode(code: string) {
   const { data, error } = await supabase
     .from("organizations")

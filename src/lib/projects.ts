@@ -3,16 +3,55 @@ import type { TeamSuggestion } from "./semillero";
 import { getTeamsByIds, Team } from "./teams";
 import { logActivity } from "./activity";
 
-export type ProjectStatus = "planning" | "active" | "on_hold" | "completed";
+// De 4 a 8 valores (mismo criterio que TaskStatus en lib/tasks.ts) — con el
+// selector directo (ProjectStatusPickerModal, ver docs/PATRONES.md) ya no
+// hace falta mantenerlo corto para que "ciclar" siga siendo práctico.
+export type ProjectStatus =
+  | "planning"
+  | "active"
+  | "in_review"
+  | "on_hold"
+  | "blocked"
+  | "completed"
+  | "cancelled"
+  | "archived";
 
 export const STATUS_LABELS: Record<ProjectStatus, string> = {
   planning: "Planeación",
   active: "Activo",
+  in_review: "En revisión",
   on_hold: "En pausa",
+  blocked: "Bloqueado",
   completed: "Completado",
+  cancelled: "Cancelado",
+  archived: "Archivado",
 };
 
-export const STATUS_ORDER: ProjectStatus[] = ["planning", "active", "on_hold", "completed"];
+export const STATUS_ORDER: ProjectStatus[] = [
+  "planning",
+  "active",
+  "in_review",
+  "on_hold",
+  "blocked",
+  "completed",
+  "cancelled",
+  "archived",
+];
+
+// Color funcional por status (no se toca con el acento de marca, ver
+// docs/PATRONES.md "primaryColor vs orgColor") — centralizado acá porque lo
+// usan ProjectsScreen, DashboardScreen y ProfileScreen; antes vivía duplicado
+// como una constante local en cada uno de los 3 archivos.
+export const STATUS_COLORS: Record<ProjectStatus, string> = {
+  planning: "#F59E0B",
+  active: "#10B981",
+  in_review: "#A855F7",
+  on_hold: "#94A3B8",
+  blocked: "#EF4444",
+  completed: "#2563EB",
+  cancelled: "#78716C",
+  archived: "#64748B",
+};
 
 // Abanico de áreas comunes para el picker rápido de "Áreas involucradas" al
 // crear/editar un proyecto (ver ProjectsScreen.tsx) — no es una lista cerrada,
@@ -222,7 +261,7 @@ export async function createProjectFromSuggestion(
 }
 
 export async function updateProjectStatus(projectId: string, status: ProjectStatus) {
-  const { data: before } = await supabase.from("projects").select("organization_id, name").eq("id", projectId).maybeSingle();
+  const { data: before } = await supabase.from("projects").select("organization_id, name, status").eq("id", projectId).maybeSingle();
   const { error } = await supabase.from("projects").update({ status }).eq("id", projectId);
 
   if (!error && before) {
@@ -238,7 +277,12 @@ export async function updateProjectStatus(projectId: string, status: ProjectStat
         entityName: before.name,
         entityId: projectId,
         projectId,
-        metadata: { toStatus: status, toLabel: STATUS_LABELS[status] },
+        metadata: {
+          toStatus: status,
+          toLabel: STATUS_LABELS[status],
+          fromStatus: before.status,
+          fromLabel: STATUS_LABELS[before.status as ProjectStatus],
+        },
       });
     }
   }
@@ -309,6 +353,67 @@ export async function deleteProject(projectId: string) {
   }
 
   return { error };
+}
+
+// Proyectos en los que el usuario trabaja — de solo lectura en ProfileScreen
+// (Punto 1 del feedback). "Trabaja en" = miembro directo (project_members) O
+// integrante de algún equipo asignado al proyecto (project_teams). Reusa
+// listProjects en vez de duplicar la hidratación de miembros/equipos.
+export async function listMyProjects(organizationId: string, userId: string) {
+  const { data: allProjects, error } = await listProjects(organizationId);
+  if (error) return { data: [] as Project[], error };
+  return {
+    data: allProjects.filter(
+      (p) => p.members.some((m) => m.userId === userId) || p.teams.some((t) => t.members.some((m) => m.userId === userId))
+    ),
+    error: null,
+  };
+}
+
+// "Desde cuándo" trabaja alguien en un proyecto puntual (Punto 1 del
+// feedback, click en un proyecto del perfil). Si es miembro directo, es la
+// fecha de esa fila; si llegó vía uno o más equipos asignados al proyecto,
+// es la fecha MÁS TARDÍA entre "se unió al equipo" y "el equipo se vinculó al
+// proyecto" (recién ahí empezó a estar realmente involucrado en ESTE
+// proyecto) — y si participa por más de un equipo, la más temprana de esas
+// fechas combinadas.
+export async function getProjectMembershipSince(projectId: string, userId: string) {
+  const { data: directRow, error: directError } = await supabase
+    .from("project_members")
+    .select("created_at")
+    .eq("project_id", projectId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (directError) return { data: null as string | null, error: directError };
+  if (directRow) return { data: directRow.created_at as string, error: null };
+
+  const { data: projectTeamRows, error: ptError } = await supabase
+    .from("project_teams")
+    .select("team_id, created_at")
+    .eq("project_id", projectId);
+
+  if (ptError) return { data: null as string | null, error: ptError };
+
+  const teamIds = (projectTeamRows ?? []).map((r) => r.team_id);
+  if (!teamIds.length) return { data: null as string | null, error: null };
+
+  const { data: teamMemberRows, error: tmError } = await supabase
+    .from("team_members")
+    .select("team_id, created_at")
+    .in("team_id", teamIds)
+    .eq("user_id", userId);
+
+  if (tmError) return { data: null as string | null, error: tmError };
+  if (!teamMemberRows?.length) return { data: null as string | null, error: null };
+
+  const linkedAtByTeam = new Map((projectTeamRows ?? []).map((r) => [r.team_id, r.created_at as string]));
+  const dates = teamMemberRows.map((tm) => {
+    const linkedAt = linkedAtByTeam.get(tm.team_id)!;
+    return tm.created_at > linkedAt ? (tm.created_at as string) : linkedAt;
+  });
+  dates.sort();
+  return { data: dates[0], error: null };
 }
 
 export async function countProjects(organizationId: string) {

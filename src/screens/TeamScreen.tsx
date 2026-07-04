@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from "react";
 import {
   Image,
+  Keyboard,
   Modal,
   Platform,
   ScrollView,
@@ -605,13 +606,19 @@ export default function TeamScreen() {
                                   </TouchableOpacity>
                                 </View>
                                 {draft.roleOption === CUSTOM_TEAM_ROLE_VALUE && (
-                                  <TextInput
-                                    value={draft.customRole}
-                                    onChangeText={(v) => setDraftCustomRole(draft.userId, v)}
-                                    placeholder="Escribe el rol"
-                                    placeholderTextColor={textSecondary}
-                                    style={[styles.customRoleInput, { backgroundColor: cardBg, borderColor: border, color: textPrimary }, isWeb && styles.noOutline]}
-                                  />
+                                  <View style={[styles.customRoleInputRow, { backgroundColor: cardBg, borderColor: border }]}>
+                                    <TextInput
+                                      value={draft.customRole}
+                                      onChangeText={(v) => setDraftCustomRole(draft.userId, v)}
+                                      onSubmitEditing={() => Keyboard.dismiss()}
+                                      placeholder="Escribe el rol"
+                                      placeholderTextColor={textSecondary}
+                                      style={[styles.customRoleInput, { color: textPrimary }, isWeb && styles.noOutline]}
+                                    />
+                                    <TouchableOpacity onPress={() => Keyboard.dismiss()} hitSlop={8}>
+                                      <Check size={14} color={primaryColor} strokeWidth={2.3} />
+                                    </TouchableOpacity>
+                                  </View>
                                 )}
                               </>
                             )}
@@ -764,7 +771,11 @@ const styles = StyleSheet.create({
   leaderDraftLabel: { fontSize: 12, fontWeight: "700", marginTop: 8 },
   roleChipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 },
   roleChip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
-  customRoleInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 12.5, marginTop: 8 },
+  customRoleInputRow: {
+    flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 8, marginTop: 8,
+  },
+  customRoleInput: { flex: 1, fontSize: 12.5 },
 
   createBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 999, paddingVertical: 14, marginTop: 24 },
   createBtnText: { color: "#FFF", fontWeight: "700", fontSize: 14 },

@@ -28,8 +28,100 @@ export const BADGE_CATALOG: BadgeDefinition[] = [
   { key: "strategist", label: "Estratega", description: "Piensa en el panorama completo antes de actuar.", icon: "Target", color: "#4F46E5" },
 ];
 
+// Badges personalizados creados por cada organización (Punto 5 del feedback:
+// CRUD completo, no solo el catálogo fijo BADGE_CATALOG). Viven en la tabla
+// badge_definitions, propios de cada organización (organization_id), y se
+// suman al catálogo fijo — nunca lo reemplazan ni lo pueden borrar (los 10 de
+// BADGE_CATALOG siguen siendo el set "de fábrica" para toda organización
+// nueva). getBadgeDefinition sigue siendo síncrono (muchos call sites ya
+// asumen eso) así que los custom se resuelven contra un cache en memoria que
+// listOrgBadgeDefinitions/listOrgBadges/listProfileBadges se encargan de
+// mantener tibio antes de que la UI necesite pintar un badge_key custom.
+const customBadgeCache = new Map<string, BadgeDefinition>();
+
+type BadgeDefinitionRow = {
+  key: string;
+  label: string;
+  description: string;
+  icon: string;
+  color: string;
+};
+
+export async function listOrgBadgeDefinitions(organizationId: string) {
+  const { data: rows, error } = await supabase
+    .from("badge_definitions")
+    .select("key, label, description, icon, color")
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: true });
+
+  if (error) return { data: BADGE_CATALOG, error };
+
+  const custom: BadgeDefinition[] = ((rows ?? []) as BadgeDefinitionRow[]).map((r) => ({
+    key: r.key,
+    label: r.label,
+    description: r.description,
+    icon: r.icon,
+    color: r.color,
+  }));
+  custom.forEach((b) => customBadgeCache.set(b.key, b));
+
+  return { data: [...BADGE_CATALOG, ...custom], error: null };
+}
+
+function slugifyBadgeKey(label: string) {
+  const base = label
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return `custom_${base || "badge"}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export async function createBadgeDefinition(params: {
+  organizationId: string;
+  createdBy: string;
+  label: string;
+  description: string;
+  icon: string;
+  color: string;
+}) {
+  const key = slugifyBadgeKey(params.label);
+  const { error } = await supabase.from("badge_definitions").insert({
+    organization_id: params.organizationId,
+    key,
+    label: params.label,
+    description: params.description,
+    icon: params.icon,
+    color: params.color,
+    created_by: params.createdBy,
+  });
+
+  if (!error) customBadgeCache.set(key, { key, label: params.label, description: params.description, icon: params.icon, color: params.color });
+
+  return { error };
+}
+
+export async function deleteBadgeDefinition(organizationId: string, key: string) {
+  const { error } = await supabase.from("badge_definitions").delete().eq("organization_id", organizationId).eq("key", key);
+  return { error };
+}
+
 export function getBadgeDefinition(key: string): BadgeDefinition | null {
-  return BADGE_CATALOG.find((b) => b.key === key) ?? null;
+  return BADGE_CATALOG.find((b) => b.key === key) ?? customBadgeCache.get(key) ?? null;
+}
+
+// activity_log solo guarda el LABEL del badge (entityName), no su key — lo
+// necesita ActivityDetailModal para resolver la descripción a mostrar en el
+// detalle de un badge_granted/badge_revoked, incluidos los personalizados.
+export function getBadgeDefinitionByLabel(label: string): BadgeDefinition | null {
+  const fixed = BADGE_CATALOG.find((b) => b.label === label);
+  if (fixed) return fixed;
+  for (const def of customBadgeCache.values()) {
+    if (def.label === label) return def;
+  }
+  return null;
 }
 
 export type ProfileBadge = {
@@ -83,10 +175,13 @@ async function hydrateGranterNames(rows: ProfileBadgeRow[]): Promise<ProfileBadg
 // pintar el buscador (conteo por tarjeta) y el modal de una persona sin
 // disparar una query por miembro.
 export async function listOrgBadges(organizationId: string) {
-  const { data, error } = await supabase
-    .from("profile_badges")
-    .select("id, organization_id, profile_id, badge_key, granted_by, created_at")
-    .eq("organization_id", organizationId);
+  const [{ data, error }] = await Promise.all([
+    supabase
+      .from("profile_badges")
+      .select("id, organization_id, profile_id, badge_key, granted_by, created_at")
+      .eq("organization_id", organizationId),
+    listOrgBadgeDefinitions(organizationId),
+  ]);
 
   if (error) return { data: new Map<string, ProfileBadge[]>(), error };
 
@@ -106,11 +201,14 @@ export async function listOrgBadges(organizationId: string) {
 // para un equipo/proyecto), a diferencia de listOrgBadges que trae todos de
 // golpe para el buscador de BadgesScreen.
 export async function listProfileBadges(organizationId: string, profileId: string) {
-  const { data, error } = await supabase
-    .from("profile_badges")
-    .select("id, organization_id, profile_id, badge_key, granted_by, created_at")
-    .eq("organization_id", organizationId)
-    .eq("profile_id", profileId);
+  const [{ data, error }] = await Promise.all([
+    supabase
+      .from("profile_badges")
+      .select("id, organization_id, profile_id, badge_key, granted_by, created_at")
+      .eq("organization_id", organizationId)
+      .eq("profile_id", profileId),
+    listOrgBadgeDefinitions(organizationId),
+  ]);
 
   if (error) return { data: [] as ProfileBadge[], error };
   return { data: await hydrateGranterNames((data ?? []) as ProfileBadgeRow[]), error: null };

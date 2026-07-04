@@ -245,6 +245,15 @@ export async function deleteTeam(teamId: string) {
   return { error };
 }
 
+// Equipos de los que el usuario es integrante — se muestra de solo lectura
+// en ProfileScreen (Punto 1 del feedback), reusa listTeams en vez de duplicar
+// la hidratación de miembros con una query aparte.
+export async function listMyTeams(organizationId: string, userId: string) {
+  const { data: allTeams, error } = await listTeams(organizationId);
+  if (error) return { data: [] as Team[], error };
+  return { data: allTeams.filter((t) => t.members.some((m) => m.userId === userId)), error: null };
+}
+
 export async function countTeams(organizationId: string) {
   const { count, error } = await supabase
     .from("teams")
