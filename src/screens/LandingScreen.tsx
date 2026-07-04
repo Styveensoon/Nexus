@@ -23,6 +23,9 @@ import { useTheme } from "../context/ThemeContext";
 import Navbar from "../components/landing/Navbar";
 import Footer from "../components/landing/Footer";
 import DashboardMockup from "../components/landing/DashboardMockup";
+import LogoCarousel from "../components/landing/LogoCarousel";
+import IntegrationsSection from "../components/landing/IntegrationsSection";
+import PricingSection from "../components/landing/PricingSection";
 
 // Paleta de marca de Nexus (azure) — acento único, moderado, no cubre áreas grandes.
 const AZURE_DEEP = "#2C7BD1";
@@ -34,11 +37,6 @@ const FEATURES = [
   { icon: BarChart3,  title: "Reportes con IA",       desc: "Análisis automático de desempeño, avance y predicciones en lenguaje natural." },
   { icon: Building2,  title: "Workspaces con marca",  desc: "Cada organización personaliza su workspace con colores y logo propios." },
   { icon: UserCheck,  title: "Client Room",           desc: "Vista curada para clientes externos. Solo ven lo que tú decides mostrarles." },
-];
-
-const INTEGRATIONS = [
-  "GitHub", "Slack", "Google Drive", "Google Calendar",
-  "Trello", "Discord", "Microsoft Teams", "Jira",
 ];
 
 export default function LandingScreen({ navigation }: any) {
@@ -69,6 +67,22 @@ export default function LandingScreen({ navigation }: any) {
   const mockupOpacity = useRef(new Animated.Value(0)).current;
 
   const featureAnims = useRef(FEATURES.map(() => new Animated.Value(0))).current;
+
+  // Posiciones Y de cada sección "ancla" de la nav, capturadas vía onLayout
+  // (relativas al contenido del ScrollView, ver docs/TRAMPAS.md si se toca este patrón).
+  const scrollRef = useRef<ScrollView>(null);
+  const sectionY = useRef<Record<string, number>>({});
+
+  const registerSection = (key: string) => (e: any) => {
+    sectionY.current[key] = e.nativeEvent.layout.y;
+  };
+
+  const scrollToSection = (key: string) => {
+    const y = sectionY.current[key];
+    if (typeof y === "number") {
+      scrollRef.current?.scrollTo({ y: Math.max(y - 88, 0), animated: true });
+    }
+  };
 
   useEffect(() => {
     Animated.sequence([
@@ -118,10 +132,15 @@ export default function LandingScreen({ navigation }: any) {
         { backgroundColor: isDark ? 'rgba(11, 18, 32, 0.72)' : 'rgba(241, 245, 250, 0.78)', borderBottomColor: border },
         Platform.OS === 'web' && { backdropFilter: 'blur(20px) saturate(180%)' } as any
       ]}>
-        <Navbar navigation={navigation} isDark={isDark} logoUri={require("../../assets/images/nexus-logo.png")} />
+        <Navbar
+          navigation={navigation}
+          isDark={isDark}
+          logoUri={require("../../assets/images/nexus-logo.png")}
+          onNavLinkPress={scrollToSection}
+        />
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingTop: 64, flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={{ paddingTop: 64, flexGrow: 1 }} showsVerticalScrollIndicator={false}>
         
         {/* --- HERO SECTION --- */}
         <View style={[styles.contentContainer, { paddingHorizontal: isMobile ? 16 : "5%" }]}>
@@ -173,7 +192,7 @@ export default function LandingScreen({ navigation }: any) {
                   onPress={() => navigation.navigate("Login")}
                   {...(isWeb ? { onMouseEnter: () => setHoverHeroSecondary(true), onMouseLeave: () => setHoverHeroSecondary(false) } as any : {})}
                 >
-                  <Text style={[styles.btnSecondaryText, { color: textPrimary, fontSize: isMobile ? 16 : 18 }]}>Ver demo</Text>
+                  <Text style={[styles.btnSecondaryText, { color: textPrimary, fontSize: isMobile ? 16 : 18 }]}>Acceder</Text>
                 </TouchableOpacity>
               </View>
             </Animated.View>
@@ -208,8 +227,11 @@ export default function LandingScreen({ navigation }: any) {
           </View>
         </View>
 
+        {/* --- CARRUSEL DE LOGOS (decorativo, ver LogoCarousel.tsx) --- */}
+        <LogoCarousel isDark={isDark} isMobile={isMobile} />
+
         {/* --- CARACTERÍSTICAS --- */}
-        <View style={[styles.section, { backgroundColor: bg2, paddingVertical: isMobile ? 48 : 120 }]}>
+        <View onLayout={registerSection("features")} style={[styles.section, { backgroundColor: bg2, paddingVertical: isMobile ? 48 : 120 }]}>
           <View style={[styles.contentContainer, { maxWidth: 1536, paddingHorizontal: isMobile ? 16 : "5%" }]}>
             <Text style={[styles.sectionTitle, { color: textPrimary, fontSize: isMobile ? 28 : 44, marginBottom: isMobile ? 16 : 20 }]}>Potencia sin concesiones</Text>
             <Text style={[styles.sectionSub, { color: textSecondary, fontSize: isMobile ? 15 : 20, marginBottom: isMobile ? 32 : 64 }]}>Diseñado para equipos que exigen rendimiento, privacidad y estética.</Text>
@@ -240,6 +262,16 @@ export default function LandingScreen({ navigation }: any) {
               ))}
             </View>
           </View>
+        </View>
+
+        {/* --- INTEGRACIONES --- */}
+        <View onLayout={registerSection("integrations")}>
+          <IntegrationsSection isDark={isDark} isMobile={isMobile} />
+        </View>
+
+        {/* --- PRIVACIDAD / SELF-HOSTED (el diferenciador real, ver docs/ARQUITECTURA.md) --- */}
+        <View onLayout={registerSection("privacy")}>
+          <PricingSection isDark={isDark} isMobile={isMobile} />
         </View>
 
         {/* --- CTA FINAL --- */}

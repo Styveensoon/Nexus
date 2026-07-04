@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   useWindowDimensions,
   Image,
   ImageSourcePropType,
+  Platform,
 } from "react-native";
 import { Sparkles } from "lucide-react-native";
 
@@ -14,17 +15,89 @@ interface NavbarProps {
   navigation: any;
   isDark: boolean;
   logoUri?: ImageSourcePropType;
+  onNavLinkPress?: (sectionKey: string) => void;
 }
 
 // Paleta de marca de Nexus (azure) — acento único, moderado, no cubre áreas grandes.
 const AZURE_DEEP = "#2C7BD1";
 
-export default function Navbar({ navigation, isDark, logoUri }: NavbarProps) {
+const NAV_LINKS = [
+  { key: "features", label: "Características" },
+  { key: "integrations", label: "Integraciones" },
+  { key: "privacy", label: "Privacidad" },
+];
+
+const isWeb = Platform.OS === "web";
+
+function NavPillLink({
+  label,
+  textSecondary,
+  textPrimary,
+  hoverBg,
+  onPress,
+}: {
+  label: string;
+  textSecondary: string;
+  textPrimary: string;
+  hoverBg: string;
+  onPress?: () => void;
+}) {
+  const [hover, setHover] = useState(false);
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={[styles.navPillLink, hover && { backgroundColor: hoverBg }]}
+      {...(isWeb
+        ? ({ onMouseEnter: () => setHover(true), onMouseLeave: () => setHover(false) } as any)
+        : {})}
+    >
+      <Text style={[styles.navPillLinkText, { color: hover ? textPrimary : textSecondary }]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function LoginGhostButton({
+  border,
+  hoverBorder,
+  hoverBg,
+  textSecondary,
+  textPrimary,
+  onPress,
+}: {
+  border: string;
+  hoverBorder: string;
+  hoverBg: string;
+  textSecondary: string;
+  textPrimary: string;
+  onPress: () => void;
+}) {
+  const [hover, setHover] = useState(false);
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={[
+        styles.loginBtn,
+        { borderColor: hover ? hoverBorder : border, backgroundColor: hover ? hoverBg : "transparent" },
+      ]}
+      {...(isWeb
+        ? ({ onMouseEnter: () => setHover(true), onMouseLeave: () => setHover(false) } as any)
+        : {})}
+    >
+      <Text style={[styles.linkBtn, { color: hover ? textPrimary : textSecondary }]}>Iniciar sesión</Text>
+    </TouchableOpacity>
+  );
+}
+
+export default function Navbar({ navigation, isDark, logoUri, onNavLinkPress }: NavbarProps) {
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
 
   const textPrimary   = isDark ? "#F8FAFC" : "#101828";
   const textSecondary = isDark ? "#94A3B8" : "#5B6472";
+  const border        = isDark ? "rgba(255,255,255,0.14)" : "rgba(15,23,42,0.12)";
+  const hoverBorder   = isDark ? "rgba(255,255,255,0.28)" : "rgba(15,23,42,0.22)";
+  const pillBg        = isDark ? "rgba(255,255,255,0.05)" : "rgba(15,23,42,0.035)";
+  const pillHoverBg   = isDark ? "rgba(255,255,255,0.09)" : "rgba(15,23,42,0.06)";
 
   const paddingH = isMobile ? 24 : "5%";
 
@@ -46,20 +119,30 @@ export default function Navbar({ navigation, isDark, logoUri }: NavbarProps) {
         </TouchableOpacity>
 
         {!isMobile && (
-          <View style={styles.links}>
-            {["Características", "Integraciones", "Precios"].map((l) => (
-              <TouchableOpacity key={l}>
-                <Text style={[styles.link, { color: textSecondary }]}>{l}</Text>
-              </TouchableOpacity>
+          <View style={[styles.linksPill, { backgroundColor: pillBg, borderColor: border }]}>
+            {NAV_LINKS.map((l) => (
+              <NavPillLink
+                key={l.key}
+                label={l.label}
+                textSecondary={textSecondary}
+                textPrimary={textPrimary}
+                hoverBg={pillHoverBg}
+                onPress={() => onNavLinkPress?.(l.key)}
+              />
             ))}
           </View>
         )}
 
         <View style={styles.actions}>
           {!isMobile && (
-            <TouchableOpacity onPress={() => navigation.navigate("Login")}>
-              <Text style={[styles.linkBtn, { color: textSecondary }]}>Iniciar sesión</Text>
-            </TouchableOpacity>
+            <LoginGhostButton
+              border={border}
+              hoverBorder={hoverBorder}
+              hoverBg={pillHoverBg}
+              textSecondary={textSecondary}
+              textPrimary={textPrimary}
+              onPress={() => navigation.navigate("Login")}
+            />
           )}
           <TouchableOpacity
             style={[styles.btnPrimary, { backgroundColor: AZURE_DEEP, shadowColor: AZURE_DEEP }]}
@@ -91,10 +174,30 @@ const styles = StyleSheet.create({
   logoIcon: { width: 32, height: 32, borderRadius: 10, justifyContent: "center", alignItems: "center" },
   logoImage: { width: 32, height: 32, borderRadius: 10 },
   logoText: { fontSize: 20, fontWeight: "700", letterSpacing: -0.5 },
-  links: { flexDirection: "row", gap: 32, alignItems: "center" },
-  link: { fontSize: 15, fontWeight: "500" },
-  actions: { flexDirection: "row", alignItems: "center", gap: 20 },
-  linkBtn: { fontSize: 15, fontWeight: "600" },
+  linksPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    padding: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  navPillLink: {
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 999,
+    ...(isWeb ? ({ transitionProperty: "background-color", transitionDuration: "0.15s" } as any) : {}),
+  },
+  navPillLinkText: { fontSize: 14, fontWeight: "600" },
+  actions: { flexDirection: "row", alignItems: "center", gap: 12 },
+  loginBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 999,
+    borderWidth: 1,
+    ...(isWeb ? ({ transitionProperty: "background-color, border-color", transitionDuration: "0.15s" } as any) : {}),
+  },
+  linkBtn: { fontSize: 14, fontWeight: "600" },
   btnPrimary: {
     paddingHorizontal: 20,
     paddingVertical: 10,
