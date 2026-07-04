@@ -3,7 +3,7 @@ import {
   View,
   Text,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions,
 } from "react-native";
 
 import {
@@ -17,11 +17,10 @@ import {
   Bug,
 } from "lucide-react-native";
 
-const { width } = Dimensions.get("window");
-
-const isMobile = width < 768;
-
 export default function DashboardMockup() {
+  const { width } = useWindowDimensions();
+  const isMobile = width < 768;
+
   return (
     <View style={styles.wrapper}>
 
@@ -42,7 +41,7 @@ export default function DashboardMockup() {
         </View>
 
         {/* Content */}
-        <View style={styles.content}>
+        <View style={[styles.content, isMobile && { minHeight: undefined }]}>
 
           {/* Sidebar */}
           {!isMobile && (
@@ -133,7 +132,14 @@ export default function DashboardMockup() {
             >
 
               {/* Tasks */}
-              <View style={styles.tasksCard}>
+              {/* `flex: 3` de tasksCard divide el ANCHO cuando está en fila (desktop) — en
+                  mobile, bottomSection pasa a columna y ese mismo flex (flexBasis 0%) se
+                  traduce en una repartición del ALTO, estirando esta tarjeta con un hueco
+                  vacío al final. `{ flex: undefined }` NO alcanza para anularlo — React
+                  Native Web ignora los valores `undefined` al mezclar estilos (no "borran"
+                  el valor anterior del array), así que hay que pisar explícitamente
+                  flexGrow/flexShrink/flexBasis para que la tarjeta mida su contenido real. */}
+              <View style={[styles.tasksCard, isMobile && { flexGrow: 0, flexShrink: 0, flexBasis: "auto" }]}>
 
                 <View style={styles.cardHeader}>
                   <Text style={styles.cardTitle}>
@@ -192,7 +198,7 @@ export default function DashboardMockup() {
               </View>
 
               {/* Reports */}
-              <View style={styles.reportCard}>
+              <View style={[styles.reportCard, isMobile && { flexGrow: 0, flexShrink: 0, flexBasis: "auto" }]}>
 
                 <Text style={styles.cardTitle}>
                   Reportes IA
