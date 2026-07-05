@@ -129,45 +129,54 @@ export default function WorkspaceSetupScreen({ navigation, route }: any) {
             </Text>
 
             <View style={[styles.card, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
-              <View style={styles.previewRow}>
-                <View style={[styles.previewLogo, { backgroundColor: color, overflow: "hidden" }]}>
-                  {logoUrl ? (
-                    <Image source={{ uri: logoUrl }} style={styles.previewLogoImage} />
-                  ) : (
-                    <Building2 size={22} color="#FFF" strokeWidth={2.3} />
-                  )}
+              <View style={[styles.previewCard, { backgroundColor: inputBg, borderColor: border }]}>
+                <View style={styles.previewRow}>
+                  <View style={[styles.previewLogo, { backgroundColor: color, overflow: "hidden" }]}>
+                    {logoUrl ? (
+                      <Image source={{ uri: logoUrl }} style={styles.previewLogoImage} />
+                    ) : (
+                      <Building2 size={24} color="#FFF" strokeWidth={2.3} />
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.previewLabel, { color: textSecondary }]}>Vista previa</Text>
+                    <Text style={[styles.previewName, { color: textPrimary }]} numberOfLines={1}>
+                      {name.trim() || "Mi organización"}
+                    </Text>
+                  </View>
                 </View>
-                <Text style={[styles.previewName, { color: textPrimary }]} numberOfLines={1}>
-                  {name.trim() || "Mi organización"}
-                </Text>
               </View>
 
-              <Text style={[styles.label, { color: textSecondary }]}>Nombre del workspace</Text>
-              <View style={[styles.inputWrapper, { backgroundColor: inputBg, borderColor: focusedField === "name" ? primaryColor : border }]}>
-                <Building2 size={18} color={textSecondary} strokeWidth={2.2} />
-                <TextInput
-                  placeholder="Nombre de tu organización"
-                  placeholderTextColor={textSecondary}
-                  value={name}
-                  onChangeText={setName}
-                  onFocus={() => setFocusedField("name")}
-                  onBlur={() => setFocusedField(null)}
-                  style={[styles.input, { color: textPrimary }, isWeb && styles.inputNoOutline]}
+              <View style={styles.section}>
+                <Text style={[styles.label, { color: textSecondary }]}>Nombre del workspace</Text>
+                <View style={[styles.inputWrapper, { backgroundColor: inputBg, borderColor: focusedField === "name" ? primaryColor : border }]}>
+                  <Building2 size={18} color={textSecondary} strokeWidth={2.2} />
+                  <TextInput
+                    placeholder="Nombre de tu organización"
+                    placeholderTextColor={textSecondary}
+                    value={name}
+                    onChangeText={setName}
+                    onFocus={() => setFocusedField("name")}
+                    onBlur={() => setFocusedField(null)}
+                    style={[styles.input, { color: textPrimary }, isWeb && styles.inputNoOutline]}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.section}>
+                <Text style={[styles.label, { color: textSecondary }]}>Logo y color de marca</Text>
+                <IconColorPicker
+                  isDark={isDark}
+                  userId={user?.id ?? ""}
+                  color={color}
+                  onColorChange={setColor}
+                  iconUrl={logoUrl || null}
+                  onIconChange={(url) => setLogoUrl(url ?? "")}
+                  fallbackIcon={Building2}
                 />
               </View>
 
-              <Text style={[styles.label, { color: textSecondary }]}>Logo y color de marca</Text>
-              <IconColorPicker
-                isDark={isDark}
-                userId={user?.id ?? ""}
-                color={color}
-                onColorChange={setColor}
-                iconUrl={logoUrl || null}
-                onIconChange={(url) => setLogoUrl(url ?? "")}
-                fallbackIcon={Building2}
-              />
-
-              {errorMsg && <Text style={[styles.errorText, { marginTop: 20 }]}>{errorMsg}</Text>}
+              {errorMsg && <Text style={[styles.errorText, { marginTop: 4, marginBottom: 8 }]}>{errorMsg}</Text>}
 
               <TouchableOpacity
                 activeOpacity={0.85}
@@ -197,20 +206,23 @@ const styles = StyleSheet.create({
   title: { fontSize: 32, fontWeight: "700", letterSpacing: -1, marginBottom: 8 },
   subtitle: { fontSize: 16, lineHeight: 24, marginBottom: 32 },
   card: { borderRadius: 32, borderWidth: 1, padding: 28 },
-  previewRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 24 },
-  previewLogo: { width: 48, height: 48, borderRadius: 16, justifyContent: "center", alignItems: "center" },
-  previewLogoImage: { width: 48, height: 48, resizeMode: "cover" },
-  previewName: { flex: 1, fontSize: 18, fontWeight: "600" },
-  label: { fontSize: 13, fontWeight: "700", marginBottom: 8 },
+  previewCard: { borderRadius: 20, borderWidth: 1, padding: 16, marginBottom: 28 },
+  previewRow: { flexDirection: "row", alignItems: "center", gap: 14 },
+  previewLogo: { width: 56, height: 56, borderRadius: 18, justifyContent: "center", alignItems: "center" },
+  previewLogoImage: { width: 56, height: 56, resizeMode: "cover" },
+  previewLabel: { fontSize: 12, fontWeight: "700", marginBottom: 3, textTransform: "uppercase", letterSpacing: 0.4 },
+  previewName: { fontSize: 18, fontWeight: "600" },
+  section: { marginBottom: 28 },
+  label: { fontSize: 13, fontWeight: "700", marginBottom: 10 },
   inputWrapper: {
-    flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 16, paddingHorizontal: 16, marginBottom: 20,
+    flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 16, paddingHorizontal: 16,
   },
   input: { flex: 1, paddingVertical: 16, fontSize: 15 },
   inputNoOutline: { outlineStyle: "none" } as any,
-  errorText: { color: "#EF4444", fontSize: 13, fontWeight: "600", marginBottom: 14 },
+  errorText: { color: "#EF4444", fontSize: 13, fontWeight: "600" },
   btnPrimary: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 999,
-    paddingVertical: 18, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.35, shadowRadius: 20, elevation: 8,
+    paddingVertical: 18, marginTop: 4, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.35, shadowRadius: 20, elevation: 8,
   },
   btnPrimaryText: { color: "#FFF", fontWeight: "700", fontSize: 16, letterSpacing: 0.3 },
 });

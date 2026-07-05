@@ -1028,3 +1028,27 @@ select cron.schedule(
   );
   $$
 );
+
+-- ----------------------------------------------------------------------------
+-- Permisos base para los roles de PostgREST (anon/authenticated/service_role).
+-- En Supabase Cloud esto ya viene preconfigurado por la plataforma al crear el
+-- proyecto, por eso nunca hizo falta declararlo acá. Un Postgres self-hosted
+-- (ej. el de la Pi, ver docs/SETUP.md) puede NO tener esos defaults aplicados
+-- si schema.sql se corrió antes de que la inicialización de roles terminara,
+-- o con un rol distinto al que fijó los "default privileges" originales — en
+-- ese caso cualquier query devuelve "permission denied for table X" ANTES de
+-- que las policies de RLS lleguen a evaluarse (RLS solo filtra FILAS; el
+-- GRANT a nivel de tabla es un requisito previo e independiente). Este bloque
+-- va al final a propósito: "grant ... on all tables" solo alcanza a las
+-- tablas que YA existen en el momento de ejecutarse, así que tiene que correr
+-- después de haber creado todas las de arriba. El "alter default privileges"
+-- cubre además cualquier tabla que se agregue en una futura edición de este
+-- archivo. Idempotente — correrlo de nuevo no rompe nada.
+-- ----------------------------------------------------------------------------
+grant usage on schema public to anon, authenticated, service_role;
+grant all on all tables in schema public to anon, authenticated, service_role;
+grant all on all sequences in schema public to anon, authenticated, service_role;
+grant all on all routines in schema public to anon, authenticated, service_role;
+alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+alter default privileges in schema public grant all on routines to anon, authenticated, service_role;
