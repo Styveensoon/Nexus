@@ -59,7 +59,7 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <NavigationContainer>
+        <NavigationContainer documentTitle={{ enabled: false }}>
           <StatusBar style="auto" />
           <RootNavigator />
         </NavigationContainer>
