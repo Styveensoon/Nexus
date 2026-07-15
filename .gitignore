@@ -40,3 +40,4 @@ yarn-error.*
 # generated native folders
 /ios
 # /androidgit remote add origin 
+supabase/.env
