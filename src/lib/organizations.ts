@@ -8,8 +8,11 @@ export type Organization = {
   color: string;
   logo_url: string | null;
   invite_code: string;
+  client_invite_code: string;
   owner_id: string;
 };
+
+const ORGANIZATION_COLUMNS = "id, name, color, logo_url, invite_code, client_invite_code, owner_id";
 
 function generateInviteCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // sin caracteres ambiguos
@@ -37,6 +40,12 @@ export async function createOrganization(params: {
         logo_url: logoUrl || null,
         owner_id: ownerId,
         invite_code: generateInviteCode(),
+        // Código de cliente: mismo criterio que invite_code (general, no único
+        // por persona, identifica el ROL con el que alguien se une) pero en su
+        // propia columna — ver docs/CLIENTE.md. Se genera en el mismo intento
+        // que invite_code para que un choque en cualquiera de las dos
+        // columnas dispare el mismo reintento de abajo.
+        client_invite_code: generateInviteCode(),
       })
       .select()
       .single();
@@ -81,7 +90,7 @@ export async function updateOrganization(
 export async function getOrganizationByCode(code: string) {
   const { data, error } = await supabase
     .from("organizations")
-    .select("id, name, color, logo_url, invite_code, owner_id")
+    .select(ORGANIZATION_COLUMNS)
     .eq("invite_code", code.trim().toUpperCase())
     .maybeSingle();
 
@@ -113,7 +122,7 @@ export async function joinOrganization(params: { organizationId: string; userId:
 export async function getUserOrganization(userId: string) {
   const { data, error } = await supabase
     .from("organization_members")
-    .select("organization:organizations(id, name, color, logo_url, invite_code, owner_id)")
+    .select(`organization:organizations(${ORGANIZATION_COLUMNS})`)
     .eq("user_id", userId)
     .limit(1)
     .maybeSingle();

@@ -136,3 +136,10 @@ export async function notifyTaskBlockedToggle(
 export async function notifyBadgeGranted(userId: string, badgeLabel: string, badgeDescription: string, organizationId: string) {
   await sendEmail(await getEmailsForUserIds([userId]), "badge_granted", { badgeLabel, badgeDescription }, organizationId);
 }
+
+// docs/CLIENTE.md §8: notifica a TODOS los encargados actuales de un cliente
+// (persona directa, o todo el equipo asignado — o el owner si todavía nadie
+// fue asignado), no solo a uno.
+export async function notifyClientRequestCreated(userIds: string[], requestTitle: string, clientName: string, organizationId: string) {
+  await sendEmail(await getEmailsForUserIds(userIds), "client_request_created", { requestTitle, clientName }, organizationId);
+}

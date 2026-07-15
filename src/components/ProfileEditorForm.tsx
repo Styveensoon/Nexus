@@ -110,13 +110,7 @@ export default function ProfileEditorForm({ isDark, userId, displayName, submitL
           : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
         backdropFilter: "blur(32px) saturate(200%)",
       } as any,
-      default: {
-        shadowColor: isDark ? "#000" : "#2C7BD1",
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: isDark ? 0.35 : 0.1,
-        shadowRadius: 22,
-        elevation: 6,
-      },
+      default: {},
     }),
     borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
   };
