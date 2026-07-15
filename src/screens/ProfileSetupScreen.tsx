@@ -4,7 +4,7 @@ import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import ProfileEditorForm from "../components/ProfileEditorForm";
 
-export default function ProfileSetupScreen({ navigation }: any) {
+export default function ProfileSetupScreen({ navigation, route }: any) {
   const { isDark } = useTheme();
   const { user } = useAuth();
   const { width } = useWindowDimensions();
@@ -48,7 +48,7 @@ export default function ProfileSetupScreen({ navigation }: any) {
               userId={user.id}
               displayName={displayName}
               submitLabel="Guardar y continuar"
-              onSaved={() => navigation.replace("Main")}
+              onSaved={() => navigation.replace(route?.params?.afterRoute ?? "Main")}
             />
           </View>
         </ScrollView>

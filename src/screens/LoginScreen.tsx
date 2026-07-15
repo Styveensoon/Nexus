@@ -21,7 +21,7 @@ import {
 } from "lucide-react-native";
 import { useTheme } from "../context/ThemeContext";
 import { supabase } from "../lib/supabase";
-import { getUserOrganization } from "../lib/organizations";
+import { listMySpaces } from "../lib/spaces";
 
 export default function LoginScreen({ navigation }: any) {
   const { isDark } = useTheme();
@@ -57,10 +57,14 @@ export default function LoginScreen({ navigation }: any) {
       return;
     }
 
-    const { data: organization } = await getUserOrganization(data.user.id);
+    // listMySpaces cubre tanto membresías de organización como espacios de
+    // cliente (docs/CLIENTE.md §2) — antes solo se chequeaba
+    // getUserOrganization, así que una cuenta que solo era cliente caía
+    // siempre en el fallback de "no pertenece a ninguna organización".
+    const { data: spaces } = await listMySpaces(data.user.id);
     setLoading(false);
 
-    if (!organization) {
+    if (spaces.length === 0) {
       // Retoma el onboarding si quedó pendiente (p. ej. no confirmó el correo a tiempo)
       const meta = data.user.user_metadata as Record<string, any>;
       if (meta?.pending_account_type === "create") {
@@ -69,6 +73,10 @@ export default function LoginScreen({ navigation }: any) {
       }
       if (meta?.pending_account_type === "join" && meta.pending_invite_code) {
         navigation.replace("JoinWorkspace", { code: meta.pending_invite_code });
+        return;
+      }
+      if (meta?.pending_account_type === "client" && meta.pending_client_code) {
+        navigation.replace("ClientJoin", { code: meta.pending_client_code });
         return;
       }
 
@@ -98,13 +106,7 @@ export default function LoginScreen({ navigation }: any) {
           : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
         backdropFilter: "blur(32px) saturate(200%)",
       } as any,
-      default: {
-        shadowColor: isDark ? "#000" : "#2C7BD1",
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: isDark ? 0.35 : 0.1,
-        shadowRadius: 22,
-        elevation: 6,
-      },
+      default: {},
     }),
     borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
   };

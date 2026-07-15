@@ -97,7 +97,8 @@ export type EmailTemplateKey =
   | "task_collaborator_added"
   | "task_due_soon"
   | "task_blocked_toggle"
-  | "badge_granted";
+  | "badge_granted"
+  | "client_request_created";
 
 export function buildEmailTemplate(key: EmailTemplateKey, v: Record<string, string>): { subject: string; html: string } {
   // Wrapper que propaga v.orgLogoUrl a cada caso sin tener que repetirlo en
@@ -217,6 +218,15 @@ export function buildEmailTemplate(key: EmailTemplateKey, v: Record<string, stri
           title: `¡Ganaste un nuevo badge! 🏅`,
           bodyHtml: `<strong>${v.badgeLabel}</strong> — ${v.badgeDescription}. ¡Sigue así!`,
           buttonText: "Ver mis badges",
+        }),
+      };
+    case "client_request_created":
+      return {
+        subject: `Nueva solicitud de ${v.clientName}`,
+        html: layout({
+          title: `Nueva solicitud de tu cliente`,
+          bodyHtml: `<strong>${v.clientName}</strong> pidió: <strong>${v.requestTitle}</strong>. Respondan a la brevedad.`,
+          buttonText: "Ver solicitud",
         }),
       };
     default:

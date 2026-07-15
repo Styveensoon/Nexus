@@ -16,8 +16,10 @@ import {
   Activity,
   BadgeCheck,
   Building2,
+  CheckCircle2,
   ChevronRight,
   Copy,
+  Crown,
   Folder,
   LogOut,
   Search,
@@ -29,10 +31,21 @@ import {
 
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
-import { countTeams } from "../lib/teams";
+import { listTeams, Team } from "../lib/teams";
 import { listProjects, Project, STATUS_COLORS, STATUS_LABELS } from "../lib/projects";
 import { countOrgBadges } from "../lib/badges";
+import { countOrgClients } from "../lib/clients";
 import { listActivity, ActivityEntry } from "../lib/activity";
+import {
+  listTasksForUser,
+  Task,
+  TASK_STATUS_COLORS,
+  TASK_STATUS_LABELS,
+  isOverdue,
+  isDueSoon,
+  formatShortDate,
+  DUE_SOON_COLOR,
+} from "../lib/tasks";
 import ActivityRow from "../components/ActivityRow";
 import ActivityDetailModal from "../components/ActivityDetailModal";
 
@@ -80,24 +93,55 @@ export default function DashboardScreen({ navigation }: any) {
   const [copied, setCopied] = useState(false);
   // Se elige una vez por montaje: cambia cada sesión / cada refresh, se mantiene estable mientras se navega dentro de la app.
   const [phraseIndex] = useState(() => Math.floor(Math.random() * WELCOME_PHRASES.length));
-  const [teamCount, setTeamCount] = useState<number | null>(null);
+  const [teams, setTeams] = useState<Team[] | null>(null);
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [badgeCount, setBadgeCount] = useState<number | null>(null);
+  const [clientCount, setClientCount] = useState<number | null>(null);
   const [recentActivity, setRecentActivity] = useState<ActivityEntry[]>([]);
   const [detailEntry, setDetailEntry] = useState<ActivityEntry | null>(null);
+  const [myTasks, setMyTasks] = useState<Task[] | null>(null);
 
   // useFocusEffect (no useEffect) para que los conteos se refresquen cada vez
   // que se vuelve a esta pestaña (p. ej. después de crear un proyecto en otra
   // pestaña) — con useEffect solo se cargaban una vez al montar el tab.
   useFocusEffect(
     useCallback(() => {
-      if (!organization) return;
-      countTeams(organization.id).then(({ count }) => setTeamCount(count));
+      if (!organization || !user) return;
+      listTeams(organization.id).then(({ data }) => setTeams(data));
       listProjects(organization.id).then(({ data }) => setProjects(data));
       countOrgBadges(organization.id).then(({ count }) => setBadgeCount(count));
+      countOrgClients(organization.id).then(({ count }) => setClientCount(count));
       listActivity({ organizationId: organization.id, limit: 5 }).then(({ data }) => setRecentActivity(data));
-    }, [organization])
+      listTasksForUser(organization.id, user.id).then(({ data }) => setMyTasks(data));
+    }, [organization, user])
   );
+
+  const teamCount = teams?.length ?? null;
+  const isOwner = organization?.owner_id === user?.id;
+  // "A cargo" = lidera al menos un equipo o un proyecto sin ser el owner de la
+  // organización (el owner ya ve todo, no necesita este chip extra). Mapea a
+  // los mismos leader_id que ya usan TasksScreen/BadgesScreen para permisos
+  // reales — esto es solo presentación, no agrega ningún permiso nuevo.
+  const ledTeams = !isOwner ? (teams ?? []).filter((t) => t.leaderId === user?.id) : [];
+  const ledProjects = !isOwner ? (projects ?? []).filter((p) => p.leaderId === user?.id) : [];
+  const isLeader = ledTeams.length > 0 || ledProjects.length > 0;
+
+  // Tareas propias pendientes: asignadas a mí, a un equipo del que soy
+  // integrante, o donde soy colaborador (listTasksForUser ya resuelve las 3
+  // vías). Se excluyen los estados terminales y se ordena vencidas primero,
+  // luego por vencer, luego el resto por fecha (sin fecha al final).
+  const pendingMyTasks = (myTasks ?? [])
+    .filter((t) => t.status !== "completed" && t.status !== "cancelled")
+    .sort((a, b) => {
+      const rank = (t: Task) => (isOverdue(t) ? 0 : isDueSoon(t) ? 1 : 2);
+      const rankDiff = rank(a) - rank(b);
+      if (rankDiff !== 0) return rankDiff;
+      if (!a.dueDate && !b.dueDate) return 0;
+      if (!a.dueDate) return 1;
+      if (!b.dueDate) return -1;
+      return a.dueDate < b.dueDate ? -1 : 1;
+    })
+    .slice(0, 5);
 
   const bg            = isDark ? "#0B1220" : "#F1F5FA";
   const cardBg        = isDark ? "rgba(17, 24, 39, 0.58)" : "rgba(255, 255, 255, 0.6)";
@@ -116,13 +160,7 @@ export default function DashboardScreen({ navigation }: any) {
           : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
         backdropFilter: "blur(32px) saturate(200%)",
       } as any,
-      default: {
-        shadowColor: isDark ? "#000" : "#2C7BD1",
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: isDark ? 0.35 : 0.1,
-        shadowRadius: 22,
-        elevation: 6,
-      },
+      default: {},
     }),
     borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
   };
@@ -188,7 +226,15 @@ export default function DashboardScreen({ navigation }: any) {
                   {organization && (
                     <View style={[styles.rolePill, { backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(44,123,209,0.08)" }]}>
                       <Text style={[styles.rolePillText, { color: isDark ? textSecondary : AZURE_DEEP }]}>
-                        {organization.owner_id === user?.id ? "OWNER" : "MIEMBRO"}
+                        {isOwner ? "OWNER" : "MIEMBRO"}
+                      </Text>
+                    </View>
+                  )}
+                  {isLeader && (
+                    <View style={[styles.leaderPill, { backgroundColor: isDark ? "rgba(126,200,245,0.14)" : "rgba(44,123,209,0.1)" }]}>
+                      <Crown size={11} color={AZURE_DEEP} strokeWidth={2.4} />
+                      <Text style={[styles.rolePillText, { color: AZURE_DEEP }]}>
+                        {ledTeams.length + ledProjects.length === 1 ? "A CARGO DE 1" : `A CARGO DE ${ledTeams.length + ledProjects.length}`}
                       </Text>
                     </View>
                   )}
@@ -232,7 +278,7 @@ export default function DashboardScreen({ navigation }: any) {
               <View style={[styles.heroCard, { backgroundColor: organization.color, overflow: "hidden" }]}>
                 <View style={styles.heroTopRow}>
                   <Text style={styles.heroLabel}>TU WORKSPACE</Text>
-                  {organization.owner_id === user?.id && (
+                  {isOwner && (
                     <TouchableOpacity
                       activeOpacity={0.85}
                       style={styles.heroSettingsBtn}
@@ -254,7 +300,7 @@ export default function DashboardScreen({ navigation }: any) {
               </View>
 
               {/* EL SEMILLERO (solo el owner puede usarlo) */}
-              {organization.owner_id === user?.id && (
+              {isOwner && (
                 <TouchableOpacity
                   activeOpacity={0.85}
                   style={[styles.semilleroCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}
@@ -311,14 +357,138 @@ export default function DashboardScreen({ navigation }: any) {
                   </Text>
                 </TouchableOpacity>
 
-                <View style={[styles.tile, { backgroundColor: inputBg, borderColor: border, width: isMobile ? "100%" : "32%" }, ultraShadow]}>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[styles.tile, { backgroundColor: inputBg, borderColor: border, width: isMobile ? "100%" : "32%" }, ultraShadow]}
+                  onPress={() => navigation.navigate("Clients")}
+                >
                   <View style={[styles.tileIcon, { backgroundColor: isDark ? "rgba(126,200,245,0.14)" : "rgba(44,123,209,0.08)" }]}>
                     <UserCheck size={18} color={primaryColor} strokeWidth={2.3} />
                   </View>
                   <Text style={[styles.tileTitle, { color: textPrimary }]}>Clientes</Text>
-                  <Text style={[styles.tileStatus, { color: textSecondary }]}>Aún no tienes clientes agregados</Text>
-                </View>
+                  <Text style={[styles.tileStatus, { color: textSecondary }]}>
+                    {clientCount === null
+                      ? "Cargando…"
+                      : clientCount === 0
+                      ? "Aún no tienes clientes agregados"
+                      : `${clientCount} ${clientCount === 1 ? "cliente" : "clientes"}`}
+                  </Text>
+                </TouchableOpacity>
               </View>
+
+              {/* LO QUE LIDERAS — solo si sos encargado de algún equipo o líder de
+                  algún proyecto sin ser el owner (el owner ya ve todo desde
+                  arriba, este bloque es específicamente para dar contexto de
+                  liderazgo a un miembro normal). */}
+              {isLeader && (
+                <>
+                  <Text style={[styles.sectionTitle, { color: textPrimary }]}>Lo que lideras</Text>
+                  <View style={styles.projectsMiniGrid}>
+                    {ledTeams.map((team) => (
+                      <TouchableOpacity
+                        key={`team-${team.id}`}
+                        activeOpacity={0.85}
+                        style={[styles.projectMiniCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}
+                        onPress={() => navigation.navigate("Team")}
+                      >
+                        <View style={[styles.projectMiniIcon, { backgroundColor: team.color + "20" }]}>
+                          {team.iconUrl ? (
+                            <Image source={{ uri: team.iconUrl }} style={styles.projectMiniIconImage} />
+                          ) : (
+                            <Users size={16} color={team.color} strokeWidth={2.2} />
+                          )}
+                        </View>
+                        <Text style={[styles.projectMiniTitle, { color: textPrimary }]} numberOfLines={1}>
+                          {team.name}
+                        </Text>
+                        <View style={[styles.projectMiniStatus, { backgroundColor: AZURE_DEEP + "20" }]}>
+                          <Text style={{ color: AZURE_DEEP, fontWeight: "700", fontSize: 10 }}>Encargado/a</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                    {ledProjects.map((project) => (
+                      <TouchableOpacity
+                        key={`project-${project.id}`}
+                        activeOpacity={0.85}
+                        style={[styles.projectMiniCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}
+                        onPress={() => navigation.navigate("Projects")}
+                      >
+                        <View style={[styles.projectMiniIcon, { backgroundColor: project.color + "20" }]}>
+                          {project.iconUrl ? (
+                            <Image source={{ uri: project.iconUrl }} style={styles.projectMiniIconImage} />
+                          ) : (
+                            <Folder size={16} color={project.color} strokeWidth={2.2} />
+                          )}
+                        </View>
+                        <Text style={[styles.projectMiniTitle, { color: textPrimary }]} numberOfLines={1}>
+                          {project.name}
+                        </Text>
+                        <View style={[styles.projectMiniStatus, { backgroundColor: AZURE_DEEP + "20" }]}>
+                          <Text style={{ color: AZURE_DEEP, fontWeight: "700", fontSize: 10 }}>Líder</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {/* MIS TAREAS PENDIENTES — asignadas a mí, a un equipo mío, o donde
+                  soy colaborador (ver listTasksForUser en lib/tasks.ts).
+                  Visible para cualquiera, incluido el owner si tiene tareas
+                  propias — no es una vista exclusiva de "miembro normal". */}
+              <Text style={[styles.sectionTitle, { color: textPrimary }]}>Mis tareas pendientes</Text>
+              {myTasks === null ? (
+                <View style={[styles.emptyCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}>
+                  <Text style={[styles.emptyTitle, { color: textPrimary }]}>Cargando…</Text>
+                </View>
+              ) : pendingMyTasks.length === 0 ? (
+                <View style={[styles.emptyCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}>
+                  <CheckCircle2 size={30} color={textSecondary} strokeWidth={2} />
+                  <Text style={[styles.emptyTitle, { color: textPrimary }]}>No tienes tareas pendientes</Text>
+                  <Text style={[styles.emptySubtitle, { color: textSecondary }]}>
+                    Cuando te asignen una tarea, o a un equipo tuyo, aparecerá aquí.
+                  </Text>
+                </View>
+              ) : (
+                <View style={[styles.activityCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}>
+                  <View style={{ gap: 10 }}>
+                    {pendingMyTasks.map((task, index) => {
+                      const overdue = isOverdue(task);
+                      const dueSoon = isDueSoon(task);
+                      const dueColor = overdue ? "#EF4444" : dueSoon ? DUE_SOON_COLOR : textSecondary;
+                      const isLast = index === pendingMyTasks.length - 1;
+                      return (
+                        <TouchableOpacity
+                          key={task.id}
+                          activeOpacity={0.8}
+                          style={[styles.taskRow, { borderColor: isLast ? "transparent" : border }]}
+                          onPress={() => navigation.navigate("Tasks")}
+                        >
+                          <View style={[styles.taskStatusDot, { backgroundColor: TASK_STATUS_COLORS[task.status] }]} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.taskRowTitle, { color: textPrimary }]} numberOfLines={1}>
+                              {task.title}
+                            </Text>
+                            <Text style={[styles.taskRowMeta, { color: textSecondary }]} numberOfLines={1}>
+                              {TASK_STATUS_LABELS[task.status]}
+                              {task.assignee.type === "team" ? ` · ${task.assignee.name}` : ""}
+                            </Text>
+                          </View>
+                          {task.dueDate && (
+                            <Text style={[styles.taskRowDue, { color: dueColor }]}>
+                              {overdue ? "Venció " : ""}
+                              {formatShortDate(task.dueDate)}
+                            </Text>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("Tasks")}>
+                    <Text style={[styles.emptyLink, { color: primaryColor, marginTop: 14 }]}>Ver todas mis tareas</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               {/* PROYECTOS + ACTIVIDAD */}
               <View style={[styles.sectionsRow, { flexDirection: isMobile ? "column" : "row" }]}>
@@ -339,7 +509,7 @@ export default function DashboardScreen({ navigation }: any) {
                           <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("Projects")}>
                             <Text style={[styles.emptyLink, { color: primaryColor }]}>Ver proyectos</Text>
                           </TouchableOpacity>
-                          {projects.length === 0 && organization.owner_id === user?.id && (
+                          {projects.length === 0 && isOwner && (
                             <TouchableOpacity activeOpacity={0.7} onPress={() => navigation.navigate("Semillero")}>
                               <Text style={[styles.emptyLink, { color: primaryColor }]}>¿Tienes alguna idea? Concrétala.</Text>
                             </TouchableOpacity>
@@ -451,6 +621,7 @@ const styles = StyleSheet.create({
   orgNameChip: { fontSize: 13, fontWeight: "600", maxWidth: 220 },
   rolePill: { borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3 },
   rolePillText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
+  leaderPill: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3 },
   iconBtn: { width: 42, height: 42, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center" },
 
   sheet: { borderRadius: 36, borderWidth: 1, padding: 28, marginTop: 28 },
@@ -503,6 +674,11 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 18, fontWeight: "600", marginTop: 28, marginBottom: 12, letterSpacing: -0.2 },
   emptyCard: { borderRadius: 24, borderWidth: 1, padding: 28, alignItems: "center", gap: 8 },
   activityCard: { borderRadius: 24, borderWidth: 1, padding: 18 },
+  taskRow: { flexDirection: "row", alignItems: "center", gap: 10, borderBottomWidth: 1, paddingBottom: 10 },
+  taskStatusDot: { width: 8, height: 8, borderRadius: 4 },
+  taskRowTitle: { fontSize: 13.5, fontWeight: "600" },
+  taskRowMeta: { fontSize: 11.5, marginTop: 2 },
+  taskRowDue: { fontSize: 11.5, fontWeight: "700" },
   emptyTitle: { fontSize: 15, fontWeight: "600", textAlign: "center" },
   emptySubtitle: { fontSize: 13, textAlign: "center", lineHeight: 20 },
   emptyLink: { fontSize: 13, fontWeight: "700", textAlign: "center", marginTop: 2 },
