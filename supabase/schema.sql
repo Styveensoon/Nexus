@@ -981,10 +981,10 @@ create policy "activity_log_insert_self" on activity_log
 -- se dispara desde src/lib/*.ts justo después de una mutación exitosa (mismo
 -- patrón que logActivity), vía la Edge Function `send-email`. Este bloque solo
 -- cubre lo que SÍ necesita algo en la base de datos: la columna de dedup para
--- el recordatorio de vencimiento (5.4) y el cron que lo dispara. No se
--- construyó nada para la sección 6 (Módulo de Clientes) porque ese módulo
--- todavía no existe (ver docs/CLIENTE.md) — queda pendiente para cuando se
--- construya.
+-- el recordatorio de vencimiento (5.4) y el cron que lo dispara. Los correos
+-- de la sección 6 (Módulo de Clientes) se agregan más abajo, junto con el
+-- resto de las tablas de ese módulo (ver "Módulo de Clientes" al final de
+-- este archivo).
 -- ----------------------------------------------------------------------------
 
 -- Evita reenviar el mismo aviso de "vence pronto" (5.4) más de una vez. Se
@@ -1028,6 +1028,524 @@ select cron.schedule(
   );
   $$
 );
+
+-- ============================================================================
+-- Módulo de Clientes (docs/CLIENTE.md) — portal aislado por cliente.
+--
+-- DECISIÓN DE AISLAMIENTO (la más importante de este bloque): los clientes
+-- viven en tablas completamente separadas de organization_members. Esa tabla
+-- alimenta my_organization_ids(), que a su vez alimenta políticas RLS muy
+-- amplias ("cualquier miembro ve X") en proyectos/equipos/tasks/activity_log/
+-- perfiles — si un cliente entrara ahí, aunque fuera con un role nuevo,
+-- ganaría esa visibilidad amplia salvo que se audite y toque cada una de esas
+-- policies, con alto riesgo de fuga de datos internos a alguien externo.
+-- En vez de eso: tablas nuevas (prefijo client_/organization_clients), RLS
+-- propio y angosto desde cero, con dos funciones security definer
+-- (client_space_is_staff/client_space_can_access) reusadas en cada tabla del
+-- módulo, mismo patrón que task_is_involved() más arriba.
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- organizations.client_invite_code: código de cliente, mismo criterio que
+-- invite_code (general, identifica el ROL con el que alguien se une, no a una
+-- persona puntual) pero en columna separada — dos códigos independientes.
+-- ----------------------------------------------------------------------------
+alter table organizations add column if not exists client_invite_code text;
+
+alter table organizations drop constraint if exists organizations_client_invite_code_key;
+alter table organizations add constraint organizations_client_invite_code_key unique (client_invite_code);
+
+-- Backfill para organizaciones ya existentes — mismo alfabeto sin caracteres
+-- ambiguos que generateInviteCode() (src/lib/organizations.ts), con su propio
+-- loop de reintento ante colisión (23505/unique_violation) porque acá no hay
+-- un cliente JS reintentando, es un solo UPDATE por fila.
+do $$
+declare
+  chars text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  org_row record;
+  new_code text;
+  ok boolean;
+  i int;
+begin
+  for org_row in select id from organizations where client_invite_code is null loop
+    ok := false;
+    while not ok loop
+      new_code := '';
+      for i in 1..7 loop
+        new_code := new_code || substr(chars, floor(random() * length(chars))::int + 1, 1);
+      end loop;
+      begin
+        update organizations set client_invite_code = new_code where id = org_row.id;
+        ok := true;
+      exception when unique_violation then
+        ok := false; -- colisión, reintenta con otro código
+      end;
+    end loop;
+  end loop;
+end $$;
+
+alter table organizations alter column client_invite_code set not null;
+
+-- organizations_select_authenticated (ya existe, using(true)) ya alcanza para
+-- buscar por client_invite_code antes de unirse — no hace falta tocarla.
+
+-- ----------------------------------------------------------------------------
+-- organization_clients: relación usuario <-> organización COMO CLIENTE.
+-- Deliberadamente separada de organization_members — nunca debe alimentar
+-- my_organization_ids() ni ninguna policy "cualquier miembro de la
+-- organización". data_consent es el checkbox de privacidad/analítica del
+-- registro (CLIENTE.md §1).
+-- ----------------------------------------------------------------------------
+create table if not exists organization_clients (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  data_consent boolean not null default false,
+  data_consent_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (organization_id, user_id)
+);
+
+alter table organization_clients enable row level security;
+
+drop policy if exists "organization_clients_select_own" on organization_clients;
+create policy "organization_clients_select_own" on organization_clients
+  for select to authenticated using (auth.uid() = user_id);
+
+drop policy if exists "organization_clients_select_owner" on organization_clients;
+create policy "organization_clients_select_owner" on organization_clients
+  for select to authenticated
+  using (exists (select 1 from organizations o where o.id = organization_id and o.owner_id = auth.uid()));
+
+drop policy if exists "organization_clients_insert_own" on organization_clients;
+create policy "organization_clients_insert_own" on organization_clients
+  for insert to authenticated with check (auth.uid() = user_id);
+
+-- ----------------------------------------------------------------------------
+-- client_assignments: quién (persona XOR equipo, mismo patrón que
+-- tasks_assignee_xor más arriba) atiende a cada cliente. APPEND-ONLY: una
+-- reasignación nunca reescribe assigned_user_id/assigned_team_id de una fila
+-- existente — inserta una fila nueva y marca unassigned_at en la anterior,
+-- preservando el historial completo ligado al cliente (CLIENTE.md §4: "si el
+-- equipo/persona asignada cambia, el historial completo permanece intacto").
+-- ----------------------------------------------------------------------------
+create table if not exists client_assignments (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  client_user_id uuid not null references auth.users(id) on delete cascade,
+  assigned_user_id uuid references auth.users(id) on delete set null,
+  assigned_team_id uuid references teams(id) on delete set null,
+  assigned_by uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unassigned_at timestamptz,
+  constraint client_assignments_assignee_xor check (
+    (assigned_user_id is not null and assigned_team_id is null)
+    or (assigned_user_id is null and assigned_team_id is not null)
+  )
+);
+
+alter table client_assignments enable row level security;
+
+drop policy if exists "client_assignments_select_involved" on client_assignments;
+create policy "client_assignments_select_involved" on client_assignments
+  for select to authenticated
+  using (
+    auth.uid() = client_user_id
+    or exists (select 1 from organizations o where o.id = organization_id and o.owner_id = auth.uid())
+    or assigned_user_id = auth.uid()
+    or (assigned_team_id is not null and exists (select 1 from team_members tm where tm.team_id = assigned_team_id and tm.user_id = auth.uid()))
+  );
+
+drop policy if exists "client_assignments_insert_owner" on client_assignments;
+create policy "client_assignments_insert_owner" on client_assignments
+  for insert to authenticated
+  with check (
+    auth.uid() = assigned_by
+    and exists (select 1 from organizations o where o.id = organization_id and o.owner_id = auth.uid())
+    and exists (select 1 from organization_clients oc where oc.organization_id = organization_id and oc.user_id = client_user_id)
+  );
+
+-- update SOLO se usa para cerrar una asignación (unassigned_at = now()) al
+-- reasignar — nunca para cambiar a quién apunta assigned_user_id/assigned_team_id.
+drop policy if exists "client_assignments_update_owner" on client_assignments;
+create policy "client_assignments_update_owner" on client_assignments
+  for update to authenticated
+  using (exists (select 1 from organizations o where o.id = organization_id and o.owner_id = auth.uid()))
+  with check (exists (select 1 from organizations o where o.id = organization_id and o.owner_id = auth.uid()));
+
+-- ----------------------------------------------------------------------------
+-- Helpers de acceso al espacio de un cliente — mismo patrón que
+-- task_is_involved(): security definer, reusados en cada tabla del módulo en
+-- vez de repetir "soy staff de este cliente" en cada policy.
+-- ----------------------------------------------------------------------------
+create or replace function client_space_is_staff(target_org_id uuid, target_client_user_id uuid)
+returns boolean
+language sql security definer stable
+as $$
+  select
+    exists (select 1 from organizations o where o.id = target_org_id and o.owner_id = auth.uid())
+    or exists (
+      select 1 from client_assignments ca
+      where ca.organization_id = target_org_id and ca.client_user_id = target_client_user_id
+        and ca.unassigned_at is null and ca.assigned_user_id = auth.uid()
+    )
+    or exists (
+      select 1 from client_assignments ca
+      join team_members tm on tm.team_id = ca.assigned_team_id
+      where ca.organization_id = target_org_id and ca.client_user_id = target_client_user_id
+        and ca.unassigned_at is null and tm.user_id = auth.uid()
+    )
+$$;
+
+create or replace function client_space_can_access(target_org_id uuid, target_client_user_id uuid)
+returns boolean
+language sql security definer stable
+as $$
+  select auth.uid() = target_client_user_id or client_space_is_staff(target_org_id, target_client_user_id)
+$$;
+
+-- Ahora sí puede existir (necesitaba client_space_is_staff ya creada).
+drop policy if exists "organization_clients_select_staff" on organization_clients;
+create policy "organization_clients_select_staff" on organization_clients
+  for select to authenticated
+  using (client_space_is_staff(organization_id, user_id));
+
+-- ----------------------------------------------------------------------------
+-- Visibilidad de perfiles dentro del espacio de un cliente. Sin esto, ni el
+-- staff ve nombre/avatar del cliente en el chat, ni el cliente ve
+-- nombre/avatar de su equipo asignado — profiles_select_org_members no aplica
+-- (el cliente nunca está en organization_members).
+-- ----------------------------------------------------------------------------
+drop policy if exists "profiles_select_client_space" on profiles;
+create policy "profiles_select_client_space" on profiles
+  for select to authenticated
+  using (
+    exists ( -- soy staff de un cliente y esta fila ES ese cliente
+      select 1 from organization_clients oc
+      where oc.user_id = profiles.id and client_space_is_staff(oc.organization_id, oc.user_id)
+    )
+    or exists ( -- soy el cliente y esta fila es la persona asignada a mi espacio
+      select 1 from client_assignments ca
+      where ca.client_user_id = auth.uid() and ca.unassigned_at is null and ca.assigned_user_id = profiles.id
+    )
+    or exists ( -- soy el cliente y esta fila es integrante del equipo asignado a mi espacio
+      select 1 from client_assignments ca
+      join team_members tm on tm.team_id = ca.assigned_team_id
+      where ca.client_user_id = auth.uid() and ca.unassigned_at is null and tm.user_id = profiles.id
+    )
+  );
+
+-- ----------------------------------------------------------------------------
+-- client_messages / client_message_reactions: chat persistente entre el
+-- cliente y su equipo asignado (CLIENTE.md §5). Tabla PARALELA a
+-- task_comments/task_comment_reactions (mismas columnas, mismo espíritu) en
+-- vez de reusarla — evita acoplar dos dominios de RLS independientes.
+-- ----------------------------------------------------------------------------
+create table if not exists client_messages (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  client_user_id uuid not null references auth.users(id) on delete cascade,
+  sender_id uuid not null references auth.users(id) on delete cascade,
+  content text not null,
+  reply_to_id uuid references client_messages(id) on delete set null,
+  attachment_url text,
+  attachment_type text check (attachment_type in ('image', 'file', 'link', 'date')),
+  attachment_name text,
+  created_at timestamptz not null default now()
+);
+
+alter table client_messages enable row level security;
+
+drop policy if exists "client_messages_select_access" on client_messages;
+create policy "client_messages_select_access" on client_messages
+  for select to authenticated using (client_space_can_access(organization_id, client_user_id));
+
+drop policy if exists "client_messages_insert_access" on client_messages;
+create policy "client_messages_insert_access" on client_messages
+  for insert to authenticated
+  with check (auth.uid() = sender_id and client_space_can_access(organization_id, client_user_id));
+
+drop policy if exists "client_messages_delete_own" on client_messages;
+create policy "client_messages_delete_own" on client_messages
+  for delete to authenticated using (auth.uid() = sender_id);
+
+create table if not exists client_message_reactions (
+  id uuid primary key default gen_random_uuid(),
+  message_id uuid not null references client_messages(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  reaction text not null check (reaction in ('like', 'heart', 'dislike', 'question')),
+  created_at timestamptz not null default now(),
+  unique (message_id, user_id)
+);
+
+alter table client_message_reactions enable row level security;
+
+drop policy if exists "client_message_reactions_select_access" on client_message_reactions;
+create policy "client_message_reactions_select_access" on client_message_reactions
+  for select to authenticated
+  using (exists (select 1 from client_messages cm where cm.id = message_id and client_space_can_access(cm.organization_id, cm.client_user_id)));
+
+drop policy if exists "client_message_reactions_insert_own" on client_message_reactions;
+create policy "client_message_reactions_insert_own" on client_message_reactions
+  for insert to authenticated
+  with check (auth.uid() = user_id and exists (select 1 from client_messages cm where cm.id = message_id and client_space_can_access(cm.organization_id, cm.client_user_id)));
+
+drop policy if exists "client_message_reactions_update_own" on client_message_reactions;
+create policy "client_message_reactions_update_own" on client_message_reactions
+  for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "client_message_reactions_delete_own" on client_message_reactions;
+create policy "client_message_reactions_delete_own" on client_message_reactions
+  for delete to authenticated using (auth.uid() = user_id);
+
+-- ----------------------------------------------------------------------------
+-- client_requests: el cliente pide algo (documento, presentación, reporte
+-- custom) y se notifica a todo el equipo asignado (CLIENTE.md §8).
+-- ----------------------------------------------------------------------------
+create table if not exists client_requests (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  client_user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null,
+  description text,
+  status text not null default 'open' check (status in ('open', 'in_progress', 'done', 'cancelled')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table client_requests enable row level security;
+
+drop policy if exists "client_requests_select_access" on client_requests;
+create policy "client_requests_select_access" on client_requests
+  for select to authenticated using (client_space_can_access(organization_id, client_user_id));
+
+drop policy if exists "client_requests_insert_client" on client_requests;
+create policy "client_requests_insert_client" on client_requests
+  for insert to authenticated
+  with check (
+    auth.uid() = client_user_id
+    and exists (select 1 from organization_clients oc where oc.organization_id = organization_id and oc.user_id = client_user_id)
+  );
+
+drop policy if exists "client_requests_update_staff" on client_requests;
+create policy "client_requests_update_staff" on client_requests
+  for update to authenticated
+  using (client_space_is_staff(organization_id, client_user_id))
+  with check (client_space_is_staff(organization_id, client_user_id));
+
+-- El cliente puede cancelar su propia solicitud mientras siga abierta. Las
+-- policies permisivas de Postgres se combinan con OR entre sí (tanto en
+-- USING como en WITH CHECK) dentro del mismo comando, así que esto convive
+-- sin conflicto con client_requests_update_staff de arriba.
+drop policy if exists "client_requests_update_client_cancel" on client_requests;
+create policy "client_requests_update_client_cancel" on client_requests
+  for update to authenticated
+  using (auth.uid() = client_user_id and status = 'open')
+  with check (auth.uid() = client_user_id and status = 'cancelled');
+
+-- ----------------------------------------------------------------------------
+-- client_deliverables: entregables que el staff sube para que el cliente
+-- apruebe/rechace (CLIENTE.md §9). Enforcement a nivel de columna, mismo
+-- patrón que enforce_task_update_permissions: el cliente SOLO puede tocar
+-- status/decided_by/decided_at (y solo pending->approved|rejected); el staff
+-- SOLO puede editar contenido mientras sigue pending, nunca la decisión del
+-- cliente ni reabrir un entregable ya decidido.
+-- ----------------------------------------------------------------------------
+create table if not exists client_deliverables (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  client_user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null,
+  content text,
+  attachment_url text,
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  created_by uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  decided_by uuid references auth.users(id) on delete set null,
+  decided_at timestamptz
+);
+
+alter table client_deliverables enable row level security;
+
+drop policy if exists "client_deliverables_select_access" on client_deliverables;
+create policy "client_deliverables_select_access" on client_deliverables
+  for select to authenticated using (client_space_can_access(organization_id, client_user_id));
+
+drop policy if exists "client_deliverables_insert_staff" on client_deliverables;
+create policy "client_deliverables_insert_staff" on client_deliverables
+  for insert to authenticated
+  with check (auth.uid() = created_by and client_space_is_staff(organization_id, client_user_id));
+
+drop policy if exists "client_deliverables_update_staff" on client_deliverables;
+create policy "client_deliverables_update_staff" on client_deliverables
+  for update to authenticated
+  using (client_space_is_staff(organization_id, client_user_id))
+  with check (client_space_is_staff(organization_id, client_user_id));
+
+drop policy if exists "client_deliverables_update_client_decide" on client_deliverables;
+create policy "client_deliverables_update_client_decide" on client_deliverables
+  for update to authenticated
+  using (auth.uid() = client_user_id and status = 'pending')
+  with check (auth.uid() = client_user_id and status in ('approved', 'rejected'));
+
+create or replace function enforce_client_deliverable_update()
+returns trigger
+language plpgsql
+security definer
+as $$
+declare
+  is_staff boolean;
+begin
+  select client_space_is_staff(new.organization_id, new.client_user_id) into is_staff;
+
+  if auth.uid() = old.client_user_id then
+    if old.status <> 'pending' or new.status not in ('approved', 'rejected') then
+      raise exception 'Solo puedes decidir sobre un entregable pendiente';
+    end if;
+    if new.title <> old.title or new.content is distinct from old.content or new.attachment_url is distinct from old.attachment_url then
+      raise exception 'No puedes editar el contenido del entregable';
+    end if;
+    if new.decided_by is distinct from auth.uid() or new.decided_at is null then
+      raise exception 'decided_by/decided_at deben registrar tu decisión';
+    end if;
+    return new;
+  end if;
+
+  if is_staff then
+    if old.status <> 'pending' then
+      raise exception 'No se puede editar un entregable después de la decisión del cliente';
+    end if;
+    if new.status <> old.status or new.decided_by is distinct from old.decided_by or new.decided_at is distinct from old.decided_at then
+      raise exception 'El equipo no puede cambiar el estado de decisión';
+    end if;
+    return new;
+  end if;
+
+  raise exception 'No autorizado para editar este entregable';
+end;
+$$;
+
+drop trigger if exists client_deliverables_enforce_update on client_deliverables;
+create trigger client_deliverables_enforce_update
+  before update on client_deliverables
+  for each row execute function enforce_client_deliverable_update();
+
+-- ----------------------------------------------------------------------------
+-- client_home_sections: el equipo arma el home del cliente a la medida
+-- (CLIENTE.md §6). generated_content = null es un estado honesto de "aún no
+-- generado" (filosofía anti-fake, docs/PATRONES.md), no un placeholder falso.
+-- La regeneración es SIEMPRE manual (botón "Actualizar" del equipo) — nunca
+-- se dispara sola al abrir el home del cliente.
+-- ----------------------------------------------------------------------------
+create table if not exists client_home_sections (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  client_user_id uuid not null references auth.users(id) on delete cascade,
+  type text not null default 'dashboard' check (type in ('dashboard')),
+  title text not null,
+  config jsonb not null default '{}'::jsonb,
+  generated_content jsonb,
+  generated_at timestamptz,
+  position int not null default 0,
+  created_by uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table client_home_sections enable row level security;
+
+drop policy if exists "client_home_sections_select_access" on client_home_sections;
+create policy "client_home_sections_select_access" on client_home_sections
+  for select to authenticated using (client_space_can_access(organization_id, client_user_id));
+
+drop policy if exists "client_home_sections_insert_staff" on client_home_sections;
+create policy "client_home_sections_insert_staff" on client_home_sections
+  for insert to authenticated
+  with check (auth.uid() = created_by and client_space_is_staff(organization_id, client_user_id));
+
+drop policy if exists "client_home_sections_update_staff" on client_home_sections;
+create policy "client_home_sections_update_staff" on client_home_sections
+  for update to authenticated
+  using (client_space_is_staff(organization_id, client_user_id))
+  with check (client_space_is_staff(organization_id, client_user_id));
+
+drop policy if exists "client_home_sections_delete_staff" on client_home_sections;
+create policy "client_home_sections_delete_staff" on client_home_sections
+  for delete to authenticated using (client_space_is_staff(organization_id, client_user_id));
+
+-- ----------------------------------------------------------------------------
+-- client_documents: documentos/presentaciones bajo demanda (CLIENTE.md §7) —
+-- a diferencia del dashboard (automático/vivo), el cliente los SOLICITA;
+-- contenido dentro de la plataforma, no un PDF real (sin infra de generación
+-- de PDF todavía).
+-- ----------------------------------------------------------------------------
+create table if not exists client_documents (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  client_user_id uuid not null references auth.users(id) on delete cascade,
+  request_id uuid references client_requests(id) on delete set null,
+  title text not null,
+  extra_prompt text,
+  generated_content jsonb,
+  generated_at timestamptz,
+  generated_by uuid references auth.users(id) on delete set null,
+  created_by uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table client_documents enable row level security;
+
+drop policy if exists "client_documents_select_access" on client_documents;
+create policy "client_documents_select_access" on client_documents
+  for select to authenticated using (client_space_can_access(organization_id, client_user_id));
+
+drop policy if exists "client_documents_insert_staff" on client_documents;
+create policy "client_documents_insert_staff" on client_documents
+  for insert to authenticated
+  with check (auth.uid() = created_by and client_space_is_staff(organization_id, client_user_id));
+
+drop policy if exists "client_documents_update_staff" on client_documents;
+create policy "client_documents_update_staff" on client_documents
+  for update to authenticated
+  using (client_space_is_staff(organization_id, client_user_id))
+  with check (client_space_is_staff(organization_id, client_user_id));
+
+-- ----------------------------------------------------------------------------
+-- client_activity_log: paralelo a activity_log pero para el espacio de un
+-- cliente — tabla SEPARADA a propósito. activity_log_insert_self/
+-- activity_log_select_org dependen de my_organization_ids(), y ampliarlas
+-- arriesga romper la semántica ya establecida del log de organización.
+-- Acciones curadas (sin "message_sent" — mismo criterio que task_comments: el
+-- chat es su propio registro, no debe generar ruido en el log de actividad).
+-- ----------------------------------------------------------------------------
+create table if not exists client_activity_log (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations(id) on delete cascade,
+  client_user_id uuid not null references auth.users(id) on delete cascade,
+  actor_id uuid references auth.users(id) on delete set null,
+  actor_name text not null,
+  action text not null check (action in (
+    'client_joined', 'assignment_changed', 'request_created', 'request_status_changed',
+    'deliverable_created', 'deliverable_approved', 'deliverable_rejected',
+    'home_section_created', 'home_section_regenerated', 'document_created', 'document_regenerated'
+  )),
+  entity_id uuid,
+  entity_name text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+alter table client_activity_log enable row level security;
+
+drop policy if exists "client_activity_log_select_access" on client_activity_log;
+create policy "client_activity_log_select_access" on client_activity_log
+  for select to authenticated using (client_space_can_access(organization_id, client_user_id));
+
+drop policy if exists "client_activity_log_insert_access" on client_activity_log;
+create policy "client_activity_log_insert_access" on client_activity_log
+  for insert to authenticated
+  with check (auth.uid() = actor_id and client_space_can_access(organization_id, client_user_id));
 
 -- ----------------------------------------------------------------------------
 -- Permisos base para los roles de PostgREST (anon/authenticated/service_role).

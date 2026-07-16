@@ -1,20 +1,20 @@
 import React from "react";
 import { Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Check, X } from "lucide-react-native";
-import { TASK_STATUS_COLORS, TASK_STATUS_LABELS, TASK_STATUS_ORDER, TaskStatus } from "../lib/tasks";
+import { CLIENT_REQUEST_STATUS_COLORS, CLIENT_REQUEST_STATUS_LABELS, CLIENT_REQUEST_STATUS_ORDER, ClientRequestStatus } from "../lib/clients";
 
-// Reemplaza el viejo "tocar el badge cicla al siguiente status" — con 8
-// estados posibles, cicular uno por uno era lento. Acá se elige directo,
-// mismo patrón de overlay que TimezoneModal/LanguageModal/DatePickerModal.
+// Calco de TaskStatusPickerModal.tsx sobre CLIENT_REQUEST_STATUS_ORDER —
+// mismo patrón de overlay/lista corta sin buscador (punto de color + label +
+// check en el actual).
 type Props = {
   visible: boolean;
   isDark: boolean;
-  currentStatus: TaskStatus | null;
+  currentStatus: ClientRequestStatus | null;
   onClose: () => void;
-  onSelect: (status: TaskStatus) => void;
+  onSelect: (status: ClientRequestStatus) => void;
 };
 
-export default function TaskStatusPickerModal({ visible, isDark, currentStatus, onClose, onSelect }: Props) {
+export default function ClientRequestStatusPickerModal({ visible, isDark, currentStatus, onClose, onSelect }: Props) {
   const cardBg        = isDark ? "rgba(15,23,42,0.85)" : "rgba(255,255,255,0.85)";
   const border        = isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)";
   const textPrimary   = isDark ? "#F8FAFC" : "#101828";
@@ -38,15 +38,15 @@ export default function TaskStatusPickerModal({ visible, isDark, currentStatus, 
       <View style={styles.overlay}>
         <View style={[styles.card, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
           <View style={styles.header}>
-            <Text style={[styles.title, { color: textPrimary }]}>Cambiar status</Text>
+            <Text style={[styles.title, { color: textPrimary }]}>Estado de la solicitud</Text>
             <TouchableOpacity onPress={onClose} hitSlop={8}>
               <X size={20} color={textSecondary} strokeWidth={2.2} />
             </TouchableOpacity>
           </View>
 
           <View style={{ gap: 4 }}>
-            {TASK_STATUS_ORDER.map((status) => {
-              const color = TASK_STATUS_COLORS[status];
+            {CLIENT_REQUEST_STATUS_ORDER.map((status) => {
+              const color = CLIENT_REQUEST_STATUS_COLORS[status];
               const selected = currentStatus === status;
               return (
                 <TouchableOpacity
@@ -57,7 +57,7 @@ export default function TaskStatusPickerModal({ visible, isDark, currentStatus, 
                 >
                   <View style={[styles.dot, { backgroundColor: color }]} />
                   <Text style={[styles.rowLabel, { color: selected ? color : textPrimary, fontWeight: selected ? "700" : "600" }]}>
-                    {TASK_STATUS_LABELS[status]}
+                    {CLIENT_REQUEST_STATUS_LABELS[status]}
                   </Text>
                   {selected && <Check size={16} color={color} strokeWidth={2.3} />}
                 </TouchableOpacity>

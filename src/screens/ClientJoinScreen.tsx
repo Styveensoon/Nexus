@@ -11,21 +11,25 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { ArrowLeft, ArrowRight, Building2, CircleX, Hash } from "lucide-react-native";
+import { ArrowLeft, ArrowRight, Check, CircleX, Handshake, Hash } from "lucide-react-native";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
-import { getOrganizationByCode, joinOrganization, Organization } from "../lib/organizations";
+import { Organization } from "../lib/organizations";
+import { getOrganizationByClientCode, joinOrganizationAsClient } from "../lib/spaces";
 import { clearPendingOnboarding } from "../lib/supabase";
 
+// Calco de JoinWorkspaceScreen.tsx, pero para el código de CLIENTE
+// (docs/CLIENTE.md §1/§3) — mismo patrón de tarjeta + bienvenida cálida,
+// priorizando la parte humana sobre el contenido funcional en este estado
+// inicial ("Al unirse, el cliente entra a un espacio completamente aislado").
 const WELCOME_MESSAGES = [
-  "Los grandes equipos se construyen con las personas correctas. Bienvenido.",
-  "Cada gran resultado empieza con el equipo adecuado. Es un buen momento para unirte.",
-  "Tu talento suma. El equipo está listo para avanzar contigo.",
-  "Aquí las ideas se convierten en resultados. Únete y sé parte de eso.",
-  "Un paso más hacia un equipo con visión. Bienvenido a bordo.",
+  "Un gusto tenerte por acá. Tu equipo ya está al tanto de tu proyecto.",
+  "Bienvenido a tu espacio. En breve vas a ver los primeros avances acá.",
+  "Gracias por confiarnos tu proyecto. Este es tu lugar para seguirlo de cerca.",
+  "Tu proyecto está en buenas manos. Bienvenido a tu espacio en Nexus.",
 ];
 
-export default function JoinWorkspaceScreen({ navigation, route }: any) {
+export default function ClientJoinScreen({ navigation, route }: any) {
   const { isDark } = useTheme();
   const { user, refreshOrganization } = useAuth();
   const { width } = useWindowDimensions();
@@ -33,6 +37,7 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
   const isWeb = Platform.OS === "web";
 
   const initialCode: string = route?.params?.code ?? "";
+  const initialConsent: boolean = route?.params?.dataConsent ?? false;
 
   const [codeInput, setCodeInput] = useState(initialCode);
   const [organization, setOrganization] = useState<Organization | null>(null);
@@ -40,6 +45,7 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
   const [searched, setSearched] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
+  const [dataConsent, setDataConsent] = useState(initialConsent);
 
   const welcomeMessage = useMemo(() => {
     if (!organization) return "";
@@ -84,17 +90,17 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
   const handleSearch = async (codeToSearch?: string) => {
     const value = (codeToSearch ?? codeInput).trim();
     if (!value) {
-      setErrorMsg("Ingresa un código de invitación.");
+      setErrorMsg("Ingresa un código de cliente.");
       return;
     }
     setErrorMsg(null);
     setFetching(true);
-    const { data, error } = await getOrganizationByCode(value);
+    const { data, error } = await getOrganizationByClientCode(value);
     setSearched(true);
     setFetching(false);
     if (error || !data) {
       setOrganization(null);
-      setErrorMsg("Ese código de invitación no es válido.");
+      setErrorMsg("Ese código de cliente no es válido.");
     } else {
       setOrganization(data);
     }
@@ -102,8 +108,12 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
 
   const handleJoin = async () => {
     if (!organization || !user) return;
+    if (!dataConsent) {
+      setErrorMsg("Debes aceptar el uso de tus datos para continuar.");
+      return;
+    }
     setJoining(true);
-    const { error } = await joinOrganization({ organizationId: organization.id, userId: user.id });
+    const { error } = await joinOrganizationAsClient({ organizationId: organization.id, userId: user.id, dataConsent });
     if (error) {
       setJoining(false);
       setErrorMsg(error.message);
@@ -112,16 +122,16 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
     await clearPendingOnboarding();
     await refreshOrganization();
     setJoining(false);
-    navigation.replace("ProfileSetup");
+    navigation.replace("ProfileSetup", { afterRoute: "Main" });
   };
 
-  // Escape hatch: si la metadata de onboarding quedó apuntando a un código
-  // viejo/equivocado (ver docs/TRAMPAS.md), esto es lo único que permite
-  // salir del flujo de "unirme" sin quedar atrapado reintentando el mismo
-  // código para siempre en cada sesión nueva.
-  const handleCreateInstead = async () => {
+  // Escape hatch: mismo motivo que en JoinWorkspaceScreen — si la metadata de
+  // onboarding quedó apuntando a un código de cliente viejo/equivocado, esto
+  // es lo único que permite salir sin quedar atrapado reintentándolo para
+  // siempre en cada sesión nueva (ver docs/TRAMPAS.md).
+  const handleGoBackInstead = async () => {
     await clearPendingOnboarding();
-    navigation.replace("WorkspaceSetup");
+    navigation.replace("Landing");
   };
 
   return (
@@ -146,11 +156,11 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
             <Text style={[styles.logoText, { color: textPrimary }]}>Nexus</Text>
           </View>
 
-          <Text style={[styles.title, { color: textPrimary }]}>Únete a tu equipo</Text>
+          <Text style={[styles.title, { color: textPrimary }]}>Únete como cliente</Text>
           <Text style={[styles.subtitle, { color: textSecondary }]}>
             {organization
-              ? "Confirma que es el workspace correcto antes de unirte."
-              : "Ingresa el código que te compartió tu equipo."}
+              ? "Confirma que es el espacio correcto antes de unirte."
+              : "Ingresa el código de cliente que te compartió tu organización."}
           </Text>
 
           <View style={[styles.card, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
@@ -163,15 +173,33 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
                     {organization.logo_url ? (
                       <Image source={{ uri: organization.logo_url }} style={styles.previewLogoImage} />
                     ) : (
-                      <Building2 size={30} color="#FFF" strokeWidth={2.3} />
+                      <Handshake size={30} color="#FFF" strokeWidth={2.3} />
                     )}
                   </View>
-                  <Text style={[styles.previewLabel, { color: textSecondary }]}>Te estás uniendo a</Text>
+                  <Text style={[styles.previewLabel, { color: textSecondary }]}>Eres cliente de</Text>
                   <Text style={[styles.previewName, { color: textPrimary }]} numberOfLines={1}>
                     {organization.name}
                   </Text>
                   <Text style={[styles.welcomeMessage, { color: textSecondary }]}>{welcomeMessage}</Text>
                 </View>
+
+                <TouchableOpacity
+                  style={[styles.checkboxContainer]}
+                  onPress={() => setDataConsent(!dataConsent)}
+                >
+                  <View
+                    style={[
+                      styles.checkbox,
+                      { borderColor: dataConsent ? primaryColor : border },
+                      dataConsent && { backgroundColor: primaryColor },
+                    ]}
+                  >
+                    {dataConsent && <Check size={14} color="#FFF" strokeWidth={2.4} />}
+                  </View>
+                  <Text style={[styles.checkboxText, { color: textSecondary }]}>
+                    Acepto que mi información se use para mejorar la plataforma y con fines analíticos
+                  </Text>
+                </TouchableOpacity>
 
                 {errorMsg && <Text style={styles.errorText}>{errorMsg}</Text>}
 
@@ -194,7 +222,7 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
                   </View>
                 )}
 
-                <Text style={[styles.label, { color: textSecondary }]}>Código de invitación</Text>
+                <Text style={[styles.label, { color: textSecondary }]}>Código de cliente</Text>
                 <View style={[styles.inputWrapper, { backgroundColor: inputBg, borderColor: border }]}>
                   <Hash size={18} color={textSecondary} strokeWidth={2.2} />
                   <TextInput
@@ -215,13 +243,13 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
                   style={[styles.btnPrimary, { backgroundColor: primaryColor, shadowColor: primaryColor }]}
                   onPress={() => handleSearch()}
                 >
-                  <Text style={styles.btnPrimaryText}>Buscar workspace</Text>
+                  <Text style={styles.btnPrimaryText}>Buscar espacio</Text>
                   <ArrowRight size={18} color="#FFF" strokeWidth={2.2} />
                 </TouchableOpacity>
 
-                <TouchableOpacity style={{ marginTop: 20, alignItems: "center" }} onPress={handleCreateInstead}>
+                <TouchableOpacity style={{ marginTop: 20, alignItems: "center" }} onPress={handleGoBackInstead}>
                   <Text style={[styles.pivotLinkText, { color: textSecondary }]}>
-                    ¿No tienes un código? <Text style={{ color: primaryColor, fontWeight: "700" }}>Crea tu propia organización</Text>
+                    ¿Te equivocaste de código? <Text style={{ color: primaryColor, fontWeight: "700" }}>Volver al inicio</Text>
                   </Text>
                 </TouchableOpacity>
               </>
@@ -259,6 +287,9 @@ const styles = StyleSheet.create({
   previewLabel: { fontSize: 13, fontWeight: "600", marginBottom: 4 },
   previewName: { fontSize: 22, fontWeight: "700", letterSpacing: -0.5, textAlign: "center", marginBottom: 12 },
   welcomeMessage: { fontSize: 14, textAlign: "center", lineHeight: 21, paddingHorizontal: 12 },
+  checkboxContainer: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 20 },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, justifyContent: "center", alignItems: "center" },
+  checkboxText: { flex: 1, fontSize: 12.5, lineHeight: 18 },
   errorText: { color: "#EF4444", fontSize: 13, fontWeight: "600", marginBottom: 14 },
   errorBlock: { alignItems: "center", gap: 12, paddingVertical: 12, marginBottom: 20 },
   errorTitle: { fontSize: 16, fontWeight: "700", textAlign: "center" },
@@ -267,7 +298,5 @@ const styles = StyleSheet.create({
     paddingVertical: 18, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.35, shadowRadius: 20, elevation: 8,
   },
   btnPrimaryText: { color: "#FFF", fontWeight: "700", fontSize: 16, letterSpacing: 0.3 },
-  btnSecondary: { borderRadius: 999, borderWidth: 1, paddingVertical: 18, alignItems: "center" },
-  btnSecondaryText: { fontWeight: "600", fontSize: 15 },
   pivotLinkText: { fontSize: 13.5 },
 });

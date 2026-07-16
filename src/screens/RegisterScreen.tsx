@@ -18,6 +18,7 @@ import {
   Check,
   Eye,
   EyeOff,
+  Handshake,
   Hash,
   Lock,
   Mail,
@@ -26,6 +27,7 @@ import {
 } from "lucide-react-native";
 import { useTheme } from "../context/ThemeContext";
 import { supabase } from "../lib/supabase";
+import TermsModal from "../components/TermsModal";
 
 function passwordStrength(password: string) {
   if (password.length === 0) return 0;
@@ -43,13 +45,16 @@ export default function RegisterScreen({ navigation }: any) {
   const isWeb = Platform.OS === "web";
 
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [dataConsent, setDataConsent] = useState(false);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
-  const [accountType, setAccountType] = useState<"create" | "join">("create");
+  const [accountType, setAccountType] = useState<"create" | "join" | "client">("create");
+  const [termsModalVisible, setTermsModalVisible] = useState(false);
   const [orgValue, setOrgValue] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -64,7 +69,13 @@ export default function RegisterScreen({ navigation }: any) {
       return;
     }
     if (!orgValue.trim()) {
-      setErrorMsg(accountType === "create" ? "Ingresa el nombre de tu organización." : "Ingresa el código de invitación.");
+      setErrorMsg(
+        accountType === "create"
+          ? "Ingresa el nombre de tu organización."
+          : accountType === "join"
+          ? "Ingresa el código de invitación."
+          : "Ingresa el código de cliente."
+      );
       return;
     }
     if (password !== confirmPassword) {
@@ -73,6 +84,13 @@ export default function RegisterScreen({ navigation }: any) {
     }
     if (!acceptedTerms) {
       setErrorMsg("Debes aceptar los términos y condiciones.");
+      return;
+    }
+    // Consentimiento de uso de datos — solo aplica al flujo de cliente
+    // (docs/CLIENTE.md §1: "se le informa/solicita consentimiento de que su
+    // información podrá usarse para mejora de la plataforma/analítica").
+    if (accountType === "client" && !dataConsent) {
+      setErrorMsg("Debes aceptar el uso de tus datos para continuar como cliente.");
       return;
     }
 
@@ -87,6 +105,8 @@ export default function RegisterScreen({ navigation }: any) {
           pending_account_type: accountType,
           pending_org_name: accountType === "create" ? orgValue.trim() : null,
           pending_invite_code: accountType === "join" ? orgValue.trim() : null,
+          pending_client_code: accountType === "client" ? orgValue.trim() : null,
+          pending_data_consent: accountType === "client" ? dataConsent : null,
         },
       },
     });
@@ -110,8 +130,10 @@ export default function RegisterScreen({ navigation }: any) {
 
     if (accountType === "create") {
       navigation.replace("WorkspaceSetup", { orgName: orgValue.trim() });
-    } else {
+    } else if (accountType === "join") {
       navigation.replace("JoinWorkspace", { code: orgValue.trim() });
+    } else {
+      navigation.replace("ClientJoin", { code: orgValue.trim(), dataConsent });
     }
   };
 
@@ -133,13 +155,7 @@ export default function RegisterScreen({ navigation }: any) {
           : "0 30px 60px -22px rgba(44,123,209,0.18), 0 1px 0 rgba(255,255,255,0.9) inset",
         backdropFilter: "blur(32px) saturate(200%)",
       } as any,
-      default: {
-        shadowColor: isDark ? "#000" : "#2C7BD1",
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: isDark ? 0.35 : 0.1,
-        shadowRadius: 22,
-        elevation: 6,
-      },
+      default: {},
     }),
     borderTopColor: isDark ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.9)",
   };
@@ -179,7 +195,9 @@ export default function RegisterScreen({ navigation }: any) {
             <Text style={[styles.subtitle, { color: textSecondary }]}>
               {accountType === "create"
                 ? "Crea tu organización y empieza a construir con tu equipo."
-                : "Únete con el código de invitación de tu equipo."}
+                : accountType === "join"
+                ? "Únete con el código de invitación de tu equipo."
+                : "Únete con el código de cliente que te compartió tu organización."}
             </Text>
 
             <View style={[styles.card, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
@@ -190,8 +208,8 @@ export default function RegisterScreen({ navigation }: any) {
                   onPress={() => setAccountType("create")}
                 >
                   <Building2 size={16} color={accountType === "create" ? "#FFF" : textSecondary} strokeWidth={2.2} />
-                  <Text style={[styles.segmentText, { color: accountType === "create" ? "#FFF" : textSecondary }]}>
-                    Crear organización
+                  <Text style={[styles.segmentText, { color: accountType === "create" ? "#FFF" : textSecondary }]} numberOfLines={1}>
+                    Crear
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -200,8 +218,18 @@ export default function RegisterScreen({ navigation }: any) {
                   onPress={() => setAccountType("join")}
                 >
                   <Users size={16} color={accountType === "join" ? "#FFF" : textSecondary} strokeWidth={2.2} />
-                  <Text style={[styles.segmentText, { color: accountType === "join" ? "#FFF" : textSecondary }]}>
-                    Unirme a un equipo
+                  <Text style={[styles.segmentText, { color: accountType === "join" ? "#FFF" : textSecondary }]} numberOfLines={1}>
+                    Unirme
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[styles.segmentButton, accountType === "client" && { backgroundColor: primaryColor }]}
+                  onPress={() => setAccountType("client")}
+                >
+                  <Handshake size={16} color={accountType === "client" ? "#FFF" : textSecondary} strokeWidth={2.2} />
+                  <Text style={[styles.segmentText, { color: accountType === "client" ? "#FFF" : textSecondary }]} numberOfLines={1}>
+                    Soy cliente
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -223,7 +251,7 @@ export default function RegisterScreen({ navigation }: any) {
                 <View style={[styles.inputWrapper, { backgroundColor: inputBg, borderColor: inputBorderColor("orgCode") }]}>
                   <Hash size={18} color={textSecondary} strokeWidth={2.2} />
                   <TextInput
-                    placeholder="Código de invitación"
+                    placeholder={accountType === "join" ? "Código de invitación" : "Código de cliente"}
                     placeholderTextColor={textSecondary}
                     autoCapitalize="characters"
                     value={orgValue}
@@ -300,20 +328,23 @@ export default function RegisterScreen({ navigation }: any) {
                 <TextInput
                   placeholder="Confirmar contraseña"
                   placeholderTextColor={textSecondary}
-                  secureTextEntry
+                  secureTextEntry={!showConfirmPassword}
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   onFocus={() => setFocusedField("confirm")}
                   onBlur={() => setFocusedField(null)}
                   style={[styles.input, { color: textPrimary }, isWeb && styles.inputNoOutline]}
                 />
+                <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} hitSlop={8}>
+                  {showConfirmPassword ? <EyeOff size={18} color={textSecondary} strokeWidth={2.2} /> : <Eye size={18} color={textSecondary} strokeWidth={2.2} />}
+                </TouchableOpacity>
               </View>
 
               {errorMsg && <Text style={styles.errorText}>{errorMsg}</Text>}
 
               <TouchableOpacity
                 style={styles.checkboxContainer}
-                onPress={() => setAcceptedTerms(!acceptedTerms)}
+                onPress={() => (acceptedTerms ? setAcceptedTerms(false) : setTermsModalVisible(true))}
               >
                 <View
                   style={[
@@ -325,9 +356,32 @@ export default function RegisterScreen({ navigation }: any) {
                   {acceptedTerms && <Check size={14} color="#FFF" strokeWidth={2.4} />}
                 </View>
                 <Text style={[styles.checkboxText, { color: textSecondary }]}>
-                  Acepto los términos y condiciones
+                  Acepto los{" "}
+                  <Text style={{ color: primaryColor, fontWeight: "700", textDecorationLine: "underline" }}>
+                    términos y condiciones
+                  </Text>
                 </Text>
               </TouchableOpacity>
+
+              {accountType === "client" && (
+                <TouchableOpacity
+                  style={[styles.checkboxContainer, { marginTop: -12 }]}
+                  onPress={() => setDataConsent(!dataConsent)}
+                >
+                  <View
+                    style={[
+                      styles.checkbox,
+                      { borderColor: dataConsent ? primaryColor : border },
+                      dataConsent && { backgroundColor: primaryColor },
+                    ]}
+                  >
+                    {dataConsent && <Check size={14} color="#FFF" strokeWidth={2.4} />}
+                  </View>
+                  <Text style={[styles.checkboxText, { color: textSecondary }]}>
+                    Acepto que mi información se use para mejorar la plataforma y con fines analíticos
+                  </Text>
+                </TouchableOpacity>
+              )}
 
               <TouchableOpacity
                 activeOpacity={0.85}
@@ -361,6 +415,16 @@ export default function RegisterScreen({ navigation }: any) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <TermsModal
+        visible={termsModalVisible}
+        isDark={isDark}
+        onAccept={() => {
+          setAcceptedTerms(true);
+          setTermsModalVisible(false);
+        }}
+        onClose={() => setTermsModalVisible(false)}
+      />
     </View>
   );
 }

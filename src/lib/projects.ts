@@ -3,6 +3,7 @@ import type { TeamSuggestion } from "./semillero";
 import { getTeamsByIds, Team } from "./teams";
 import { logActivity } from "./activity";
 import { getDisplayName, notifyProjectMemberAdded, notifyProjectTeamAssigned } from "./emails";
+import { createTask } from "./tasks";
 
 // De 4 a 8 valores (mismo criterio que TaskStatus en lib/tasks.ts) — con el
 // selector directo (ProjectStatusPickerModal, ver docs/PATRONES.md) ya no
@@ -309,6 +310,7 @@ export async function updateProject(
     iconUrl: string | null;
     goals: string[];
     areas: string[];
+    firstSteps: string[];
   }>
 ) {
   const { error } = await supabase
@@ -320,9 +322,29 @@ export async function updateProject(
       ...(updates.iconUrl !== undefined && { icon_url: updates.iconUrl }),
       ...(updates.goals !== undefined && { goals: updates.goals }),
       ...(updates.areas !== undefined && { areas: updates.areas }),
+      ...(updates.firstSteps !== undefined && { first_steps: updates.firstSteps }),
     })
     .eq("id", projectId);
 
+  return { error };
+}
+
+// Convierte un "primer paso" sugerido por El Semillero en una task real del
+// proyecto (docs/ARQUITECTURA.md: "Pendiente: que los primeros pasos se
+// conviertan en tasks reales, no solo texto guardado en projects.first_steps").
+// Al lograrlo, lo quita de first_steps — así ese array funciona como la lista
+// de sugerencias TODAVÍA no convertidas, sin necesitar una columna nueva para
+// "marcar" cuáles ya se usaron.
+export async function convertFirstStepToTask(project: Project, step: string, createdBy: string) {
+  const { error: taskError } = await createTask({
+    projectId: project.id,
+    createdBy,
+    title: step,
+  });
+  if (taskError) return { error: taskError };
+
+  const remaining = project.firstSteps.filter((s) => s !== step);
+  const { error } = await updateProject(project.id, { firstSteps: remaining });
   return { error };
 }
 
