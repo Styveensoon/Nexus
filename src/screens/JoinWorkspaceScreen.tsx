@@ -15,6 +15,7 @@ import { ArrowLeft, ArrowRight, Building2, CircleX, Hash } from "lucide-react-na
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { getOrganizationByCode, joinOrganization, Organization } from "../lib/organizations";
+import { clearPendingOnboarding } from "../lib/supabase";
 
 const WELCOME_MESSAGES = [
   "Los grandes equipos se construyen con las personas correctas. Bienvenido.",
@@ -108,9 +109,19 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
       setErrorMsg(error.message);
       return;
     }
+    await clearPendingOnboarding();
     await refreshOrganization();
     setJoining(false);
     navigation.replace("ProfileSetup");
+  };
+
+  // Escape hatch: si la metadata de onboarding quedó apuntando a un código
+  // viejo/equivocado (ver docs/TRAMPAS.md), esto es lo único que permite
+  // salir del flujo de "unirme" sin quedar atrapado reintentando el mismo
+  // código para siempre en cada sesión nueva.
+  const handleCreateInstead = async () => {
+    await clearPendingOnboarding();
+    navigation.replace("WorkspaceSetup");
   };
 
   return (
@@ -207,6 +218,12 @@ export default function JoinWorkspaceScreen({ navigation, route }: any) {
                   <Text style={styles.btnPrimaryText}>Buscar workspace</Text>
                   <ArrowRight size={18} color="#FFF" strokeWidth={2.2} />
                 </TouchableOpacity>
+
+                <TouchableOpacity style={{ marginTop: 20, alignItems: "center" }} onPress={handleCreateInstead}>
+                  <Text style={[styles.pivotLinkText, { color: textSecondary }]}>
+                    ¿No tienes un código? <Text style={{ color: primaryColor, fontWeight: "700" }}>Crea tu propia organización</Text>
+                  </Text>
+                </TouchableOpacity>
               </>
             )}
           </View>
@@ -252,4 +269,5 @@ const styles = StyleSheet.create({
   btnPrimaryText: { color: "#FFF", fontWeight: "700", fontSize: 16, letterSpacing: 0.3 },
   btnSecondary: { borderRadius: 999, borderWidth: 1, paddingVertical: 18, alignItems: "center" },
   btnSecondaryText: { fontWeight: "600", fontSize: 15 },
+  pivotLinkText: { fontSize: 13.5 },
 });

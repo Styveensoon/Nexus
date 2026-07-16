@@ -1,5 +1,5 @@
 import React, { useRef } from "react";
-import { PanResponder, StyleSheet, Text, View } from "react-native";
+import { PanResponder, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type Props = {
   value: number;
@@ -10,6 +10,16 @@ type Props = {
   disabled?: boolean;
 };
 
+// En mobile, este control vive dentro de listas que a su vez viven dentro de
+// un ScrollView vertical (ProfileEditorForm). El PanResponder solo debe
+// reclamar el gesto cuando el movimiento es claramente horizontal (arrastrar
+// para ajustar el nivel) — si reclamara en cualquier toque (incluido el
+// arranque de un scroll vertical que pase por encima de esta fila), bloquea
+// el scroll de toda la pantalla y cambia el valor sin que el usuario lo
+// busque. Por eso onStartShouldSetPanResponder es false (nunca reclama de
+// entrada) y onMoveShouldSetPanResponder exige que |dx| > |dy|. La selección
+// por toque directo (tocar un punto puntual) se resuelve aparte, con un
+// TouchableOpacity por punto — así conviven con el ScrollView sin este hack.
 export default function LevelDots({ value, max = 10, activeColor, trackColor, onChange, disabled }: Props) {
   const rowRef = useRef<View>(null);
   const widthRef = useRef(0);
@@ -33,10 +43,13 @@ export default function LevelDots({ value, max = 10, activeColor, trackColor, on
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => !disabled,
-      onMoveShouldSetPanResponder: () => !disabled,
-      onPanResponderGrant: (_e, gestureState) => updateFromPageX(gestureState.x0),
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_e, gestureState) =>
+        !disabled && Math.abs(gestureState.dx) > 6 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
+      onPanResponderGrant: (_e, gestureState) => updateFromPageX(gestureState.moveX),
       onPanResponderMove: (_e, gestureState) => updateFromPageX(gestureState.moveX),
+      onPanResponderTerminationRequest: () => true,
+      onShouldBlockNativeResponder: () => false,
     })
   ).current;
 
@@ -46,9 +59,8 @@ export default function LevelDots({ value, max = 10, activeColor, trackColor, on
         {Array.from({ length: max }).map((_, i) => {
           const active = i < value;
           const isCurrent = i === value - 1;
-          return (
+          const dot = (
             <View
-              key={i}
               style={[
                 styles.dot,
                 {
@@ -57,6 +69,14 @@ export default function LevelDots({ value, max = 10, activeColor, trackColor, on
                 },
               ]}
             />
+          );
+          if (disabled) {
+            return <View key={i}>{dot}</View>;
+          }
+          return (
+            <TouchableOpacity key={i} activeOpacity={0.7} hitSlop={4} onPress={() => onChange?.(i + 1)}>
+              {dot}
+            </TouchableOpacity>
           );
         })}
       </View>

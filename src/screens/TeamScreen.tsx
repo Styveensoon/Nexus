@@ -53,7 +53,7 @@ type MemberDraft = {
   customRole: string;
 };
 
-export default function TeamScreen() {
+export default function TeamScreen({ navigation }: any) {
   const { isDark } = useTheme();
   const { user, organization, loading: authLoading } = useAuth();
   const { width } = useWindowDimensions();
@@ -382,7 +382,12 @@ export default function TeamScreen() {
                     const otherMembers = team.members.filter((m) => m.userId !== team.leaderId);
 
                     return (
-                      <View key={team.id} style={[styles.teamCard, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
+                      <TouchableOpacity
+                        key={team.id}
+                        activeOpacity={0.9}
+                        style={[styles.teamCard, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}
+                        onPress={() => navigation.navigate("TeamDetail", { teamId: team.id })}
+                      >
                         <View style={styles.teamHeader}>
                           <View style={styles.teamHeaderLeft}>
                             <View style={[styles.teamIcon, { backgroundColor: team.color + "20" }]}>
@@ -452,7 +457,7 @@ export default function TeamScreen() {
                             {team.members.length} {team.members.length === 1 ? "integrante" : "integrantes"}
                           </Text>
                         </View>
-                      </View>
+                      </TouchableOpacity>
                     );
                   })}
                 </View>

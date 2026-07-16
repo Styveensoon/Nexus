@@ -15,6 +15,7 @@ import { ArrowLeft, ArrowRight, Building2 } from "lucide-react-native";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { createOrganization } from "../lib/organizations";
+import { clearPendingOnboarding } from "../lib/supabase";
 import IconColorPicker from "../components/IconColorPicker";
 
 // El acento único de la app (azure) no restringe qué color de marca puede elegir
@@ -89,6 +90,7 @@ export default function WorkspaceSetupScreen({ navigation, route }: any) {
       return;
     }
 
+    await clearPendingOnboarding();
     await refreshOrganization();
     setLoading(false);
     navigation.replace("ProfileSetup");

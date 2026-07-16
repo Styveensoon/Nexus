@@ -16,6 +16,7 @@ import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import { Organization } from "../lib/organizations";
 import { getOrganizationByClientCode, joinOrganizationAsClient } from "../lib/spaces";
+import { clearPendingOnboarding } from "../lib/supabase";
 
 // Calco de JoinWorkspaceScreen.tsx, pero para el código de CLIENTE
 // (docs/CLIENTE.md §1/§3) — mismo patrón de tarjeta + bienvenida cálida,
@@ -118,9 +119,19 @@ export default function ClientJoinScreen({ navigation, route }: any) {
       setErrorMsg(error.message);
       return;
     }
+    await clearPendingOnboarding();
     await refreshOrganization();
     setJoining(false);
     navigation.replace("ProfileSetup", { afterRoute: "Main" });
+  };
+
+  // Escape hatch: mismo motivo que en JoinWorkspaceScreen — si la metadata de
+  // onboarding quedó apuntando a un código de cliente viejo/equivocado, esto
+  // es lo único que permite salir sin quedar atrapado reintentándolo para
+  // siempre en cada sesión nueva (ver docs/TRAMPAS.md).
+  const handleGoBackInstead = async () => {
+    await clearPendingOnboarding();
+    navigation.replace("Landing");
   };
 
   return (
@@ -235,6 +246,12 @@ export default function ClientJoinScreen({ navigation, route }: any) {
                   <Text style={styles.btnPrimaryText}>Buscar espacio</Text>
                   <ArrowRight size={18} color="#FFF" strokeWidth={2.2} />
                 </TouchableOpacity>
+
+                <TouchableOpacity style={{ marginTop: 20, alignItems: "center" }} onPress={handleGoBackInstead}>
+                  <Text style={[styles.pivotLinkText, { color: textSecondary }]}>
+                    ¿Te equivocaste de código? <Text style={{ color: primaryColor, fontWeight: "700" }}>Volver al inicio</Text>
+                  </Text>
+                </TouchableOpacity>
               </>
             )}
           </View>
@@ -281,4 +298,5 @@ const styles = StyleSheet.create({
     paddingVertical: 18, shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.35, shadowRadius: 20, elevation: 8,
   },
   btnPrimaryText: { color: "#FFF", fontWeight: "700", fontSize: 16, letterSpacing: 0.3 },
+  pivotLinkText: { fontSize: 13.5 },
 });

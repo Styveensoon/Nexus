@@ -19,6 +19,8 @@ import ActivityScreen from './src/screens/ActivityScreen'
 import OrganizationSettingsScreen from './src/screens/OrganizationSettingsScreen'
 import ClientsScreen from './src/screens/ClientsScreen'
 import ClientDetailScreen from './src/screens/ClientDetailScreen'
+import ProjectDetailScreen from './src/screens/ProjectDetailScreen'
+import TeamDetailScreen from './src/screens/TeamDetailScreen'
 import BottomTabs from './src/navigation/BottomTabs'
 import ClientTabs from './src/navigation/ClientTabs'
 
@@ -111,6 +113,8 @@ function RootNavigator() {
       <Stack.Screen name="OrganizationSettings" component={OrganizationSettingsScreen} />
       <Stack.Screen name="Clients" component={ClientsScreen} />
       <Stack.Screen name="ClientDetail" component={ClientDetailScreen} />
+      <Stack.Screen name="ProjectDetail" component={ProjectDetailScreen} />
+      <Stack.Screen name="TeamDetail" component={TeamDetailScreen} />
     </Stack.Navigator>
   )
 }

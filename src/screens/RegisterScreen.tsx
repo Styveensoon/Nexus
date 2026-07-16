@@ -27,6 +27,7 @@ import {
 } from "lucide-react-native";
 import { useTheme } from "../context/ThemeContext";
 import { supabase } from "../lib/supabase";
+import TermsModal from "../components/TermsModal";
 
 function passwordStrength(password: string) {
   if (password.length === 0) return 0;
@@ -50,8 +51,10 @@ export default function RegisterScreen({ navigation }: any) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [accountType, setAccountType] = useState<"create" | "join" | "client">("create");
+  const [termsModalVisible, setTermsModalVisible] = useState(false);
   const [orgValue, setOrgValue] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -325,20 +328,23 @@ export default function RegisterScreen({ navigation }: any) {
                 <TextInput
                   placeholder="Confirmar contraseña"
                   placeholderTextColor={textSecondary}
-                  secureTextEntry
+                  secureTextEntry={!showConfirmPassword}
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   onFocus={() => setFocusedField("confirm")}
                   onBlur={() => setFocusedField(null)}
                   style={[styles.input, { color: textPrimary }, isWeb && styles.inputNoOutline]}
                 />
+                <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} hitSlop={8}>
+                  {showConfirmPassword ? <EyeOff size={18} color={textSecondary} strokeWidth={2.2} /> : <Eye size={18} color={textSecondary} strokeWidth={2.2} />}
+                </TouchableOpacity>
               </View>
 
               {errorMsg && <Text style={styles.errorText}>{errorMsg}</Text>}
 
               <TouchableOpacity
                 style={styles.checkboxContainer}
-                onPress={() => setAcceptedTerms(!acceptedTerms)}
+                onPress={() => (acceptedTerms ? setAcceptedTerms(false) : setTermsModalVisible(true))}
               >
                 <View
                   style={[
@@ -350,7 +356,10 @@ export default function RegisterScreen({ navigation }: any) {
                   {acceptedTerms && <Check size={14} color="#FFF" strokeWidth={2.4} />}
                 </View>
                 <Text style={[styles.checkboxText, { color: textSecondary }]}>
-                  Acepto los términos y condiciones
+                  Acepto los{" "}
+                  <Text style={{ color: primaryColor, fontWeight: "700", textDecorationLine: "underline" }}>
+                    términos y condiciones
+                  </Text>
                 </Text>
               </TouchableOpacity>
 
@@ -406,6 +415,16 @@ export default function RegisterScreen({ navigation }: any) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <TermsModal
+        visible={termsModalVisible}
+        isDark={isDark}
+        onAccept={() => {
+          setAcceptedTerms(true);
+          setTermsModalVisible(false);
+        }}
+        onClose={() => setTermsModalVisible(false)}
+      />
     </View>
   );
 }

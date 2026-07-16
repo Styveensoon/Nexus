@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Image, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { Clock, User, X } from "lucide-react-native";
+import { Clock, Folder, User, Users, X } from "lucide-react-native";
 import LevelDots from "./LevelDots";
 import BadgePill from "./BadgePill";
 import BadgeDetailModal from "./BadgeDetailModal";
@@ -16,6 +16,8 @@ import {
   isUploadedAvatar,
 } from "../lib/profiles";
 import { ProfileBadge, getBadgeDefinition, listProfileBadges } from "../lib/badges";
+import { Team, listMyTeams } from "../lib/teams";
+import { Project, STATUS_COLORS, STATUS_LABELS, listMyProjects } from "../lib/projects";
 
 const AZURE_DEEP = "#2C7BD1";
 
@@ -35,6 +37,8 @@ export default function MemberProfileModal({ visible, userId, organizationId, fa
   const [profile, setProfile] = useState<Profile | null>(null);
   const [badges, setBadges] = useState<ProfileBadge[]>([]);
   const [detailBadge, setDetailBadge] = useState<ProfileBadge | null>(null);
+  const [memberTeams, setMemberTeams] = useState<Team[]>([]);
+  const [memberProjects, setMemberProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetchErrorMsg, setFetchErrorMsg] = useState<string | null>(null);
 
@@ -65,6 +69,8 @@ export default function MemberProfileModal({ visible, userId, organizationId, fa
     setProfile(null);
     setBadges([]);
     setDetailBadge(null);
+    setMemberTeams([]);
+    setMemberProjects([]);
     setFetchErrorMsg(null);
     getProfile(userId).then(({ data, error }) => {
       setProfile(data);
@@ -73,6 +79,8 @@ export default function MemberProfileModal({ visible, userId, organizationId, fa
     });
     if (organizationId) {
       listProfileBadges(organizationId, userId).then(({ data }) => setBadges(data));
+      listMyTeams(organizationId, userId).then(({ data }) => setMemberTeams(data));
+      listMyProjects(organizationId, userId).then(({ data }) => setMemberProjects(data));
     }
   }, [visible, userId, organizationId]);
 
@@ -168,6 +176,62 @@ export default function MemberProfileModal({ visible, userId, organizationId, fa
                   <Text style={[styles.emptyText, { color: textSecondary }]}>Aún no agregó idiomas.</Text>
                 )}
 
+                <Text style={[styles.sectionLabel, { color: textSecondary }]}>Equipos</Text>
+                {memberTeams.length ? (
+                  <View style={{ gap: 8, marginBottom: 20 }}>
+                    {memberTeams.map((team) => (
+                      <View key={team.id} style={[styles.readRow, { backgroundColor: inputBg, borderColor: border }]}>
+                        <View style={styles.entityRowLeft}>
+                          <View style={[styles.entityIcon, { backgroundColor: team.color + "20" }]}>
+                            {team.iconUrl ? (
+                              <Image source={{ uri: team.iconUrl }} style={styles.entityIconImage} />
+                            ) : (
+                              <Users size={13} color={team.color} strokeWidth={2.2} />
+                            )}
+                          </View>
+                          <Text style={[styles.readRowName, { color: textPrimary }]} numberOfLines={1}>
+                            {team.name}
+                          </Text>
+                        </View>
+                        <Text style={[styles.entityRoleText, { color: textSecondary }]} numberOfLines={1}>
+                          {team.members.find((m) => m.userId === userId)?.roleInTeam ?? ""}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={[styles.emptyText, { color: textSecondary }]}>No pertenece a ningún equipo todavía.</Text>
+                )}
+
+                <Text style={[styles.sectionLabel, { color: textSecondary }]}>Proyectos</Text>
+                {memberProjects.length ? (
+                  <View style={{ gap: 8, marginBottom: 20 }}>
+                    {memberProjects.map((project) => (
+                      <View key={project.id} style={[styles.readRow, { backgroundColor: inputBg, borderColor: border }]}>
+                        <View style={styles.entityRowLeft}>
+                          <View style={[styles.entityIcon, { backgroundColor: project.color + "20" }]}>
+                            {project.iconUrl ? (
+                              <Image source={{ uri: project.iconUrl }} style={styles.entityIconImage} />
+                            ) : (
+                              <Folder size={13} color={project.color} strokeWidth={2.2} />
+                            )}
+                          </View>
+                          <Text style={[styles.readRowName, { color: textPrimary }]} numberOfLines={1}>
+                            {project.name}
+                          </Text>
+                        </View>
+                        <View style={[styles.projectStatusBadge, { backgroundColor: STATUS_COLORS[project.status] + "20" }]}>
+                          <Text style={{ color: STATUS_COLORS[project.status], fontWeight: "700", fontSize: 10 }} numberOfLines={1}>
+                            {STATUS_LABELS[project.status]}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={[styles.emptyText, { color: textSecondary }]}>No está en ningún proyecto todavía.</Text>
+                )}
+
                 <Text style={[styles.sectionLabel, { color: textSecondary }]}>Badges</Text>
                 {badges.length ? (
                   <View style={[styles.chipsRow, { marginBottom: 4 }]}>
@@ -229,6 +293,11 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: 12.5, lineHeight: 18, marginBottom: 20 },
   readRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9 },
   readRowName: { flexShrink: 1, flexGrow: 1, fontSize: 12.5, fontWeight: "700" },
+  entityRowLeft: { flexDirection: "row", alignItems: "center", gap: 10, flexShrink: 1, flexGrow: 1 },
+  entityIcon: { width: 26, height: 26, borderRadius: 9, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  entityIconImage: { width: 26, height: 26, resizeMode: "cover" },
+  entityRoleText: { fontSize: 11, fontWeight: "600", flexShrink: 0 },
+  projectStatusBadge: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4, flexShrink: 0 },
   chipsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 },
   langPill: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderRadius: 999, paddingVertical: 6, paddingHorizontal: 6, paddingLeft: 12 },
   langPillText: { fontSize: 12, fontWeight: "700" },

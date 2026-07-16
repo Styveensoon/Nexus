@@ -438,7 +438,12 @@ export default function ProjectsScreen({ navigation }: any) {
                     const otherMembers = allMembers.filter((m) => m.userId !== project.leaderId);
 
                     return (
-                      <View key={project.id} style={[styles.projectCard, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
+                      <TouchableOpacity
+                        key={project.id}
+                        activeOpacity={0.9}
+                        style={[styles.projectCard, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}
+                        onPress={() => navigation.navigate("ProjectDetail", { projectId: project.id })}
+                      >
                         <View style={styles.projectHeader}>
                           <View style={styles.projectHeaderLeft}>
                             <View style={[styles.projectIcon, { backgroundColor: project.color + "20" }]}>
@@ -550,7 +555,7 @@ export default function ProjectsScreen({ navigation }: any) {
                             {isOwner && <ChevronDown size={11} color={STATUS_COLORS[project.status]} />}
                           </TouchableOpacity>
                         </View>
-                      </View>
+                      </TouchableOpacity>
                     );
                   })}
                 </View>

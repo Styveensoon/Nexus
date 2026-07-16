@@ -118,6 +118,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
           activeOpacity={0.8}
           style={[styles.signOutBtn, { borderColor: border }]}
           onPress={handleSignOut}
+          {...(Platform.OS === "web" ? ({ title: "Cerrar sesión" } as any) : {})}
         >
           <LogOut size={16} color={textSecondary} />
         </TouchableOpacity>
