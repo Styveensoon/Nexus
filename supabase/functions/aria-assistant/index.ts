@@ -426,6 +426,27 @@ async function buildFreeContext(admin: any, requesterId: string, organizationId:
   return `Tareas activas asignadas directamente a quien pregunta:\n${list}`;
 }
 
+// Encontrado probando en vivo: el modelo VE todo el historial de la
+// conversación en cada llamada, así que si en un turno anterior anunció un
+// cambio (ej. "también te propongo cambiar la fecha") y esa acción quedó sin
+// aplicar (porque el usuario aceptó otra cosa, o simplemente no llegó a
+// pedirla), el modelo tendía a "recordarlo" y volver a colar esa misma
+// propuesta en una respuesta posterior sobre un tema completamente distinto
+// (ej. preguntaron por los asignados y apareció de la nada una card para
+// cambiar una fecha) — invasivo y confuso, Aria pareciendo actuar por su
+// cuenta. La regla es tajante: sin pedido explícito en el ÚLTIMO mensaje, no
+// hay bloque, sin importar qué se haya mencionado antes.
+const NO_SPONTANEOUS_ACTION_RULE = `Regla estricta: SOLO proponés una acción (bloque <<<ACTION>>>) si la persona la pide explícitamente en su ÚLTIMO mensaje de la conversación. Nunca retomes ni vuelvas a ofrecer, por tu cuenta, un cambio que vos mismo mencionaste en un turno anterior pero que no se llegó a aplicar (ni siquiera si el historial lo muestra) — si en este turno te preguntan otra cosa (aunque sea sobre la misma tarea), respondé SOLO esa otra cosa, sin agregar ningún bloque de acción ni recordarle que "todavía falta" un cambio pendiente. Que te lo vuelvan a pedir es la única forma válida de proponerlo de nuevo.`;
+
+// Encontrado en el mismo caso real: cuando piden dos cambios distintos en un
+// solo mensaje (ej. "desbloqueala y que venza el viernes" = status + fecha),
+// solo se puede emitir UN bloque de acción por respuesta (limitación de v1,
+// ver docs/ESTADO.md) — pero el texto sonaba como si Aria fuera a hacer
+// ambos ("para desbloquearla y cambiar su fecha... el nuevo vencimiento
+// sería..."), cuando en realidad solo una card iba a aparecer. Ahora se le
+// exige ser explícita sobre la limitación.
+const MULTI_CHANGE_RULE = `Si en su último mensaje piden dos o más cambios distintos a la vez, aclará en tu texto que solo podés proponer uno por turno — anunciá cuál vas a proponer primero (con su bloque correspondiente) y decile que en cuanto lo acepte, le pedís que te pida el siguiente. Nunca redactes el texto como si ambos cambios fueran a pasar juntos cuando solo vas a emitir un bloque.`;
+
 // Solo se construye en modo "task" — le dice al modelo, en términos
 // explícitos, qué puede y qué no puede proponer para ESTA tarea puntual. Si
 // no tiene ningún permiso de escritura, la instrucción es tajante: ni
@@ -444,8 +465,9 @@ function buildActionInstructions(permissions: TaskPermissions, roster: RosterPer
   const rosterText = canEditAll && roster.length ? `\n\nRoster de personas asignables en este proyecto (usá el "userId" EXACTO de esta lista para reasignar, nunca inventes uno):\n${roster.map((r) => `- ${r.name} (userId: ${r.id})`).join("\n")}` : "";
 
   return `\nQuien pregunta SÍ puede: ${allowed.join(" y ")}. Nada más que eso — si pide otra cosa que no esté en esa lista (crear/borrar tareas, cambiar otro campo que no tiene permitido, reasignar a un equipo), decile CLARAMENTE que no tiene permiso para hacer ESE cambio puntual, cerrá tu respuesta ahí, y NUNCA agregues frases tipo "te dejo esto para que lo confirmes" ni ninguna otra que sugiera que va a aparecer una tarjeta de confirmación — si no vas a emitir el bloque de acción, tu texto no debe insinuar que hay una decisión pendiente de aprobar.${rosterText}
+${NO_SPONTANEOUS_ACTION_RULE}
 
-Si (y SOLO si) te pide explícitamente aplicar uno de los cambios permitidos de arriba, y tenés todos los datos necesarios con certeza (fecha exacta, o el nombre de una persona real de la lista de roster para reasignar), terminá tu respuesta con un bloque en una línea aparte, EXACTAMENTE con uno de estos formatos (nunca más de un bloque por respuesta, JSON válido en una sola línea):
+Si (y SOLO si) te pide explícitamente aplicar uno de los cambios permitidos de arriba EN SU ÚLTIMO MENSAJE, y tenés todos los datos necesarios con certeza (fecha exacta, o el nombre de una persona real de la lista de roster para reasignar), terminá tu respuesta con un bloque en una línea aparte, EXACTAMENTE con uno de estos formatos (nunca más de un bloque por respuesta, JSON válido en una sola línea):
 <<<ACTION>>>{"type":"update_status","status":"in_progress"}<<<END_ACTION>>>
 <<<ACTION>>>{"type":"update_due_date","dueDate":"2026-08-15"}<<<END_ACTION>>>
 <<<ACTION>>>{"type":"update_start_date","startDate":"2026-08-01"}<<<END_ACTION>>>
@@ -453,6 +475,8 @@ Si (y SOLO si) te pide explícitamente aplicar uno de los cambios permitidos de 
 <<<ACTION>>>{"type":"reassign","assigneeUserId":"<userId real del roster de arriba>"}<<<END_ACTION>>>
 
 "status" solo uno de: backlog, pending, in_progress, in_review, testing, blocked, completed, cancelled. "priority" solo uno de: low, medium, high, urgent. Las fechas van en formato "YYYY-MM-DD".
+
+${MULTI_CHANGE_RULE}
 
 Si te falta un dato (no sabés a quién reasignar, la fecha es ambigua, etc.), preguntá primero en el texto conversacional y NO agregues ningún bloque todavía — mejor preguntar de más que aplicar algo mal. Nunca menciones, ni de pasada, que vas a generar/adjuntar un "JSON", "bloque" o "estructura de datos": el usuario ve esto como una tarjeta de confirmación armada por la app, anuncialo de forma natural (ej. "te dejo esto para que lo confirmes:") y el bloque va después, en una línea aparte, nunca lo menciones dentro del texto.`;
 }
@@ -474,8 +498,9 @@ function buildProjectActionInstructions(tasks: ProjectTaskInfo[], roster: Roster
   const rosterText = roster.length ? `\n\nRoster de personas de este proyecto (usá el "userId" EXACTO para reasignar, nunca inventes uno):\n${roster.map((r) => `- ${r.name} (userId: ${r.id})`).join("\n")}` : "";
 
   return `\nCada tarea del listado de arriba indica tu permiso real sobre ELLA puntualmente ("podés editar todo" / "podés cambiar solo el status" / "no tenés permiso para tocarla") — no asumas el mismo permiso para todas, varía tarea por tarea según quién la lidera/asigna. Si te piden cambiar algo de una tarea sin permiso ("no tenés permiso para tocarla"), decilo con claridad, no propongas nada, y no insinúes que va a aparecer una tarjeta de confirmación.
+${NO_SPONTANEOUS_ACTION_RULE}
 
-Si SÍ tenés permiso sobre la tarea que te piden cambiar, y tenés todos los datos con certeza, terminá tu respuesta con un bloque en una línea aparte (nunca más de uno, JSON válido en una sola línea), SIEMPRE con "taskId" incluido usando el id EXACTO de la tarea:
+Si SÍ tenés permiso sobre la tarea que te piden cambiar EN SU ÚLTIMO MENSAJE, y tenés todos los datos con certeza, terminá tu respuesta con un bloque en una línea aparte (nunca más de uno, JSON válido en una sola línea), SIEMPRE con "taskId" incluido usando el id EXACTO de la tarea:
 <<<ACTION>>>{"type":"update_status","taskId":"<id real de la tarea>","status":"in_progress"}<<<END_ACTION>>>
 <<<ACTION>>>{"type":"update_due_date","taskId":"<id real de la tarea>","dueDate":"2026-08-15"}<<<END_ACTION>>>
 <<<ACTION>>>{"type":"update_start_date","taskId":"<id real de la tarea>","startDate":"2026-08-01"}<<<END_ACTION>>>
@@ -483,6 +508,8 @@ Si SÍ tenés permiso sobre la tarea que te piden cambiar, y tenés todos los da
 <<<ACTION>>>{"type":"reassign","taskId":"<id real de la tarea>","assigneeUserId":"<userId real del roster>"}<<<END_ACTION>>>
 
 "update_due_date"/"update_start_date"/"update_priority"/"reassign" solo son válidos si tu permiso en esa tarea es "podés editar todo" — con "podés cambiar solo el status" únicamente podés emitir "update_status". "status" solo uno de: backlog, pending, in_progress, in_review, testing, blocked, completed, cancelled. "priority" solo uno de: low, medium, high, urgent. Fechas en formato "YYYY-MM-DD".${rosterText}
+
+${MULTI_CHANGE_RULE}
 
 Si te falta un dato (a qué tarea se refiere si hay ambigüedad, a quién reasignar, fecha exacta), preguntá primero en el texto y NO agregues ningún bloque todavía. Nunca menciones "JSON"/"bloque"/"estructura de datos" en el texto conversacional — anunciá el cambio de forma natural y el bloque va después, en una línea aparte.`;
 }
