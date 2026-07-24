@@ -22,6 +22,8 @@ type Props = {
   catalog: BadgeDefinition[];
   grantedBadges: ProfileBadge[];
   canManage: boolean;
+  isOwner: boolean;
+  currentUserId: string | null;
   busyKey: string | null;
   errorText: string | null;
   onClose: () => void;
@@ -39,6 +41,8 @@ export default function BadgeAwardModal({
   catalog,
   grantedBadges,
   canManage,
+  isOwner,
+  currentUserId,
   busyKey,
   errorText,
   onClose,
@@ -132,6 +136,11 @@ export default function BadgeAwardModal({
                 {grantedDefinitions.map((badge) => {
                   const isBusy = busyKey === badge.key;
                   const textColor = getContrastTextColor(badge.color);
+                  const grantedRow = grantedByKey.get(badge.key);
+                  // Revocar es más restrictivo que otorgar (ver profile_badges_delete_manager
+                  // en schema.sql): solo quien otorgó ESE badge puntual, o el owner — un
+                  // encargado no puede quitar en silencio un badge que dio otra persona.
+                  const canRevokeThis = canManage && (isOwner || grantedRow?.grantedBy === currentUserId);
 
                   if (confirmRevokeKey === badge.key) {
                     return (
@@ -163,7 +172,7 @@ export default function BadgeAwardModal({
                         {renderIcon(badge, textColor, 13)}
                         <Text style={[styles.grantedPillText, { color: textColor }]}>{badge.label}</Text>
                       </TouchableOpacity>
-                      {canManage && (
+                      {canRevokeThis && (
                         <TouchableOpacity hitSlop={6} disabled={isBusy} onPress={() => setConfirmRevokeKey(badge.key)}>
                           <X size={13} color={textColor} strokeWidth={2.2} style={{ opacity: isBusy ? 0.4 : 1 }} />
                         </TouchableOpacity>

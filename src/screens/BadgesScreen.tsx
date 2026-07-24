@@ -515,6 +515,8 @@ export default function BadgesScreen({ navigation }: any) {
         catalog={catalog}
         grantedBadges={selectedGrantedBadges}
         canManage={selectedMemberId ? canManageMember(selectedMemberId) : false}
+        isOwner={isOwner}
+        currentUserId={user?.id ?? null}
         busyKey={busyKey}
         errorText={modalErrorText}
         onClose={closeMemberModal}

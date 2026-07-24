@@ -919,10 +919,13 @@
   -- profile_badges: reconocimientos otorgados a un colaborador (Líder Nato,
   -- Team Player, Mentor, etc.). El catálogo de tipos es fijo, vive en código
   -- (BADGE_CATALOG en src/lib/badges.ts) — no hay tabla de tipos porque hoy no
-  -- son personalizables. Solo puede otorgar/quitar un badge el owner de la
-  -- organización, o el encargado (teams.leader_id) de algún equipo donde esa
-  -- persona sea integrante — "manager" en este esquema se mapea a encargado de
-  -- equipo, no a líder de proyecto. Cualquier miembro de la organización puede
+  -- son personalizables. Puede OTORGAR un badge el owner de la organización, o
+  -- el encargado (teams.leader_id) de algún equipo donde esa persona sea
+  -- integrante — "manager" en este esquema se mapea a encargado de equipo, no
+  -- a líder de proyecto. QUITAR un badge es más restrictivo a propósito (ver
+  -- profile_badges_delete_manager más abajo): solo quien lo otorgó originalmente,
+  -- o el owner — así un encargado no puede revocar en silencio un badge que
+  -- dio otro encargado o el owner. Cualquier miembro de la organización puede
   -- VER los badges de sus compañeros (mismo criterio que profiles_select_org_members).
   -- ----------------------------------------------------------------------------
   create table if not exists profile_badges (
@@ -963,10 +966,17 @@
     for insert to authenticated
     with check (auth.uid() = granted_by and is_badge_manager_for(organization_id, profile_id));
 
+  -- Revocar es más restrictivo que otorgar (ver comentario de la tabla): solo
+  -- quien otorgó ESE badge puntual, o el owner de la organización — nunca
+  -- "cualquier manager actual", que dejaría a un encargado revocar en silencio
+  -- un badge que dio otra persona (incluido el owner) sin que esta se entere.
   drop policy if exists "profile_badges_delete_manager" on profile_badges;
   create policy "profile_badges_delete_manager" on profile_badges
     for delete to authenticated
-    using (is_badge_manager_for(organization_id, profile_id));
+    using (
+      auth.uid() = granted_by
+      or exists (select 1 from organizations o where o.id = organization_id and o.owner_id = auth.uid())
+    );
 
   -- ----------------------------------------------------------------------------
   -- badge_definitions: catálogo de badges PERSONALIZADOS por organización
