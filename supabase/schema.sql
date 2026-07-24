@@ -245,6 +245,80 @@
     using (chat_id in (select id from semillero_chats where user_id = auth.uid()));
 
   -- ----------------------------------------------------------------------------
+  -- assistant_chats / assistant_messages: "Aria", el Semillero reciclado como
+  -- asistente general — a diferencia de semillero_chats (solo el owner, para
+  -- armar equipos/proyectos desde una idea), Aria es para CUALQUIER miembro
+  -- de la organización (owner, encargado de equipo, member), con un
+  -- propósito distinto: ayudar a entender lo que YA existe (chat libre, o con
+  -- el contexto de un proyecto/tarea puntual). Tablas paralelas a propósito,
+  -- no se reusan las de Semillero (mismo criterio de aislamiento que Client
+  -- Chat vs Task Chat) porque el scoping de RLS es distinto: acá cada persona
+  -- ve únicamente SUS PROPIOS chats, sin ningún concepto de "owner ve todos".
+  -- context_id es polimórfico según context_type (id de un proyecto o de una
+  -- task) — sin FK directa a propósito, ya que puede apuntar a cualquiera de
+  -- las dos tablas; la Edge Function valida acceso real en cada mensaje, no
+  -- esta tabla.
+  -- ----------------------------------------------------------------------------
+  create table if not exists assistant_chats (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references organizations(id) on delete cascade,
+    user_id uuid not null references auth.users(id) on delete cascade,
+    title text not null default 'Nueva conversación',
+    context_type text not null default 'free' check (context_type in ('free', 'project', 'task')),
+    context_id uuid,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+  );
+
+  alter table assistant_chats enable row level security;
+
+  drop policy if exists "assistant_chats_select_own" on assistant_chats;
+  create policy "assistant_chats_select_own" on assistant_chats
+    for select to authenticated using (auth.uid() = user_id);
+
+  drop policy if exists "assistant_chats_insert_own" on assistant_chats;
+  create policy "assistant_chats_insert_own" on assistant_chats
+    for insert to authenticated
+    with check (
+      auth.uid() = user_id
+      and exists (select 1 from organization_members om where om.organization_id = assistant_chats.organization_id and om.user_id = auth.uid())
+    );
+
+  drop policy if exists "assistant_chats_update_own" on assistant_chats;
+  create policy "assistant_chats_update_own" on assistant_chats
+    for update to authenticated using (auth.uid() = user_id);
+
+  drop policy if exists "assistant_chats_delete_own" on assistant_chats;
+  create policy "assistant_chats_delete_own" on assistant_chats
+    for delete to authenticated using (auth.uid() = user_id);
+
+  create table if not exists assistant_messages (
+    id uuid primary key default gen_random_uuid(),
+    chat_id uuid not null references assistant_chats(id) on delete cascade,
+    role text not null check (role in ('user', 'assistant')),
+    content text not null,
+    created_at timestamptz not null default now()
+  );
+
+  alter table assistant_messages enable row level security;
+
+  drop policy if exists "assistant_messages_select_own" on assistant_messages;
+  create policy "assistant_messages_select_own" on assistant_messages
+    for select to authenticated
+    using (chat_id in (select id from assistant_chats where user_id = auth.uid()));
+
+  drop policy if exists "assistant_messages_insert_own" on assistant_messages;
+  create policy "assistant_messages_insert_own" on assistant_messages
+    for insert to authenticated
+    with check (chat_id in (select id from assistant_chats where user_id = auth.uid()));
+
+  -- Necesaria para "Regenerar respuesta" (mismo patrón que semillero_messages).
+  drop policy if exists "assistant_messages_delete_own" on assistant_messages;
+  create policy "assistant_messages_delete_own" on assistant_messages
+    for delete to authenticated
+    using (chat_id in (select id from assistant_chats where user_id = auth.uid()));
+
+  -- ----------------------------------------------------------------------------
   -- projects: entregable real de una idea, creado a mano o desde una sugerencia
   -- de equipo de El Semillero (ver team_suggestion arriba). Solo el owner de la
   -- organización puede crear/editar/borrar — mismo criterio que semillero_chats.

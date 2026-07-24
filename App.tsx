@@ -14,6 +14,7 @@ import ClientJoinScreen from './src/screens/ClientJoinScreen'
 import AddSpaceScreen from './src/screens/AddSpaceScreen'
 import ProfileSetupScreen from './src/screens/ProfileSetupScreen'
 import SemilleroScreen from './src/screens/SemilleroScreen'
+import AriaScreen from './src/screens/AriaScreen'
 import BadgesScreen from './src/screens/BadgesScreen'
 import ActivityScreen from './src/screens/ActivityScreen'
 import OrganizationSettingsScreen from './src/screens/OrganizationSettingsScreen'
@@ -109,6 +110,7 @@ function RootNavigator() {
       <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
       <Stack.Screen name="Main" component={MainComponent} />
       <Stack.Screen name="Semillero" component={SemilleroScreen} />
+      <Stack.Screen name="Aria" component={AriaScreen} />
       <Stack.Screen name="Badges" component={BadgesScreen} />
       <Stack.Screen name="Activity" component={ActivityScreen} />
       <Stack.Screen name="OrganizationSettings" component={OrganizationSettingsScreen} />

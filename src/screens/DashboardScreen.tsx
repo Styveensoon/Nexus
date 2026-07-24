@@ -24,6 +24,7 @@ import {
   Folder,
   Gauge,
   LogOut,
+  MessageCircle,
   Search,
   Settings,
   Sparkles,
@@ -333,6 +334,27 @@ export default function DashboardScreen({ navigation }: any) {
                   <ChevronRight size={20} color={textSecondary} />
                 </TouchableOpacity>
               )}
+
+              {/* ARIA — asistente general, visible para cualquier miembro (no
+                  solo owner, a diferencia de El Semillero de arriba). Ayuda a
+                  entender proyectos/tareas puntuales y sirve como copiloto de
+                  onboarding para gente nueva en la organización. */}
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[styles.semilleroCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}
+                onPress={() => navigation.navigate("Aria")}
+              >
+                <View style={[styles.semilleroIcon, { backgroundColor: mixHex(AZURE_DEEP, isDark ? "#0F172A" : "#FFFFFF", 0.16) }]}>
+                  <MessageCircle size={22} color={AZURE_DEEP} strokeWidth={2.3} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.semilleroTitle, { color: textPrimary }]}>Aria</Text>
+                  <Text style={[styles.semilleroDesc, { color: textSecondary }]} numberOfLines={2}>
+                    Tu asistente dentro de Nexus — pregúntale sobre un proyecto, una tarea, o lo que necesites entender del equipo.
+                  </Text>
+                </View>
+                <ChevronRight size={20} color={textSecondary} />
+              </TouchableOpacity>
 
               {/* EQUIPOS / BADGES / CLIENTES */}
               <View style={[styles.tileRow, { flexDirection: isMobile ? "column" : "row" }]}>

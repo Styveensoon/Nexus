@@ -29,6 +29,7 @@ import {
   Layers,
   Link2,
   List,
+  MessageCircle,
   MessageSquare,
   Pencil,
   Plus,
@@ -1634,6 +1635,24 @@ export default function TasksScreen({ navigation }: any) {
                           {selectedTask.description || "Sin descripción."}
                         </Text>
                       </View>
+
+                      {selectedTaskInvolved && (
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          style={[styles.askAriaBtn, { backgroundColor: inputBg, borderColor: border, marginTop: 12 }]}
+                          onPress={() => {
+                            closeTaskDetail();
+                            navigation.navigate("Aria", {
+                              contextType: "task",
+                              contextId: selectedTask.id,
+                              contextLabel: selectedTask.title,
+                            });
+                          }}
+                        >
+                          <MessageCircle size={13} color={primaryColor} strokeWidth={2.3} />
+                          <Text style={[styles.askAriaBtnText, { color: primaryColor }]}>Preguntarle a Aria sobre esta tarea</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
 
                     <View style={!isMobile ? styles.formSide : undefined}>
@@ -2231,6 +2250,8 @@ const styles = StyleSheet.create({
   taskInfoCard: { borderWidth: 1, borderRadius: 20, padding: 18, marginBottom: 16 },
   taskInfoTitle: { fontSize: 19, fontWeight: "700", letterSpacing: -0.3, marginBottom: 8 },
   taskInfoDescription: { fontSize: 13.5, lineHeight: 20 },
+  askAriaBtn: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, alignSelf: "flex-start" },
+  askAriaBtnText: { fontSize: 12, fontWeight: "700" },
 
   taskFormCard: { borderWidth: 1, borderRadius: 20, padding: 16 },
   taskFormTitleInput: { fontSize: 16, fontWeight: "700", paddingVertical: 6 },

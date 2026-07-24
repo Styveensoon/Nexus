@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import { ArrowLeft, ArrowRight, ChevronDown, Crown, Folder, Layers, ListChecks, Sparkles, Target, Users } from "lucide-react-native";
+import { ArrowLeft, ArrowRight, ChevronDown, Crown, Folder, Layers, ListChecks, MessageCircle, Sparkles, Target, Users } from "lucide-react-native";
 
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
@@ -180,6 +180,20 @@ export default function ProjectDetailScreen({ navigation, route }: any) {
                   {canManage && <ChevronDown size={12} color={STATUS_COLORS[project.status]} />}
                 </TouchableOpacity>
               </View>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[styles.askAriaBtn, { backgroundColor: inputBg, borderColor: border }]}
+                onPress={() =>
+                  navigation.navigate("Aria", {
+                    contextType: "project",
+                    contextId: project.id,
+                    contextLabel: project.name,
+                  })
+                }
+              >
+                <MessageCircle size={13} color={primaryColor} strokeWidth={2.3} />
+                <Text style={[styles.askAriaBtnText, { color: primaryColor }]}>Preguntarle a Aria</Text>
+              </TouchableOpacity>
             </View>
 
             <Text style={[styles.description, { color: textSecondary }]}>
@@ -433,6 +447,8 @@ const styles = StyleSheet.create({
   description: { fontSize: 13.5, lineHeight: 20, marginTop: 16 },
 
   statusBadge: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
+  askAriaBtn: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, alignSelf: "flex-start" },
+  askAriaBtnText: { fontSize: 12, fontWeight: "700" },
 
   sectionCard: { borderRadius: 24, borderWidth: 1, padding: 20, marginBottom: 14 },
   sectionHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
