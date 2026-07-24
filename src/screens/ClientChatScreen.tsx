@@ -3,15 +3,25 @@ import { Image, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "
 import { Sparkles } from "lucide-react-native";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
+import { useSpace } from "../context/SpaceContext";
 import ClientChatThread from "../components/ClientChatThread";
 
 // Chat real (docs/CLIENTE.md §5) — el cliente habla con quien esté asignado a
 // su espacio (client_assignments). ClientChatThread es self-contained y se
 // reusa tal cual del lado staff (ClientDetailScreen), solo cambia quién es
 // currentUserId respecto a clientUserId.
+//
+// useAuth().organization es SIEMPRE null acá a propósito (ver AuthContext.tsx
+// — ese alias solo resuelve espacios "member") así que las pantallas dentro
+// de ClientTabs necesitan leer la organización directo del espacio activo de
+// tipo "client" vía useSpace(). Bug real encontrado probando en vivo: sin
+// esto, la pantalla quedaba en blanco (early return sobre un organization
+// que nunca dejaba de ser null).
 export default function ClientChatScreen() {
   const { isDark } = useTheme();
-  const { organization, user } = useAuth();
+  const { user } = useAuth();
+  const { activeSpace } = useSpace();
+  const organization = activeSpace?.kind === "client" ? activeSpace.organization : null;
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
 

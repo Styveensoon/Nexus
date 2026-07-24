@@ -68,6 +68,25 @@ export type ProjectMemberProfile = {
   roleInTeam: string | null;
 };
 
+// Resumen semanal generado por IA (Edge Function project-weekly-digest, ver
+// docs/ARQUITECTURA.md "Reportes automáticos con IA") — métricas siempre
+// calculadas en TS/SQL, la IA solo redacta el resumen y compara contra el
+// snapshot anterior (filosofía anti-fake, docs/PATRONES.md).
+export type ProjectDigestMetrics = {
+  tasksTotal: number;
+  tasksCompleted: number;
+  tasksActive: number;
+  tasksOverdue: number;
+  tasksBlocked: number;
+  progressPercent: number;
+};
+
+export type ProjectDigestContent = {
+  summary: string;
+  metrics: ProjectDigestMetrics;
+  previousMetrics: ProjectDigestMetrics | null;
+};
+
 export type Project = {
   id: string;
   organizationId: string;
@@ -84,13 +103,15 @@ export type Project = {
   createdAt: string;
   members: ProjectMemberProfile[];
   teams: Team[];
+  lastDigestContent: ProjectDigestContent | null;
+  lastDigestAt: string | null;
 };
 
 export async function listProjects(organizationId: string) {
   const { data: projectRows, error: projectsError } = await supabase
     .from("projects")
     .select(
-      "id, organization_id, name, description, color, icon_url, status, leader_id, first_steps, goals, areas, created_by, created_at"
+      "id, organization_id, name, description, color, icon_url, status, leader_id, first_steps, goals, areas, created_by, created_at, last_digest_content, last_digest_at"
     )
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false });
@@ -160,6 +181,8 @@ export async function listProjects(organizationId: string) {
       .filter((pt) => pt.project_id === row.id)
       .map((pt) => teamById.get(pt.team_id))
       .filter((t): t is Team => !!t),
+    lastDigestContent: row.last_digest_content ?? null,
+    lastDigestAt: row.last_digest_at,
   }));
 
   return { data: projects, error: null };

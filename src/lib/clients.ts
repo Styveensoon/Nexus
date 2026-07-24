@@ -430,7 +430,7 @@ export async function listClientRequests(organizationId: string, clientUserId: s
 // enterado). Devuelve userIds, no emails ya resueltos — mismo patrón que el
 // resto de notify* en emails.ts, que resuelven sus propios emails vía
 // getEmailsForUserIds.
-async function getStaffUserIdsForClient(organizationId: string, clientUserId: string): Promise<string[]> {
+export async function getStaffUserIdsForClient(organizationId: string, clientUserId: string): Promise<string[]> {
   const assignment = await getClientAssignment(organizationId, clientUserId);
 
   if (assignment?.type === "user") return [assignment.userId];

@@ -36,6 +36,7 @@ import {
   Search,
   Send,
   SmilePlus,
+  Sparkles,
   ThumbsDown,
   ThumbsUp,
   Trash2,
@@ -58,6 +59,7 @@ import TaskListView from "../components/TaskListView";
 import TaskGanttChart from "../components/TaskGanttChart";
 import TaskCollaboratorsModal from "../components/TaskCollaboratorsModal";
 import UserTasksModal from "../components/UserTasksModal";
+import RebalanceSuggestionsModal from "../components/RebalanceSuggestionsModal";
 import {
   addTaskComment,
   addTaskCollaborator,
@@ -215,6 +217,7 @@ export default function TasksScreen({ navigation }: any) {
   const [filterOnlyMine, setFilterOnlyMine] = useState(false);
   const [filterOverdueOnly, setFilterOverdueOnly] = useState(false);
   const [filterPriorities, setFilterPriorities] = useState<Set<TaskPriority>>(new Set());
+  const [showRebalanceModal, setShowRebalanceModal] = useState(false);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -907,10 +910,20 @@ export default function TasksScreen({ navigation }: any) {
             </View>
 
             {isProjectLeaderOrOwner(selectedProject) && selectedProject && (
-              <TouchableOpacity activeOpacity={0.85} style={[styles.newBtn, { backgroundColor: primaryColor }]} onPress={openCreateModal}>
-                <Plus size={16} color="#FFF" />
-                <Text style={styles.newBtnText}>Nueva task</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[styles.newBtn, { backgroundColor: inputBg, borderWidth: 1, borderColor: border }]}
+                  onPress={() => setShowRebalanceModal(true)}
+                >
+                  <Sparkles size={16} color={primaryColor} />
+                  <Text style={[styles.newBtnText, { color: primaryColor }]}>Sugerencias</Text>
+                </TouchableOpacity>
+                <TouchableOpacity activeOpacity={0.85} style={[styles.newBtn, { backgroundColor: primaryColor }]} onPress={openCreateModal}>
+                  <Plus size={16} color="#FFF" />
+                  <Text style={styles.newBtnText}>Nueva task</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
 
@@ -2122,6 +2135,17 @@ export default function TasksScreen({ navigation }: any) {
         projects={projects}
         onClose={() => setSearchedMember(null)}
       />
+
+      {selectedProject && (
+        <RebalanceSuggestionsModal
+          visible={showRebalanceModal}
+          isDark={isDark}
+          projectId={selectedProject.id}
+          projectName={selectedProject.name}
+          onClose={() => setShowRebalanceModal(false)}
+          onApplied={loadData}
+        />
+      )}
     </View>
   );
 }

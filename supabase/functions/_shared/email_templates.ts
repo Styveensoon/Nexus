@@ -98,7 +98,11 @@ export type EmailTemplateKey =
   | "task_due_soon"
   | "task_blocked_toggle"
   | "badge_granted"
-  | "client_request_created";
+  | "client_request_created"
+  | "client_document_ready"
+  | "client_deliverable_created"
+  | "client_deliverable_decided"
+  | "project_weekly_digest";
 
 export function buildEmailTemplate(key: EmailTemplateKey, v: Record<string, string>): { subject: string; html: string } {
   // Wrapper que propaga v.orgLogoUrl a cada caso sin tener que repetirlo en
@@ -227,6 +231,46 @@ export function buildEmailTemplate(key: EmailTemplateKey, v: Record<string, stri
           title: `Nueva solicitud de tu cliente`,
           bodyHtml: `<strong>${v.clientName}</strong> pidió: <strong>${v.requestTitle}</strong>. Respondan a la brevedad.`,
           buttonText: "Ver solicitud",
+        }),
+      };
+    case "client_document_ready":
+      return {
+        subject: `Tu documento "${v.documentTitle}" está listo`,
+        html: layout({
+          title: `Tu documento está listo`,
+          bodyHtml: `Tu equipo generó <strong>${v.documentTitle}</strong>, ya lo puedes ver dentro de tu solicitud.`,
+          buttonText: "Ver documento",
+        }),
+      };
+    case "client_deliverable_created":
+      return {
+        subject: `Nuevo entregable para revisar: ${v.deliverableTitle}`,
+        html: layout({
+          title: `Tienes un entregable para revisar`,
+          bodyHtml: `Tu equipo compartió <strong>${v.deliverableTitle}</strong> para que lo apruebes o rechaces.`,
+          buttonText: "Revisar entregable",
+        }),
+      };
+    case "client_deliverable_decided": {
+      const approved = v.approved === "true";
+      return {
+        subject: approved ? `${v.clientName} aprobó "${v.deliverableTitle}"` : `${v.clientName} rechazó "${v.deliverableTitle}"`,
+        html: layout({
+          title: approved ? `Entregable aprobado` : `Entregable rechazado`,
+          bodyHtml: approved
+            ? `<strong>${v.clientName}</strong> aprobó el entregable <strong>${v.deliverableTitle}</strong>.`
+            : `<strong>${v.clientName}</strong> rechazó el entregable <strong>${v.deliverableTitle}</strong>. Puede que necesite ajustes.`,
+          buttonText: "Ver cliente",
+        }),
+      };
+    }
+    case "project_weekly_digest":
+      return {
+        subject: `Resumen semanal de ${v.projectName}`,
+        html: layout({
+          title: `Resumen semanal — ${v.projectName}`,
+          bodyHtml: `${v.summary}`,
+          buttonText: "Ver proyecto",
         }),
       };
     default:

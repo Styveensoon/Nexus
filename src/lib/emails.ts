@@ -143,3 +143,34 @@ export async function notifyBadgeGranted(userId: string, badgeLabel: string, bad
 export async function notifyClientRequestCreated(userIds: string[], requestTitle: string, clientName: string, organizationId: string) {
   await sendEmail(await getEmailsForUserIds(userIds), "client_request_created", { requestTitle, clientName }, organizationId);
 }
+
+// docs/CLIENTE.md §7: al cliente, cuando el staff generó/regeneró el
+// documento que pidió. Nunca se notifica una regeneración del widget
+// Dashboard (§6) — sería ruido, ese es "vivo" pero no dispara correo.
+export async function notifyClientDocumentReady(clientUserId: string, documentTitle: string, organizationId: string) {
+  await sendEmail(await getEmailsForUserIds([clientUserId]), "client_document_ready", { documentTitle }, organizationId);
+}
+
+// docs/CLIENTE.md §9: al cliente, cuando el staff sube un entregable nuevo
+// para que apruebe/rechace.
+export async function notifyClientDeliverableCreated(clientUserId: string, deliverableTitle: string, organizationId: string) {
+  await sendEmail(await getEmailsForUserIds([clientUserId]), "client_deliverable_created", { deliverableTitle }, organizationId);
+}
+
+// docs/CLIENTE.md §9: "una decisión del cliente retroalimenta el flujo
+// interno" — al staff (todos los encargados actuales), cuando el cliente
+// aprueba o rechaza un entregable.
+export async function notifyStaffDeliverableDecided(
+  staffUserIds: string[],
+  deliverableTitle: string,
+  clientName: string,
+  approved: boolean,
+  organizationId: string
+) {
+  await sendEmail(
+    await getEmailsForUserIds(staffUserIds),
+    "client_deliverable_decided",
+    { deliverableTitle, clientName, approved: approved ? "true" : "false" },
+    organizationId
+  );
+}

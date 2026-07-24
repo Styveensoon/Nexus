@@ -1,9 +1,10 @@
 import React, { useCallback, useState } from "react";
 import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import { ClipboardList, Plus, X } from "lucide-react-native";
+import { ChevronDown, ChevronUp, ClipboardList, FileText, Plus, X } from "lucide-react-native";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
+import { useSpace } from "../context/SpaceContext";
 import {
   cancelClientRequest,
   CLIENT_REQUEST_STATUS_COLORS,
@@ -12,6 +13,7 @@ import {
   createClientRequest,
   listClientRequests,
 } from "../lib/clients";
+import { ClientDocument, getDocumentForRequest } from "../lib/clientDocuments";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
@@ -24,12 +26,20 @@ function formatDate(iso: string) {
 // dentro de la plataforma, no solo en el correo.
 export default function ClientRequestsScreen() {
   const { isDark } = useTheme();
-  const { organization, user } = useAuth();
+  const { user } = useAuth();
+  // useAuth().organization es SIEMPRE null acá a propósito (ver AuthContext.tsx
+  // — ese alias solo resuelve espacios "member"); las pantallas dentro de
+  // ClientTabs necesitan leer la organización del espacio activo "client"
+  // vía useSpace(). Bug real encontrado probando en vivo (pantalla en blanco).
+  const { activeSpace } = useSpace();
+  const organization = activeSpace?.kind === "client" ? activeSpace.organization : null;
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
   const isWeb = Platform.OS === "web";
 
   const [requests, setRequests] = useState<ClientRequest[]>([]);
+  const [documentsByRequest, setDocumentsByRequest] = useState<Record<string, ClientDocument | null>>({});
+  const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -52,6 +62,15 @@ export default function ClientRequestsScreen() {
     setLoading(true);
     const { data } = await listClientRequests(organization.id, user.id);
     setRequests(data);
+
+    const documentEntries = await Promise.all(
+      data.map(async (r) => {
+        const { data: doc } = await getDocumentForRequest(r.id);
+        return [r.id, doc] as const;
+      })
+    );
+    setDocumentsByRequest(Object.fromEntries(documentEntries));
+
     setLoading(false);
   }, [organization?.id, user?.id]);
 
@@ -173,6 +192,35 @@ export default function ClientRequestsScreen() {
                   {!!r.description && <Text style={[styles.requestDescription, { color: textSecondary }]}>{r.description}</Text>}
                   <Text style={[styles.requestDate, { color: textSecondary }]}>{formatDate(r.createdAt)}</Text>
 
+                  {documentsByRequest[r.id] && (
+                    <View style={[styles.docBox, { borderColor: border }]}>
+                      <TouchableOpacity
+                        style={styles.docHeader}
+                        onPress={() => setExpandedDocId(expandedDocId === r.id ? null : r.id)}
+                      >
+                        <FileText size={14} color={primaryColor} strokeWidth={2.2} />
+                        <Text style={[styles.docTitle, { color: textPrimary }]} numberOfLines={1}>
+                          {documentsByRequest[r.id]!.title}
+                        </Text>
+                        {expandedDocId === r.id ? (
+                          <ChevronUp size={14} color={textSecondary} strokeWidth={2.2} />
+                        ) : (
+                          <ChevronDown size={14} color={textSecondary} strokeWidth={2.2} />
+                        )}
+                      </TouchableOpacity>
+                      {expandedDocId === r.id && (
+                        <View style={{ gap: 10, marginTop: 8 }}>
+                          {(documentsByRequest[r.id]!.generatedContent?.sections ?? []).map((s, i) => (
+                            <View key={i}>
+                              <Text style={[styles.docSectionHeading, { color: textPrimary }]}>{s.heading}</Text>
+                              <Text style={[styles.docSectionBody, { color: textSecondary }]}>{s.body}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  )}
+
                   {r.status === "open" &&
                     (confirmCancelId === r.id ? (
                       <View style={styles.confirmRow}>
@@ -227,4 +275,10 @@ const styles = StyleSheet.create({
   requestDescription: { fontSize: 12.5, marginTop: 6, lineHeight: 18 },
   requestDate: { fontSize: 11, marginTop: 8 },
   confirmRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 10 },
+
+  docBox: { borderWidth: 1, borderRadius: 14, padding: 12, marginTop: 10 },
+  docHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+  docTitle: { fontSize: 12.5, fontWeight: "700", flex: 1 },
+  docSectionHeading: { fontSize: 12, fontWeight: "700" },
+  docSectionBody: { fontSize: 12, marginTop: 2, lineHeight: 17 },
 });

@@ -14,6 +14,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import * as Clipboard from "expo-clipboard";
 import {
   Activity,
+  AlertTriangle,
   BadgeCheck,
   Building2,
   CheckCircle2,
@@ -21,6 +22,7 @@ import {
   Copy,
   Crown,
   Folder,
+  Gauge,
   LogOut,
   Search,
   Settings,
@@ -36,6 +38,7 @@ import { listProjects, Project, STATUS_COLORS, STATUS_LABELS } from "../lib/proj
 import { countOrgBadges } from "../lib/badges";
 import { countOrgClients } from "../lib/clients";
 import { listActivity, ActivityEntry } from "../lib/activity";
+import { getWorkloadForLeader, getWorkloadForOrganization, WorkloadEntry } from "../lib/workload";
 import {
   listTasksForUser,
   Task,
@@ -100,6 +103,7 @@ export default function DashboardScreen({ navigation }: any) {
   const [recentActivity, setRecentActivity] = useState<ActivityEntry[]>([]);
   const [detailEntry, setDetailEntry] = useState<ActivityEntry | null>(null);
   const [myTasks, setMyTasks] = useState<Task[] | null>(null);
+  const [workload, setWorkload] = useState<WorkloadEntry[] | null>(null);
 
   // useFocusEffect (no useEffect) para que los conteos se refresquen cada vez
   // que se vuelve a esta pestaña (p. ej. después de crear un proyecto en otra
@@ -113,6 +117,17 @@ export default function DashboardScreen({ navigation }: any) {
       countOrgClients(organization.id).then(({ count }) => setClientCount(count));
       listActivity({ organizationId: organization.id, limit: 5 }).then(({ data }) => setRecentActivity(data));
       listTasksForUser(organization.id, user.id).then(({ data }) => setMyTasks(data));
+
+      // Workload Balancer: el owner ve toda la organización, un encargado de
+      // equipo (no owner) ve solo los integrantes de los equipos que lidera —
+      // se decide acá porque isOwner todavía no está calculado en este punto
+      // del render (depende de `organization`, ya disponible en el closure).
+      const isOwnerNow = organization.owner_id === user.id;
+      if (isOwnerNow) {
+        getWorkloadForOrganization(organization.id).then(({ data }) => setWorkload(data));
+      } else {
+        getWorkloadForLeader(organization.id, user.id).then(({ data }) => setWorkload(data));
+      }
     }, [organization, user])
   );
 
@@ -432,6 +447,83 @@ export default function DashboardScreen({ navigation }: any) {
                 </>
               )}
 
+              {/* CARGA DEL EQUIPO (Workload Balancer) — solo owner (toda la
+                  organización) o encargado de equipo (solo sus equipos), ver
+                  lib/workload.ts. Un miembro normal no gestiona gente, no ve
+                  esta sección. */}
+              {(isOwner || isLeader) && (
+                <>
+                  <Text style={[styles.sectionTitle, { color: textPrimary }]}>Carga del equipo</Text>
+                  {workload === null ? (
+                    <View style={[styles.emptyCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}>
+                      <Text style={[styles.emptyTitle, { color: textPrimary }]}>Cargando…</Text>
+                    </View>
+                  ) : workload.length === 0 ? (
+                    <View style={[styles.emptyCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}>
+                      <Gauge size={30} color={textSecondary} strokeWidth={2} />
+                      <Text style={[styles.emptyTitle, { color: textPrimary }]}>Todavía no hay nadie para mostrar acá</Text>
+                      <Text style={[styles.emptySubtitle, { color: textSecondary }]}>
+                        {isOwner
+                          ? "Cuando tu organización tenga miembros, vas a ver su carga de tareas acá."
+                          : "Cuando tu equipo tenga integrantes, vas a ver su carga de tareas acá."}
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={[styles.activityCard, { backgroundColor: inputBg, borderColor: border }, ultraShadow]}>
+                      <View style={{ gap: 14 }}>
+                        {workload.slice(0, 6).map((entry, index) => {
+                          const maxActive = Math.max(...workload.map((w) => w.activeTasks), 1);
+                          const pct = Math.min(100, Math.round((entry.activeTasks / maxActive) * 100));
+                          const isLast = index === Math.min(workload.length, 6) - 1;
+                          const initials = entry.name
+                            .trim()
+                            .split(/\s+/)
+                            .filter(Boolean)
+                            .slice(0, 2)
+                            .map((p) => p[0]?.toUpperCase())
+                            .join("") || "?";
+                          return (
+                            <View key={entry.userId} style={[styles.workloadRow, { borderColor: isLast ? "transparent" : border }]}>
+                              <View style={[styles.workloadAvatar, { backgroundColor: entry.avatarColor, overflow: "hidden" }]}>
+                                {entry.avatarUrl ? (
+                                  <Image source={{ uri: entry.avatarUrl }} style={{ width: 32, height: 32 }} />
+                                ) : (
+                                  <Text style={styles.workloadAvatarText}>{initials}</Text>
+                                )}
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <View style={styles.workloadNameRow}>
+                                  <Text style={[styles.workloadName, { color: textPrimary }]} numberOfLines={1}>
+                                    {entry.name}
+                                  </Text>
+                                  <Text style={[styles.workloadCount, { color: textSecondary }]}>
+                                    {entry.activeTasks} {entry.activeTasks === 1 ? "tarea activa" : "tareas activas"}
+                                  </Text>
+                                </View>
+                                <View style={[styles.workloadTrack, { backgroundColor: border }]}>
+                                  <View
+                                    style={[
+                                      styles.workloadFill,
+                                      { width: `${pct}%`, backgroundColor: entry.overdueTasks > 0 ? "#EF4444" : primaryColor },
+                                    ]}
+                                  />
+                                </View>
+                              </View>
+                              {entry.overdueTasks > 0 && (
+                                <View style={styles.overdueBadge}>
+                                  <AlertTriangle size={11} color="#EF4444" strokeWidth={2.4} />
+                                  <Text style={styles.overdueBadgeText}>{entry.overdueTasks}</Text>
+                                </View>
+                              )}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  )}
+                </>
+              )}
+
               {/* MIS TAREAS PENDIENTES — asignadas a mí, a un equipo mío, o donde
                   soy colaborador (ver listTasksForUser en lib/tasks.ts).
                   Visible para cualquiera, incluido el owner si tiene tareas
@@ -682,4 +774,15 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 15, fontWeight: "600", textAlign: "center" },
   emptySubtitle: { fontSize: 13, textAlign: "center", lineHeight: 20 },
   emptyLink: { fontSize: 13, fontWeight: "700", textAlign: "center", marginTop: 2 },
+
+  workloadRow: { flexDirection: "row", alignItems: "center", gap: 12, borderBottomWidth: 1, paddingBottom: 14 },
+  workloadAvatar: { width: 32, height: 32, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  workloadAvatarText: { color: "#FFF", fontWeight: "700", fontSize: 12 },
+  workloadNameRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
+  workloadName: { fontSize: 13.5, fontWeight: "600", flexShrink: 1 },
+  workloadCount: { fontSize: 11.5 },
+  workloadTrack: { height: 6, borderRadius: 999, overflow: "hidden" },
+  workloadFill: { height: 6, borderRadius: 999 },
+  overdueBadge: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "rgba(239,68,68,0.12)", borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+  overdueBadgeText: { color: "#EF4444", fontSize: 11, fontWeight: "700" },
 });

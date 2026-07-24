@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import { ArrowLeft, ArrowRight, ChevronDown, Crown, Folder, Layers, ListChecks, Target, Users } from "lucide-react-native";
+import { ArrowLeft, ArrowRight, ChevronDown, Crown, Folder, Layers, ListChecks, Sparkles, Target, Users } from "lucide-react-native";
 
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
@@ -16,6 +16,7 @@ import {
   STATUS_LABELS,
   updateProjectStatus,
 } from "../lib/projects";
+import { generateProjectDigest } from "../lib/digest";
 
 const AZURE_DEEP = "#2C7BD1";
 
@@ -66,6 +67,8 @@ export default function ProjectDetailScreen({ navigation, route }: any) {
   const [statusPickerVisible, setStatusPickerVisible] = useState(false);
   const [convertingStep, setConvertingStep] = useState<string | null>(null);
   const [convertError, setConvertError] = useState<string | null>(null);
+  const [generatingDigest, setGeneratingDigest] = useState(false);
+  const [digestError, setDigestError] = useState<string | null>(null);
 
   const loadProject = useCallback(async () => {
     if (!organization || !projectId) return;
@@ -111,6 +114,19 @@ export default function ProjectDetailScreen({ navigation, route }: any) {
       return;
     }
     setProject({ ...project, firstSteps: project.firstSteps.filter((s) => s !== step) });
+  };
+
+  const handleGenerateDigest = async () => {
+    if (!project) return;
+    setGeneratingDigest(true);
+    setDigestError(null);
+    const { error, content } = await generateProjectDigest(project.id);
+    setGeneratingDigest(false);
+    if (error || !content) {
+      setDigestError("No se pudo generar el resumen, intenta de nuevo.");
+      return;
+    }
+    setProject({ ...project, lastDigestContent: content, lastDigestAt: new Date().toISOString() });
   };
 
   if (loading) {
@@ -170,6 +186,69 @@ export default function ProjectDetailScreen({ navigation, route }: any) {
               {project.description || "Sin descripción."}
             </Text>
           </View>
+
+          {/* RESUMEN SEMANAL — generado por IA (docs/ARQUITECTURA.md "Reportes
+              automáticos con IA"), Edge Function project-weekly-digest. Se
+              regenera solo con el cron semanal o el botón manual acá — nunca
+              solo, ver la nota de generatingDigest. */}
+          <SectionCard
+            icon={<Sparkles size={16} color={primaryColor} strokeWidth={2.2} />}
+            title="Resumen semanal"
+            cardBg={cardBg}
+            border={border}
+            textPrimary={textPrimary}
+            ultraShadow={ultraShadow}
+          >
+            {digestError && <Text style={{ color: "#EF4444", fontSize: 12.5, fontWeight: "600", marginBottom: 10 }}>{digestError}</Text>}
+            {project.lastDigestContent ? (
+              <View style={{ gap: 12 }}>
+                <Text style={{ color: textPrimary, fontSize: 13.5, lineHeight: 20 }}>{project.lastDigestContent.summary}</Text>
+                <View style={styles.digestMetricsRow}>
+                  <View style={[styles.digestMetricBox, { backgroundColor: inputBg }]}>
+                    <Text style={[styles.digestMetricValue, { color: primaryColor }]}>{project.lastDigestContent.metrics.progressPercent}%</Text>
+                    <Text style={[styles.digestMetricLabel, { color: textSecondary }]}>Avance</Text>
+                  </View>
+                  <View style={[styles.digestMetricBox, { backgroundColor: inputBg }]}>
+                    <Text style={[styles.digestMetricValue, { color: primaryColor }]}>{project.lastDigestContent.metrics.tasksCompleted}</Text>
+                    <Text style={[styles.digestMetricLabel, { color: textSecondary }]}>Completadas</Text>
+                  </View>
+                  <View style={[styles.digestMetricBox, { backgroundColor: inputBg }]}>
+                    <Text
+                      style={[
+                        styles.digestMetricValue,
+                        { color: project.lastDigestContent.metrics.tasksOverdue > 0 ? "#EF4444" : primaryColor },
+                      ]}
+                    >
+                      {project.lastDigestContent.metrics.tasksOverdue}
+                    </Text>
+                    <Text style={[styles.digestMetricLabel, { color: textSecondary }]}>Vencidas</Text>
+                  </View>
+                </View>
+                {project.lastDigestAt && (
+                  <Text style={{ color: textSecondary, fontSize: 11 }}>
+                    Actualizado {new Date(project.lastDigestAt).toLocaleDateString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                  </Text>
+                )}
+              </View>
+            ) : (
+              <Text style={{ color: textSecondary, fontSize: 13 }}>
+                Todavía no se generó ningún resumen — se arma solo cada lunes, o generalo ahora.
+              </Text>
+            )}
+            {canManage && (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                disabled={generatingDigest}
+                style={[styles.digestGenerateBtn, { backgroundColor: primaryColor, opacity: generatingDigest ? 0.6 : 1 }]}
+                onPress={handleGenerateDigest}
+              >
+                <Sparkles size={13} color="#FFF" strokeWidth={2.3} />
+                <Text style={styles.digestGenerateBtnText}>
+                  {generatingDigest ? "Generando…" : project.lastDigestContent ? "Regenerar" : "Generar ahora"}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </SectionCard>
 
           {project.goals.length > 0 && (
             <SectionCard icon={<Target size={16} color={primaryColor} strokeWidth={2.2} />} title="Metas" cardBg={cardBg} border={border} textPrimary={textPrimary} ultraShadow={ultraShadow}>
@@ -374,4 +453,11 @@ const styles = StyleSheet.create({
   convertBtnText: { color: "#FFF", fontWeight: "700", fontSize: 11.5 },
 
   emptyTitle: { fontSize: 15, fontWeight: "700" },
+
+  digestMetricsRow: { flexDirection: "row", gap: 8 },
+  digestMetricBox: { flex: 1, borderRadius: 14, paddingVertical: 10, alignItems: "center" },
+  digestMetricValue: { fontSize: 17, fontWeight: "700" },
+  digestMetricLabel: { fontSize: 10, marginTop: 2 },
+  digestGenerateBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 999, paddingVertical: 11, marginTop: 14 },
+  digestGenerateBtnText: { color: "#FFF", fontSize: 12.5, fontWeight: "700" },
 });

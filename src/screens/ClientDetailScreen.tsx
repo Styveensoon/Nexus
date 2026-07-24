@@ -1,12 +1,14 @@
 import React, { useCallback, useState } from "react";
-import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import { ArrowLeft, ChevronDown, User as UserIcon, Users as UsersIcon } from "lucide-react-native";
+import { ArrowLeft, ChevronDown, LayoutGrid, Sparkles, User as UserIcon, Users as UsersIcon } from "lucide-react-native";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
 import ClientChatThread from "../components/ClientChatThread";
 import ClientAssignModal from "../components/ClientAssignModal";
 import ClientRequestStatusPickerModal from "../components/ClientRequestStatusPickerModal";
+import ClientDocumentGenerateModal from "../components/ClientDocumentGenerateModal";
+import ChatAttachmentButtons from "../components/ChatAttachmentButtons";
 import {
   ClientAssigneeInfo,
   CLIENT_REQUEST_STATUS_COLORS,
@@ -15,7 +17,16 @@ import {
   getClientAssignment,
   listClientRequests,
   updateClientRequestStatus,
+  uploadClientAttachment,
 } from "../lib/clients";
+import { ClientDocument, getDocumentForRequest } from "../lib/clientDocuments";
+import {
+  CLIENT_DELIVERABLE_STATUS_COLORS,
+  CLIENT_DELIVERABLE_STATUS_LABELS,
+  ClientDeliverable,
+  createClientDeliverable,
+  listClientDeliverables,
+} from "../lib/clientDeliverables";
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -43,9 +54,19 @@ export default function ClientDetailScreen({ navigation, route }: any) {
 
   const [assignment, setAssignment] = useState<ClientAssigneeInfo | null>(null);
   const [requests, setRequests] = useState<ClientRequest[]>([]);
+  const [documentsByRequest, setDocumentsByRequest] = useState<Record<string, ClientDocument | null>>({});
+  const [deliverables, setDeliverables] = useState<ClientDeliverable[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [statusPickerForRequest, setStatusPickerForRequest] = useState<ClientRequest | null>(null);
+  const [documentModalRequest, setDocumentModalRequest] = useState<ClientRequest | null>(null);
+
+  const [showDeliverableForm, setShowDeliverableForm] = useState(false);
+  const [newDeliverableTitle, setNewDeliverableTitle] = useState("");
+  const [newDeliverableContent, setNewDeliverableContent] = useState("");
+  const [newDeliverableAttachment, setNewDeliverableAttachment] = useState<{ url: string; name: string } | null>(null);
+  const [creatingDeliverable, setCreatingDeliverable] = useState(false);
+  const [deliverableErrorText, setDeliverableErrorText] = useState<string | null>(null);
 
   const bg            = isDark ? "#0B1220" : "#F1F5FA";
   const cardBg        = isDark ? "rgba(17, 24, 39, 0.6)" : "rgba(255, 255, 255, 0.6)";
@@ -54,16 +75,28 @@ export default function ClientDetailScreen({ navigation, route }: any) {
   const textPrimary   = isDark ? "#F8FAFC" : "#101828";
   const textSecondary = isDark ? "#94A3B8" : "#5B6472";
   const primaryColor  = "#2C7BD1";
+  const dangerColor   = "#EF4444";
 
   const load = useCallback(async () => {
     if (!organization || !clientUserId) return;
     setLoading(true);
-    const [assignmentRes, requestsRes] = await Promise.all([
+    const [assignmentRes, requestsRes, deliverablesRes] = await Promise.all([
       getClientAssignment(organization.id, clientUserId),
       listClientRequests(organization.id, clientUserId),
+      listClientDeliverables(organization.id, clientUserId),
     ]);
     setAssignment(assignmentRes);
     setRequests(requestsRes.data);
+    setDeliverables(deliverablesRes.data);
+
+    const documentEntries = await Promise.all(
+      requestsRes.data.map(async (r) => {
+        const { data } = await getDocumentForRequest(r.id);
+        return [r.id, data] as const;
+      })
+    );
+    setDocumentsByRequest(Object.fromEntries(documentEntries));
+
     setLoading(false);
   }, [organization?.id, clientUserId]);
 
@@ -78,6 +111,30 @@ export default function ClientDetailScreen({ navigation, route }: any) {
     const requestId = statusPickerForRequest.id;
     setStatusPickerForRequest(null);
     await updateClientRequestStatus(requestId, status, user.id);
+    await load();
+  };
+
+  const handleCreateDeliverable = async () => {
+    if (!organization || !clientUserId || !user || !newDeliverableTitle.trim()) return;
+    setCreatingDeliverable(true);
+    setDeliverableErrorText(null);
+    const { error } = await createClientDeliverable({
+      organizationId: organization.id,
+      clientUserId,
+      title: newDeliverableTitle.trim(),
+      content: newDeliverableContent.trim() || null,
+      attachmentUrl: newDeliverableAttachment?.url ?? null,
+      createdBy: user.id,
+    });
+    setCreatingDeliverable(false);
+    if (error) {
+      setDeliverableErrorText("No se pudo crear el entregable.");
+      return;
+    }
+    setNewDeliverableTitle("");
+    setNewDeliverableContent("");
+    setNewDeliverableAttachment(null);
+    setShowDeliverableForm(false);
     await load();
   };
 
@@ -100,6 +157,14 @@ export default function ClientDetailScreen({ navigation, route }: any) {
                 {clientName ?? "Cliente"}
               </Text>
             </View>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[styles.homeBtn, { backgroundColor: primaryColor }]}
+              onPress={() => navigation.navigate("ClientHomeBuilder", { clientUserId, clientName, clientAvatarUrl, clientAvatarColor })}
+            >
+              <LayoutGrid size={15} color="#FFF" strokeWidth={2.3} />
+              {!isMobile && <Text style={styles.homeBtnText}>Armar home</Text>}
+            </TouchableOpacity>
           </View>
 
           {/* ASIGNACIÓN */}
@@ -153,29 +218,137 @@ export default function ClientDetailScreen({ navigation, route }: any) {
               <Text style={{ color: textSecondary, fontSize: 13 }}>Este cliente todavía no hizo ninguna solicitud.</Text>
             ) : (
               <View style={{ gap: 10 }}>
-                {requests.map((r) => (
-                  <View key={r.id} style={[styles.requestRow, { borderColor: border }]}>
+                {requests.map((r) => {
+                  const document = documentsByRequest[r.id];
+                  return (
+                    <View key={r.id} style={[styles.requestCardColumn, { borderColor: border }]}>
+                      <View style={styles.requestHeaderRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.requestTitle, { color: textPrimary }]} numberOfLines={1}>
+                            {r.title}
+                          </Text>
+                          {!!r.description && (
+                            <Text style={[styles.requestDescription, { color: textSecondary }]} numberOfLines={2}>
+                              {r.description}
+                            </Text>
+                          )}
+                          <Text style={[styles.requestDate, { color: textSecondary }]}>{formatDate(r.createdAt)}</Text>
+                        </View>
+                        <TouchableOpacity
+                          activeOpacity={0.8}
+                          style={[styles.statusPill, { backgroundColor: CLIENT_REQUEST_STATUS_COLORS[r.status] + "20" }]}
+                          onPress={() => setStatusPickerForRequest(r)}
+                        >
+                          <Text style={[styles.statusPillText, { color: CLIENT_REQUEST_STATUS_COLORS[r.status] }]}>
+                            {CLIENT_REQUEST_STATUS_LABELS[r.status]}
+                          </Text>
+                          <ChevronDown size={12} color={CLIENT_REQUEST_STATUS_COLORS[r.status]} strokeWidth={2.4} />
+                        </TouchableOpacity>
+                      </View>
+
+                      {document ? (
+                        <View style={[styles.docPreview, { borderColor: border }]}>
+                          <Text style={[styles.docPreviewTitle, { color: textPrimary }]} numberOfLines={1}>
+                            📄 {document.title}
+                          </Text>
+                          {document.generatedContent?.sections?.[0] && (
+                            <Text style={[styles.docPreviewBody, { color: textSecondary }]} numberOfLines={2}>
+                              {document.generatedContent.sections[0].body}
+                            </Text>
+                          )}
+                          <TouchableOpacity onPress={() => setDocumentModalRequest(r)}>
+                            <Text style={{ color: primaryColor, fontSize: 12, fontWeight: "700", marginTop: 4 }}>Regenerar</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <TouchableOpacity activeOpacity={0.8} style={styles.genDocBtn} onPress={() => setDocumentModalRequest(r)}>
+                          <Sparkles size={13} color={primaryColor} strokeWidth={2.3} />
+                          <Text style={{ color: primaryColor, fontSize: 12.5, fontWeight: "700" }}>Generar documento con IA</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+
+          {/* ENTREGABLES */}
+          <View style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: border }]}>
+            <View style={styles.deliverablesHeader}>
+              <Text style={[styles.sectionTitle, { color: textPrimary }]}>Entregables</Text>
+              <TouchableOpacity onPress={() => setShowDeliverableForm((v) => !v)}>
+                <Text style={{ color: primaryColor, fontSize: 12.5, fontWeight: "700" }}>{showDeliverableForm ? "Cancelar" : "+ Nuevo"}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {showDeliverableForm && (
+              <View style={[styles.deliverableForm, { borderColor: border }]}>
+                <TextInput
+                  value={newDeliverableTitle}
+                  onChangeText={setNewDeliverableTitle}
+                  placeholder="Título (ej. Propuesta de diseño v1)"
+                  placeholderTextColor={textSecondary}
+                  style={[styles.input, { backgroundColor: inputBg, borderColor: border, color: textPrimary }]}
+                />
+                <TextInput
+                  value={newDeliverableContent}
+                  onChangeText={setNewDeliverableContent}
+                  placeholder="Contenido / descripción (opcional)"
+                  placeholderTextColor={textSecondary}
+                  multiline
+                  style={[styles.input, styles.textarea, { backgroundColor: inputBg, borderColor: border, color: textPrimary }]}
+                />
+                <View style={styles.deliverableAttachRow}>
+                  <ChatAttachmentButtons
+                    color={primaryColor}
+                    onAttachmentReady={async (data, contentType, ext, name) => {
+                      if (!user) return;
+                      const { url, error } = await uploadClientAttachment(user.id, data, contentType, ext);
+                      if (!error && url) setNewDeliverableAttachment({ url, name });
+                    }}
+                    onError={(message) => setDeliverableErrorText(message)}
+                  />
+                  {newDeliverableAttachment && (
+                    <Text style={{ color: textSecondary, fontSize: 12 }} numberOfLines={1}>
+                      Adjunto: {newDeliverableAttachment.name}
+                    </Text>
+                  )}
+                </View>
+                {deliverableErrorText && <Text style={[styles.errorText, { color: dangerColor }]}>{deliverableErrorText}</Text>}
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  disabled={creatingDeliverable || !newDeliverableTitle.trim()}
+                  style={[styles.submitBtn, { backgroundColor: primaryColor, opacity: creatingDeliverable || !newDeliverableTitle.trim() ? 0.6 : 1 }]}
+                  onPress={handleCreateDeliverable}
+                >
+                  <Text style={styles.submitBtnText}>{creatingDeliverable ? "Creando…" : "Crear entregable"}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {deliverables.length === 0 ? (
+              <Text style={{ color: textSecondary, fontSize: 13 }}>Todavía no hay entregables para este cliente.</Text>
+            ) : (
+              <View style={{ gap: 10 }}>
+                {deliverables.map((d) => (
+                  <View key={d.id} style={[styles.requestRow, { borderColor: border }]}>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.requestTitle, { color: textPrimary }]} numberOfLines={1}>
-                        {r.title}
+                        {d.title}
                       </Text>
-                      {!!r.description && (
+                      {!!d.content && (
                         <Text style={[styles.requestDescription, { color: textSecondary }]} numberOfLines={2}>
-                          {r.description}
+                          {d.content}
                         </Text>
                       )}
-                      <Text style={[styles.requestDate, { color: textSecondary }]}>{formatDate(r.createdAt)}</Text>
+                      <Text style={[styles.requestDate, { color: textSecondary }]}>{formatDate(d.createdAt)}</Text>
                     </View>
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      style={[styles.statusPill, { backgroundColor: CLIENT_REQUEST_STATUS_COLORS[r.status] + "20" }]}
-                      onPress={() => setStatusPickerForRequest(r)}
-                    >
-                      <Text style={[styles.statusPillText, { color: CLIENT_REQUEST_STATUS_COLORS[r.status] }]}>
-                        {CLIENT_REQUEST_STATUS_LABELS[r.status]}
+                    <View style={[styles.statusPill, { backgroundColor: CLIENT_DELIVERABLE_STATUS_COLORS[d.status] + "20" }]}>
+                      <Text style={[styles.statusPillText, { color: CLIENT_DELIVERABLE_STATUS_COLORS[d.status] }]}>
+                        {CLIENT_DELIVERABLE_STATUS_LABELS[d.status]}
                       </Text>
-                      <ChevronDown size={12} color={CLIENT_REQUEST_STATUS_COLORS[r.status]} strokeWidth={2.4} />
-                    </TouchableOpacity>
+                    </View>
                   </View>
                 ))}
               </View>
@@ -204,6 +377,21 @@ export default function ClientDetailScreen({ navigation, route }: any) {
         onClose={() => setStatusPickerForRequest(null)}
         onSelect={handleChangeRequestStatus}
       />
+
+      {documentModalRequest && user && (
+        <ClientDocumentGenerateModal
+          visible={!!documentModalRequest}
+          isDark={isDark}
+          organizationId={organization.id}
+          clientUserId={clientUserId}
+          requestId={documentModalRequest.id}
+          defaultTitle={documentModalRequest.title}
+          existingDocument={documentsByRequest[documentModalRequest.id] ?? null}
+          actorId={user.id}
+          onClose={() => setDocumentModalRequest(null)}
+          onGenerated={load}
+        />
+      )}
     </View>
   );
 }
@@ -227,9 +415,29 @@ const styles = StyleSheet.create({
   reassignBtnText: { color: "#FFF", fontSize: 12.5, fontWeight: "700" },
 
   requestRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, borderWidth: 1, borderRadius: 16, padding: 12 },
+  requestCardColumn: { borderWidth: 1, borderRadius: 16, padding: 12, gap: 10 },
+  requestHeaderRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
   requestTitle: { fontSize: 13.5, fontWeight: "700" },
   requestDescription: { fontSize: 12, marginTop: 4, lineHeight: 17 },
   requestDate: { fontSize: 10.5, marginTop: 6 },
   statusPill: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   statusPillText: { fontSize: 11, fontWeight: "700" },
+
+  homeBtn: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10 },
+  homeBtnText: { color: "#FFF", fontSize: 12.5, fontWeight: "700" },
+
+  docPreview: { borderWidth: 1, borderRadius: 12, padding: 10 },
+  docPreviewTitle: { fontSize: 12.5, fontWeight: "700" },
+  docPreviewBody: { fontSize: 11.5, marginTop: 4, lineHeight: 16 },
+  genDocBtn: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start" },
+
+  deliverablesHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
+  deliverableForm: { borderWidth: 1, borderRadius: 18, padding: 14, gap: 10, marginBottom: 14 },
+  deliverableAttachRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+
+  input: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11, fontSize: 13.5 },
+  textarea: { minHeight: 70, textAlignVertical: "top" },
+  errorText: { fontSize: 12, fontWeight: "600" },
+  submitBtn: { borderRadius: 999, paddingVertical: 12, alignItems: "center" },
+  submitBtnText: { color: "#FFF", fontWeight: "700", fontSize: 13.5 },
 });
