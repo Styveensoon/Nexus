@@ -176,6 +176,25 @@ export default function AriaScreen({ navigation, route }: any) {
     setDraftProject(presetContextType === "project" && presetContextId && presetContextLabel ? { id: presetContextId, name: presetContextLabel } : null);
   }, [presetContextType, presetContextId, presetContextLabel]);
 
+  // Atajo "Hablar sobre un proyecto" (visible en el header en cualquier
+  // momento, no solo antes del primer mensaje de una conversación nueva) —
+  // el contexto de un chat sigue fijo una vez creado (coherente con un hilo
+  // real, ver el comentario grande al inicio del archivo), pero antes la
+  // ÚNICA forma de llegar al selector de proyecto era darse cuenta de que
+  // hacía falta tocar "Nueva conversación" primero. Esto arranca esa
+  // conversación nueva y abre el picker de proyecto de un solo toque, para
+  // que elegir un proyecto se sienta posible "en cualquier momento" aunque ya
+  // estés en medio de un chat en modo libre.
+  const switchToProjectMode = useCallback(() => {
+    setActiveChatId(null);
+    setMessages([]);
+    setErrorText(null);
+    setSidebarOpen(false);
+    setDraftContextType("project");
+    setDraftProject(null);
+    setShowProjectPicker(true);
+  }, []);
+
   const confirmDeleteChat = useCallback(
     async (chatId: string) => {
       setConfirmDeleteChatId(null);
@@ -479,6 +498,19 @@ export default function AriaScreen({ navigation, route }: any) {
             </View>
             <Text style={[styles.logoText, { color: textPrimary }]}>Aria</Text>
           </View>
+
+          {!presetContextType && (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[styles.switchProjectBtn, { borderColor: border }]}
+              onPress={switchToProjectMode}
+            >
+              <Folder size={13} color={primaryColor} strokeWidth={2.3} />
+              <Text style={[styles.switchProjectBtnText, { color: primaryColor }]} numberOfLines={1}>
+                {isMobile ? "Proyecto" : "Hablar sobre un proyecto"}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {!activeChatId && presetContextLabel && (
@@ -710,11 +742,13 @@ const styles = StyleSheet.create({
 
   mobileSidebarOverlay: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0, zIndex: 20, backgroundColor: "rgba(0,0,0,0.4)", flexDirection: "row" },
 
-  topBar: { flexDirection: "row", alignItems: "center", borderBottomWidth: 1, paddingHorizontal: 16, height: 60 },
+  topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomWidth: 1, paddingHorizontal: 16, height: 60 },
   topBarLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
   iconBtn: { width: 34, height: 34, alignItems: "center", justifyContent: "center" },
   logoIcon: { width: 28, height: 28, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   logoText: { fontSize: 15, fontWeight: "700", letterSpacing: -0.3 },
+  switchProjectBtn: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 },
+  switchProjectBtnText: { fontSize: 12.5, fontWeight: "700" },
 
   presetBanner: { flexDirection: "row", alignItems: "center", gap: 8, borderBottomWidth: 1, paddingHorizontal: 16, paddingVertical: 10 },
 

@@ -59,7 +59,20 @@ const STATUS_LABELS: Record<string, string> = {
   cancelled: "Cancelada",
 };
 const PRIORITY_LABELS: Record<string, string> = { low: "Baja", medium: "Media", high: "Alta", urgent: "Urgente" };
-const PROJECT_STATUS_LABELS: Record<string, string> = { planning: "Planeación", active: "Activo", on_hold: "En pausa", completed: "Completado" };
+// De 4 a 8 valores — mismo enum que ProjectStatus en src/lib/projects.ts.
+// Este mapa se había quedado en los 4 originales tras esa ampliación, así que
+// un proyecto en cualquiera de los 4 estados nuevos (in_review/blocked/
+// cancelled/archived) mostraba el valor crudo en inglés en la respuesta de Aria.
+const PROJECT_STATUS_LABELS: Record<string, string> = {
+  planning: "Planeación",
+  active: "Activo",
+  in_review: "En revisión",
+  on_hold: "En pausa",
+  blocked: "Bloqueado",
+  completed: "Completado",
+  cancelled: "Cancelado",
+  archived: "Archivado",
+};
 
 const VALID_STATUSES = new Set(Object.keys(STATUS_LABELS));
 const VALID_PRIORITIES = new Set(Object.keys(PRIORITY_LABELS));
@@ -107,11 +120,60 @@ async function buildProjectContext(admin: any, requesterId: string, isOwner: boo
 
   const { data: tasks } = await admin.from("tasks").select("status, due_date").eq("project_id", projectId);
 
+  // Quién trabaja en el proyecto — antes este contexto no incluía nada de
+  // esto, así que Aria respondía "no tengo esa información" ante cualquier
+  // pregunta sobre líder/equipo/integrantes aunque el dato sí existiera.
+  // Mismo criterio que ya usan ProjectsScreen.tsx/ProjectDetailScreen.tsx: los
+  // miembros son la unión (deduplicada) de project_members directos + los
+  // integrantes de cada equipo vinculado vía project_teams.
+  const { data: leaderProfile } = project.leader_id
+    ? await admin.from("profiles").select("id, full_name, nickname").eq("id", project.leader_id).maybeSingle()
+    : { data: null };
+  const leaderName = leaderProfile ? leaderProfile.nickname || leaderProfile.full_name || "Sin nombre" : null;
+
+  const { data: directMembers } = await admin.from("project_members").select("user_id, role_in_team").eq("project_id", projectId);
+  const { data: projectTeamsRows } = await admin.from("project_teams").select("team_id").eq("project_id", projectId);
+  const teamIds = (projectTeamsRows ?? []).map((t: { team_id: string }) => t.team_id);
+  const { data: teamsRows } = teamIds.length ? await admin.from("teams").select("id, name").in("id", teamIds) : { data: [] };
+  const { data: teamMembersRows } = teamIds.length ? await admin.from("team_members").select("user_id, team_id").in("team_id", teamIds) : { data: [] };
+
+  const memberIds = Array.from(
+    new Set([...(directMembers ?? []).map((m: { user_id: string }) => m.user_id), ...(teamMembersRows ?? []).map((m: { user_id: string }) => m.user_id)])
+  );
+  const { data: memberProfiles } = memberIds.length ? await admin.from("profiles").select("id, full_name, nickname").in("id", memberIds) : { data: [] };
+  const memberNameById = new Map(
+    (memberProfiles ?? []).map((p: { id: string; full_name: string | null; nickname: string | null }) => [p.id, p.nickname || p.full_name || "Sin nombre"])
+  );
+
+  // Desglosado por equipo (no solo una lista mezclada) — sin esto el modelo
+  // tendía a interpretar "integrantes" y "miembros del equipo X" como dos
+  // datos DISTINTOS que no tenía, cuando en realidad son las mismas personas.
+  const directMemberNames = (directMembers ?? []).map((m: { user_id: string }) => memberNameById.get(m.user_id)).filter(Boolean);
+  const teamNameById = new Map((teamsRows ?? []).map((t: { id: string; name: string }) => [t.id, t.name]));
+  const membersByTeam = new Map<string, string[]>();
+  (teamMembersRows ?? []).forEach((m: { user_id: string; team_id: string }) => {
+    const teamName = teamNameById.get(m.team_id);
+    const memberName = memberNameById.get(m.user_id);
+    if (!teamName || !memberName) return;
+    membersByTeam.set(teamName, [...(membersByTeam.get(teamName) ?? []), memberName]);
+  });
+  const teamsText = membersByTeam.size
+    ? Array.from(membersByTeam.entries()).map(([teamName, names]) => `  - ${teamName}: ${names.join(", ")}`).join("\n")
+    : "  ninguno";
+  const allInvolvedNames = Array.from(
+    new Set([leaderName, ...memberIds.map((id: string) => memberNameById.get(id))].filter(Boolean))
+  );
+
   const contextText = `Proyecto: "${project.name}"
 Descripción: ${project.description || "sin descripción"}
 Status: ${PROJECT_STATUS_LABELS[project.status] ?? project.status}
 Metas: ${(project.goals ?? []).join(", ") || "ninguna definida"}
 Áreas: ${(project.areas ?? []).join(", ") || "ninguna definida"}
+Líder del proyecto: ${leaderName ?? "sin líder asignado"}
+Miembros agregados directamente al proyecto (sin pasar por un equipo): ${directMemberNames.length ? directMemberNames.join(", ") : "ninguno"}
+Equipos vinculados y sus integrantes:
+${teamsText}
+Todas las personas involucradas en este proyecto, sin duplicados (líder + directos + de los equipos): ${allInvolvedNames.length ? allInvolvedNames.join(", ") : "nadie agregado todavía"}
 ${metricsText(tasks ?? [])}`;
 
   return { contextText };
