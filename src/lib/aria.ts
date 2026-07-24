@@ -53,6 +53,25 @@ export type AriaTaskCard = {
   assigneeLabel: string;
 };
 
+// Tarjeta de resumen del PROYECTO en sí (distinta de una AriaTaskCard) —
+// solo aplica en modo "project", cuando la respuesta describe el proyecto en
+// general (metas/áreas/status/líder/conteo de tareas) en vez del detalle de
+// una tarea puntual. Mismo criterio: datos 100% reales resueltos server-side.
+export type AriaProjectCard = {
+  name: string;
+  description: string | null;
+  status: string;
+  goals: string[];
+  areas: string[];
+  leaderName: string | null;
+  teamNames: string[];
+  memberCount: number;
+  tasksTotal: number;
+  tasksCompleted: number;
+  tasksOverdue: number;
+  tasksBlocked: number;
+};
+
 export type AriaMessage = {
   id: string;
   chat_id: string;
@@ -60,6 +79,7 @@ export type AriaMessage = {
   content: string;
   proposedAction: AriaProposedAction | null;
   taskCards: AriaTaskCard[];
+  projectCard: AriaProjectCard | null;
   created_at: string;
 };
 
@@ -111,10 +131,10 @@ export async function renameChat(chatId: string, title: string) {
   return { error };
 }
 
-const MESSAGE_COLUMNS = "id, chat_id, role, content, proposed_action, task_cards, created_at";
+const MESSAGE_COLUMNS = "id, chat_id, role, content, proposed_action, task_cards, project_card, created_at";
 
 function mapMessageRow(row: any): AriaMessage {
-  return { ...row, proposedAction: row.proposed_action ?? null, taskCards: row.task_cards ?? [] };
+  return { ...row, proposedAction: row.proposed_action ?? null, taskCards: row.task_cards ?? [], projectCard: row.project_card ?? null };
 }
 
 export async function getMessages(chatId: string) {
@@ -132,11 +152,19 @@ export async function addMessage(
   role: "user" | "assistant",
   content: string,
   proposedAction?: AriaProposedAction | null,
-  taskCards?: AriaTaskCard[]
+  taskCards?: AriaTaskCard[],
+  projectCard?: AriaProjectCard | null
 ) {
   const { data, error } = await supabase
     .from("assistant_messages")
-    .insert({ chat_id: chatId, role, content, proposed_action: proposedAction ?? null, task_cards: taskCards?.length ? taskCards : null })
+    .insert({
+      chat_id: chatId,
+      role,
+      content,
+      proposed_action: proposedAction ?? null,
+      task_cards: taskCards?.length ? taskCards : null,
+      project_card: projectCard ?? null,
+    })
     .select(MESSAGE_COLUMNS)
     .single();
 
@@ -171,7 +199,12 @@ export async function askAria(
 
   if (error) return { data: null, error };
   return {
-    data: data as { reply: string; proposedAction: Omit<AriaProposedAction, "state"> | null; taskCards: AriaTaskCard[] },
+    data: data as {
+      reply: string;
+      proposedAction: Omit<AriaProposedAction, "state"> | null;
+      taskCards: AriaTaskCard[];
+      projectCard: AriaProjectCard | null;
+    },
     error: null,
   };
 }

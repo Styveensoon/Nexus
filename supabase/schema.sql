@@ -314,6 +314,14 @@
     -- Se persisten junto al mensaje (mismo criterio que proposed_action) para
     -- que la tarjeta se vea igual al reabrir el chat, no solo en el momento.
     task_cards jsonb,
+    -- Tarjeta de resumen del PROYECTO en sí (distinta de task_cards) —
+    -- {name, description, status, goals, areas, leaderName, teamNames,
+    -- memberCount, tasksTotal, tasksCompleted, tasksOverdue, tasksBlocked} o
+    -- null. Solo aplica en modo "project" cuando la respuesta describe el
+    -- proyecto en general, no el detalle de una tarea puntual (ver
+    -- buildCardInstructions en aria-assistant/index.ts) — mismo criterio de
+    -- reconstruir siempre server-side, nunca confiar en texto del modelo.
+    project_card jsonb,
     created_at timestamptz not null default now()
   );
 
@@ -323,6 +331,8 @@
     add column if not exists proposed_action jsonb;
   alter table assistant_messages
     add column if not exists task_cards jsonb;
+  alter table assistant_messages
+    add column if not exists project_card jsonb;
 
   alter table assistant_messages enable row level security;
 

@@ -34,6 +34,7 @@ import {
   AriaChat,
   AriaContextType,
   AriaMessage,
+  AriaProjectCard,
   AriaProposedAction,
   AriaTaskCard,
   askAria,
@@ -47,7 +48,7 @@ import {
   resolveProposedAction,
   touchChat,
 } from "../lib/aria";
-import { listProjects, Project } from "../lib/projects";
+import { listProjects, Project, ProjectStatus, STATUS_LABELS as PROJECT_STATUS_LABELS, STATUS_COLORS as PROJECT_STATUS_COLORS } from "../lib/projects";
 import {
   updateTask,
   updateTaskStatus,
@@ -251,6 +252,7 @@ export default function AriaScreen({ navigation, route }: any) {
       content: text,
       proposedAction: null,
       taskCards: [],
+      projectCard: null,
       created_at: new Date().toISOString(),
     };
     const historyBase = messages;
@@ -277,7 +279,8 @@ export default function AriaScreen({ navigation, route }: any) {
 
       const proposedAction: AriaProposedAction | null = data.proposedAction ? { ...data.proposedAction, state: "pending" } : null;
       const taskCards = data.taskCards ?? [];
-      const { data: savedAssistant } = await addMessage(chatId, "assistant", data.reply, proposedAction, taskCards);
+      const projectCard = data.projectCard ?? null;
+      const { data: savedAssistant } = await addMessage(chatId, "assistant", data.reply, proposedAction, taskCards, projectCard);
       const assistantMessage: AriaMessage = savedAssistant ?? {
         id: `local-${Date.now()}-a`,
         chat_id: chatId,
@@ -285,6 +288,7 @@ export default function AriaScreen({ navigation, route }: any) {
         content: data.reply,
         proposedAction,
         taskCards,
+        projectCard,
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, assistantMessage]);
@@ -318,7 +322,8 @@ export default function AriaScreen({ navigation, route }: any) {
       await deleteMessage(last.id);
       const proposedAction: AriaProposedAction | null = data.proposedAction ? { ...data.proposedAction, state: "pending" } : null;
       const taskCards = data.taskCards ?? [];
-      const { data: savedAssistant } = await addMessage(activeChatId, "assistant", data.reply, proposedAction, taskCards);
+      const projectCard = data.projectCard ?? null;
+      const { data: savedAssistant } = await addMessage(activeChatId, "assistant", data.reply, proposedAction, taskCards, projectCard);
       const assistantMessage: AriaMessage = savedAssistant ?? {
         id: `local-${Date.now()}-a`,
         chat_id: activeChatId,
@@ -326,6 +331,7 @@ export default function AriaScreen({ navigation, route }: any) {
         content: data.reply,
         proposedAction,
         taskCards,
+        projectCard,
         created_at: new Date().toISOString(),
       };
       setMessages([...historyWithoutLast, assistantMessage]);
@@ -634,6 +640,10 @@ export default function AriaScreen({ navigation, route }: any) {
                       <Text style={[styles.bubbleText, { color: msg.role === "user" ? "#FFF" : textPrimary }]}>{msg.content}</Text>
                     </View>
 
+                    {msg.role === "assistant" && msg.projectCard && (
+                      <ProjectDetailCard card={msg.projectCard} cardBg={inputBg} border={border} textPrimary={textPrimary} textSecondary={textSecondary} />
+                    )}
+
                     {msg.role === "assistant" &&
                       msg.taskCards.map((card) => (
                         <TaskDetailCard
@@ -817,6 +827,85 @@ const taskCardStyles = StyleSheet.create({
   pill: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 },
   pillText: { fontSize: 11, fontWeight: "700" },
   detailText: { fontSize: 12, fontWeight: "500" },
+});
+
+// Tarjeta de resumen del PROYECTO en sí — pedido explícito del usuario tras
+// pedir "detalles del proyecto" y recibir 6 tarjetas de TAREA en vez de una
+// tarjeta con la info del proyecto. Mismo criterio de datos ya resueltos
+// server-side (AriaProjectCard), y mismo lenguaje visual que TaskDetailCard
+// (misma receta de card/pills) pero con una sección de mini-stats de tareas
+// en vez de status/prioridad de una sola tarea.
+function ProjectDetailCard({
+  card,
+  cardBg,
+  border,
+  textPrimary,
+  textSecondary,
+}: {
+  card: AriaProjectCard;
+  cardBg: string;
+  border: string;
+  textPrimary: string;
+  textSecondary: string;
+}) {
+  const statusColor = PROJECT_STATUS_COLORS[card.status as ProjectStatus] ?? textSecondary;
+  const statusLabel = PROJECT_STATUS_LABELS[card.status as ProjectStatus] ?? card.status;
+  const stats: { label: string; value: number }[] = [
+    { label: "Total", value: card.tasksTotal },
+    { label: "Completadas", value: card.tasksCompleted },
+    { label: "Vencidas", value: card.tasksOverdue },
+    { label: "Bloqueadas", value: card.tasksBlocked },
+  ];
+
+  return (
+    <View style={[taskCardStyles.card, projectCardStyles.card, { backgroundColor: cardBg, borderColor: border }]}>
+      <View style={taskCardStyles.headerRow}>
+        <View style={[taskCardStyles.statusDot, { backgroundColor: statusColor }]} />
+        <Text style={[taskCardStyles.title, { color: textPrimary }]} numberOfLines={2}>
+          {card.name}
+        </Text>
+      </View>
+      <View style={taskCardStyles.pillRow}>
+        <View style={[taskCardStyles.pill, { backgroundColor: statusColor + "1F" }]}>
+          <Text style={[taskCardStyles.pillText, { color: statusColor }]}>{statusLabel}</Text>
+        </View>
+      </View>
+
+      {!!card.goals.length && (
+        <Text style={[taskCardStyles.detailText, { color: textSecondary }]} numberOfLines={2}>
+          Metas: {card.goals.join(", ")}
+        </Text>
+      )}
+      {!!card.areas.length && (
+        <Text style={[taskCardStyles.detailText, { color: textSecondary }]} numberOfLines={1}>
+          Áreas: {card.areas.join(", ")}
+        </Text>
+      )}
+      <Text style={[taskCardStyles.detailText, { color: textSecondary }]} numberOfLines={1}>
+        Líder: {card.leaderName ?? "sin asignar"}{card.teamNames.length ? ` · Equipos: ${card.teamNames.join(", ")}` : ""}
+      </Text>
+      <Text style={[taskCardStyles.detailText, { color: textSecondary }]} numberOfLines={1}>
+        {card.memberCount} {card.memberCount === 1 ? "persona involucrada" : "personas involucradas"}
+      </Text>
+
+      <View style={projectCardStyles.statsRow}>
+        {stats.map((s) => (
+          <View key={s.label} style={projectCardStyles.statItem}>
+            <Text style={[projectCardStyles.statValue, { color: textPrimary }]}>{s.value}</Text>
+            <Text style={[projectCardStyles.statLabel, { color: textSecondary }]}>{s.label}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const projectCardStyles = StyleSheet.create({
+  card: { minWidth: 260 },
+  statsRow: { flexDirection: "row", gap: 14, marginTop: 4 },
+  statItem: { alignItems: "flex-start" },
+  statValue: { fontSize: 15, fontWeight: "700" },
+  statLabel: { fontSize: 10.5, fontWeight: "600" },
 });
 
 const styles = StyleSheet.create({

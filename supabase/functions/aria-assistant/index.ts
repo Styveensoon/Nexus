@@ -95,13 +95,38 @@ type ProjectTaskInfo = {
 // más abajo. El modelo solo elige QUÉ tareas mostrar (por id), el contenido
 // de cada card se reconstruye siempre del lado servidor.
 type TaskCardSource = { id: string; title: string; status: string; priority: string; dueDate: string | null; startDate: string | null; assigneeLabel: string };
+// Card de resumen del PROYECTO en sí (distinta de una task card) — pedido
+// explícito del usuario tras ver a Aria mostrar las 6 tarjetas de tareas
+// cuando en realidad preguntó por el detalle del proyecto, no de sus tareas.
+// Mismos datos que ya arma buildProjectContext en el contextText, solo que
+// también estructurados para pintarse como tarjeta.
+type ProjectCardSource = {
+  name: string;
+  description: string | null;
+  status: string;
+  goals: string[];
+  areas: string[];
+  leaderName: string | null;
+  teamNames: string[];
+  memberCount: number;
+  tasksTotal: number;
+  tasksCompleted: number;
+  tasksOverdue: number;
+  tasksBlocked: number;
+};
+
+function computeTaskMetrics(tasks: { status: string; due_date: string | null }[]) {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    total: tasks.length,
+    completed: tasks.filter((t) => t.status === "completed").length,
+    overdue: tasks.filter((t) => t.status !== "completed" && t.status !== "cancelled" && t.due_date && t.due_date < today).length,
+    blocked: tasks.filter((t) => t.status === "blocked").length,
+  };
+}
 
 function metricsText(tasks: { status: string; due_date: string | null }[]): string {
-  const today = new Date().toISOString().slice(0, 10);
-  const total = tasks.length;
-  const completed = tasks.filter((t) => t.status === "completed").length;
-  const overdue = tasks.filter((t) => t.status !== "completed" && t.status !== "cancelled" && t.due_date && t.due_date < today).length;
-  const blocked = tasks.filter((t) => t.status === "blocked").length;
+  const { total, completed, overdue, blocked } = computeTaskMetrics(tasks);
   return `Tareas totales: ${total} | Completadas: ${completed} | Vencidas: ${overdue} | Bloqueadas: ${blocked}`;
 }
 
@@ -174,6 +199,7 @@ async function buildProjectContext(admin: any, requesterId: string, isOwner: boo
   // datos DISTINTOS que no tenía, cuando en realidad son las mismas personas.
   const directMemberNames = (directMembers ?? []).map((m: { user_id: string }) => memberNameById.get(m.user_id)).filter(Boolean);
   const teamNameById = new Map((teamsRows ?? []).map((t: { id: string; name: string }) => [t.id, t.name]));
+  const teamNames = (teamsRows ?? []).map((t: { name: string }) => t.name);
   const membersByTeam = new Map<string, string[]>();
   (teamMembersRows ?? []).forEach((m: { user_id: string; team_id: string }) => {
     const teamName = teamNameById.get(m.team_id);
@@ -272,7 +298,23 @@ ${tasksText}`;
     assigneeLabel: t.assigneeLabel,
   }));
 
-  return { contextText, tasks: tasksInfo, roster, taskCards };
+  const taskMetrics = computeTaskMetrics(tasks);
+  const projectCard: ProjectCardSource = {
+    name: project.name,
+    description: project.description,
+    status: project.status,
+    goals: project.goals ?? [],
+    areas: project.areas ?? [],
+    leaderName,
+    teamNames,
+    memberCount: allInvolvedNames.length,
+    tasksTotal: taskMetrics.total,
+    tasksCompleted: taskMetrics.completed,
+    tasksOverdue: taskMetrics.overdue,
+    tasksBlocked: taskMetrics.blocked,
+  };
+
+  return { contextText, tasks: tasksInfo, roster, taskCards, projectCard };
 }
 
 async function buildTaskContext(admin: any, requesterId: string, taskId: string, organizationId: string) {
@@ -515,16 +557,45 @@ Si te falta un dato (a qué tarea se refiere si hay ambigüedad, a quién reasig
 }
 
 // Instruye al modelo a NUNCA mostrar el id/uuid crudo de una tarea en el
-// texto conversacional (ruido técnico sin valor para la persona) y, cuando su
-// respuesta describa el detalle de una o más tareas puntuales por nombre, a
-// pedir que la app las renderice como tarjetas visuales en vez de texto
-// amontonado — pedido explícito del usuario tras ver a Aria repetir
-// status/prioridad/fecha/asignado en prosa larga y mencionar el id crudo.
-// El contenido real de cada card se reconstruye siempre server-side a partir
-// del id (ver resolveTaskCards) — el modelo solo elige CUÁLES mostrar.
-function buildTaskCardInstructions(availableTasks: TaskCardSource[]): string {
-  if (!availableTasks.length) return "";
-  return `\nNUNCA menciones el id/uuid de una tarea en tu texto — es un dato técnico interno, no algo que la persona necesite leer. Si tu respuesta describe el detalle de una o más tareas puntuales por su nombre (no solo un conteo agregado, ej: te piden el detalle de una tarea, o listar varias con su estado), no repitas todos sus datos en prosa larga — decí una frase breve de contexto y cerrá tu respuesta con un bloque en una línea aparte (después del bloque de acción si hay uno), EXACTAMENTE así: <<<TASKS>>>["id1","id2"]<<<END_TASKS>>> listando los "id" EXACTOS (de la lista de arriba) de las tareas de las que hablaste — la app las va a mostrar como tarjetas, así que no hace falta que repitas ahí mismo status/prioridad/fecha/asignado de cada una — esos datos ya van a estar en la tarjeta. Si tu respuesta no describe ninguna tarea puntual (solo un conteo, o info general sin mencionar tareas específicas), no agregues este bloque.`;
+// texto conversacional (ruido técnico sin valor para la persona) y a pedir
+// tarjetas visuales en vez de texto amontonado — pedido explícito del
+// usuario tras ver a Aria repetir status/prioridad/fecha/asignado en prosa
+// larga y mencionar el id crudo. Hay DOS tipos de tarjeta y hay que
+// diferenciarlos con cuidado (bug real encontrado en vivo): al pedir
+// "detalles del proyecto", Aria mencionó cada tarea de pasada para armar el
+// conteo agregado ("4 completadas, 1 pendiente...") y eso solo le alcanzó
+// para que el modelo interpretara "estoy describiendo tareas puntuales" y
+// mostrara las 6 como tarjetas de TAREA — cuando lo que correspondía era UNA
+// sola tarjeta de PROYECTO. El contenido real de cada tarjeta se reconstruye
+// siempre server-side (ver resolveTaskCards/buildProjectCard) — el modelo
+// solo elige QUÉ mostrar.
+function buildCardInstructions(availableTasks: TaskCardSource[], projectCardAvailable: boolean): string {
+  if (!availableTasks.length && !projectCardAvailable) return "";
+
+  const parts: string[] = [
+    `NUNCA menciones el id/uuid de una tarea en tu texto — es un dato técnico interno, no algo que la persona necesite leer.`,
+  ];
+
+  if (projectCardAvailable) {
+    parts.push(
+      `Si tu respuesta describe el PROYECTO EN GENERAL (metas, áreas, status, líder, un resumen agregado de sus tareas tipo "4 completadas, 1 pendiente, 1 vencida") — sin describir el detalle de ninguna tarea puntual — no repitas ese resumen en prosa larga, decí una frase breve y cerrá tu mensaje con: <<<PROJECT_CARD>>>true<<<END_PROJECT_CARD>>>. Simplemente mencionar los nombres de las tareas al calcular ese conteo agregado NO cuenta como "describir tareas puntuales" — seguí usando PROJECT_CARD para eso, nunca TASKS.`
+    );
+  }
+
+  if (availableTasks.length) {
+    parts.push(
+      `Si tu respuesta describe el detalle de una o más tareas PUNTUALES por su nombre (te piden el detalle/estado/asignado de una tarea específica, o listar varias con ese nivel de detalle — no solo nombrarlas de pasada dentro de un resumen general del proyecto), no repitas todos sus datos en prosa larga — cerrá tu mensaje con un bloque en una línea aparte: <<<TASKS>>>["id1","id2"]<<<END_TASKS>>> listando los "id" EXACTOS (de la lista de arriba) de las tareas de las que hablaste. La app arma la tarjeta con los datos reales — no hace falta que repitas status/prioridad/fecha/asignado en el texto.`
+    );
+  }
+
+  if (projectCardAvailable && availableTasks.length) {
+    parts.push(`Podés usar los dos bloques en la misma respuesta únicamente si te piden explícitamente TANTO un resumen del proyecto COMO el detalle de una tarea puntual en el mismo mensaje.`);
+  }
+
+  parts.push(`Si tu respuesta no encaja en ninguno de estos casos (ej: diste un dato puntual sin describir el proyecto ni ninguna tarea, o dijiste que no tenés permiso), no agregues ningún bloque de estos.`);
+  parts.push(`Orden estricto si usás más de un bloque: PROJECT_CARD primero, TASKS después, y el bloque de ACCIÓN (si corresponde) siempre AL FINAL de todo — nunca antes de PROJECT_CARD o TASKS.`);
+
+  return "\n" + parts.join(" ");
 }
 
 function buildSystemPrompt(orgName: string, requesterName: string, contextText: string, actionInstructions: string, taskCardInstructions: string): string {
@@ -605,6 +676,19 @@ function extractTaskCardIds(raw: string): { reply: string; ids: string[] } {
     // ignore — bloque inválido, se descarta sin romper el resto de la respuesta
   }
   return { reply, ids: [] };
+}
+
+// Igual mecanismo que extractTaskCardIds pero para el flag simple de la
+// tarjeta de PROYECTO — se aplica sobre el reply ya sin el bloque TASKS (el
+// orden en el prompt es PROJECT_CARD, después TASKS, después ACTION, así que
+// para cuando esta función corre — se llama antes que extractTaskCardIds en
+// el flujo principal — el bloque TASKS todavía puede estar presente, se
+// remueve igual sin tocarlo).
+function extractProjectCardFlag(raw: string): { reply: string; wantsProjectCard: boolean } {
+  const match = raw.match(/<<<PROJECT_CARD>>>([\s\S]*?)<<<END_PROJECT_CARD>>>/);
+  if (!match) return { reply: raw.trim(), wantsProjectCard: false };
+  const reply = (raw.slice(0, match.index) + raw.slice(match.index! + match[0].length)).trim();
+  return { reply, wantsProjectCard: match[1].trim() === "true" };
 }
 
 // Reconstruye cada card 100% de los datos ya calculados server-side
@@ -733,6 +817,7 @@ Deno.serve(async (req) => {
     let taskActionCtx: { permissions: TaskPermissions; roster: RosterPerson[]; task: { id: string; title: string } } | null = null;
     let projectActionCtx: { tasks: ProjectTaskInfo[]; roster: RosterPerson[] } | null = null;
     let availableTaskCards: TaskCardSource[] = [];
+    let projectCardSource: ProjectCardSource | null = null;
 
     if (mode === "project") {
       if (!contextId) return json({ error: "Falta el proyecto" }, 400);
@@ -741,6 +826,7 @@ Deno.serve(async (req) => {
       contextText = result.contextText!;
       projectActionCtx = { tasks: result.tasks!, roster: result.roster! };
       availableTaskCards = result.taskCards!;
+      projectCardSource = result.projectCard!;
     } else if (mode === "task") {
       if (!contextId) return json({ error: "Falta la tarea" }, 400);
       const result = await buildTaskContext(admin, requesterId, contextId, organizationId);
@@ -757,8 +843,8 @@ Deno.serve(async (req) => {
       : projectActionCtx
       ? buildProjectActionInstructions(projectActionCtx.tasks, projectActionCtx.roster)
       : "";
-    const taskCardInstructions = buildTaskCardInstructions(availableTaskCards);
-    const systemPrompt = buildSystemPrompt(org.name, requesterName, contextText, actionInstructions, taskCardInstructions);
+    const cardInstructions = buildCardInstructions(availableTaskCards, !!projectCardSource);
+    const systemPrompt = buildSystemPrompt(org.name, requesterName, contextText, actionInstructions, cardInstructions);
 
     const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
@@ -779,8 +865,13 @@ Deno.serve(async (req) => {
     const rawReply: string = groqData.choices?.[0]?.message?.content ?? "";
     if (!rawReply) return json({ error: "La IA no devolvió respuesta" }, 502);
 
+    // Orden estricto (ver buildCardInstructions): PROJECT_CARD, TASKS, y
+    // ACTION siempre al final — por eso extractAction corre primero (asume
+    // que todo lo posterior a su match es descartable) y los otros dos
+    // extraen sobre lo que va quedando.
     const { reply: replyAfterAction, rawAction } = extractAction(rawReply);
-    const { reply: replyAfterTasks, ids: taskCardIds } = extractTaskCardIds(replyAfterAction);
+    const { reply: replyAfterProjectCard, wantsProjectCard } = extractProjectCardFlag(replyAfterAction);
+    const { reply: replyAfterTasks, ids: taskCardIds } = extractTaskCardIds(replyAfterProjectCard);
     let reply = sanitizeReply(stripRawTaskIds(replyAfterTasks));
 
     const proposedAction = !rawAction
@@ -797,8 +888,9 @@ Deno.serve(async (req) => {
     if ((taskActionCtx || projectActionCtx) && !proposedAction) reply = stripDanglingConfirmation(reply);
 
     const taskCards = resolveTaskCards(taskCardIds, availableTaskCards);
+    const projectCard = wantsProjectCard ? projectCardSource : null;
 
-    return json({ reply, proposedAction, taskCards });
+    return json({ reply, proposedAction, taskCards, projectCard });
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : "Error inesperado" }, 500);
   }
