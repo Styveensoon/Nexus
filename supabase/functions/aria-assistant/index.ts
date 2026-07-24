@@ -80,6 +80,16 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 type RosterPerson = { id: string; name: string };
 type TaskPermissions = { canEditAll: boolean; canChangeStatusOnly: boolean };
+type ProjectTaskInfo = {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueDate: string | null;
+  startDate: string | null;
+  assigneeLabel: string;
+  permissions: TaskPermissions;
+};
 
 function metricsText(tasks: { status: string; due_date: string | null }[]): string {
   const today = new Date().toISOString().slice(0, 10);
@@ -118,7 +128,11 @@ async function buildProjectContext(admin: any, requesterId: string, isOwner: boo
 
   if (!authorized) return { error: "No tenés acceso a este proyecto" };
 
-  const { data: tasks } = await admin.from("tasks").select("status, due_date").eq("project_id", projectId);
+  const { data: rawTasks } = await admin
+    .from("tasks")
+    .select("id, title, status, priority, due_date, start_date, assigned_user_id, assigned_team_id")
+    .eq("project_id", projectId);
+  const tasks = rawTasks ?? [];
 
   // Quién trabaja en el proyecto — antes este contexto no incluía nada de
   // esto, así que Aria respondía "no tengo esa información" ante cualquier
@@ -140,7 +154,12 @@ async function buildProjectContext(admin: any, requesterId: string, isOwner: boo
   const memberIds = Array.from(
     new Set([...(directMembers ?? []).map((m: { user_id: string }) => m.user_id), ...(teamMembersRows ?? []).map((m: { user_id: string }) => m.user_id)])
   );
-  const { data: memberProfiles } = memberIds.length ? await admin.from("profiles").select("id, full_name, nickname").in("id", memberIds) : { data: [] };
+  // Une también los assigned_user_id de las tareas — cubre el caso raro de
+  // alguien asignado directo a una task que ya no está en project_members/
+  // team_members (removido del roster después de asignarle algo), para no
+  // mostrarle "Sin nombre" a Aria sin necesidad.
+  const nameQueryIds = Array.from(new Set([...memberIds, ...tasks.map((t: { assigned_user_id: string | null }) => t.assigned_user_id).filter(Boolean)]));
+  const { data: memberProfiles } = nameQueryIds.length ? await admin.from("profiles").select("id, full_name, nickname").in("id", nameQueryIds) : { data: [] };
   const memberNameById = new Map(
     (memberProfiles ?? []).map((p: { id: string; full_name: string | null; nickname: string | null }) => [p.id, p.nickname || p.full_name || "Sin nombre"])
   );
@@ -164,6 +183,65 @@ async function buildProjectContext(admin: any, requesterId: string, isOwner: boo
     new Set([leaderName, ...memberIds.map((id: string) => memberNameById.get(id))].filter(Boolean))
   );
 
+  // Listado completo de tareas del proyecto (antes el contexto solo traía el
+  // conteo agregado de metricsText — Aria podía decir "hay 2 tareas
+  // pendientes" pero no sabía CUÁLES, ni podía hablar de "la vencida" cuando
+  // se lo pedían después). Cada tarea trae su permiso YA calculado (no una
+  // regla genérica): canEditAll es constante para todo el proyecto (líder u
+  // owner), pero canChangeStatusOnly depende de si ESTA tarea puntual está
+  // asignada directo a quien pregunta o al equipo del que es integrante —
+  // mismo criterio exacto que ya usa buildTaskContext para una sola tarea.
+  const canEditAll = isOwner || isLeader;
+  const { data: requesterTeamRows } = teamIds.length
+    ? await admin.from("team_members").select("team_id").in("team_id", teamIds).eq("user_id", requesterId)
+    : { data: [] };
+  const requesterTeamIds = new Set((requesterTeamRows ?? []).map((t: { team_id: string }) => t.team_id));
+
+  const tasksInfo: ProjectTaskInfo[] = tasks.map(
+    (t: {
+      id: string;
+      title: string;
+      status: string;
+      priority: string;
+      due_date: string | null;
+      start_date: string | null;
+      assigned_user_id: string | null;
+      assigned_team_id: string | null;
+    }) => {
+      const isDirectAssignee = t.assigned_user_id === requesterId;
+      const isTeamAssignee = !!t.assigned_team_id && requesterTeamIds.has(t.assigned_team_id);
+      const assigneeLabel = t.assigned_user_id
+        ? memberNameById.get(t.assigned_user_id) ?? "alguien fuera del roster"
+        : t.assigned_team_id
+        ? `equipo ${teamNameById.get(t.assigned_team_id) ?? "desconocido"}`
+        : "sin asignar";
+      return {
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        priority: t.priority,
+        dueDate: t.due_date,
+        startDate: t.start_date,
+        assigneeLabel,
+        permissions: { canEditAll, canChangeStatusOnly: canEditAll || isDirectAssignee || isTeamAssignee },
+      };
+    }
+  );
+
+  const today = new Date().toISOString().slice(0, 10);
+  const tasksText = tasksInfo.length
+    ? tasksInfo
+        .map((t) => {
+          const overdue = t.dueDate && t.dueDate < today && t.status !== "completed" && t.status !== "cancelled" ? " — VENCIDA" : "";
+          const permLabel = t.permissions.canEditAll ? "podés editar todo" : t.permissions.canChangeStatusOnly ? "podés cambiar solo el status" : "no tenés permiso para tocarla";
+          return `- id: ${t.id} | "${t.title}" | Status: ${STATUS_LABELS[t.status] ?? t.status}${overdue} | Prioridad: ${PRIORITY_LABELS[t.priority] ?? t.priority} | Vence: ${t.dueDate ?? "sin fecha"} | Asignada a: ${t.assigneeLabel} | Tu permiso: ${permLabel}`;
+        })
+        .join("\n")
+    : "Este proyecto todavía no tiene ninguna tarea.";
+
+  const roster: RosterPerson[] = memberIds.map((id: string) => ({ id, name: memberNameById.get(id) ?? "Sin nombre" }));
+  if (project.leader_id && !memberIds.includes(project.leader_id)) roster.push({ id: project.leader_id, name: leaderName ?? "Sin nombre" });
+
   const contextText = `Proyecto: "${project.name}"
 Descripción: ${project.description || "sin descripción"}
 Status: ${PROJECT_STATUS_LABELS[project.status] ?? project.status}
@@ -174,9 +252,12 @@ Miembros agregados directamente al proyecto (sin pasar por un equipo): ${directM
 Equipos vinculados y sus integrantes:
 ${teamsText}
 Todas las personas involucradas en este proyecto, sin duplicados (líder + directos + de los equipos): ${allInvolvedNames.length ? allInvolvedNames.join(", ") : "nadie agregado todavía"}
-${metricsText(tasks ?? [])}`;
+${metricsText(tasks)}
 
-  return { contextText };
+Tareas de este proyecto (usá el "id" EXACTO de acá si vas a proponer un cambio sobre alguna):
+${tasksText}`;
+
+  return { contextText, tasks: tasksInfo, roster };
 }
 
 async function buildTaskContext(admin: any, requesterId: string, taskId: string, organizationId: string) {
@@ -335,6 +416,36 @@ Si (y SOLO si) te pide explícitamente aplicar uno de los cambios permitidos de 
 Si te falta un dato (no sabés a quién reasignar, la fecha es ambigua, etc.), preguntá primero en el texto conversacional y NO agregues ningún bloque todavía — mejor preguntar de más que aplicar algo mal. Nunca menciones, ni de pasada, que vas a generar/adjuntar un "JSON", "bloque" o "estructura de datos": el usuario ve esto como una tarjeta de confirmación armada por la app, anuncialo de forma natural (ej. "te dejo esto para que lo confirmes:") y el bloque va después, en una línea aparte, nunca lo menciones dentro del texto.`;
 }
 
+// Igual que buildActionInstructions, pero para modo "project": acá hay
+// VARIAS tareas posibles, no una sola, así que el permiso no es un valor fijo
+// para toda la respuesta — varía por tarea (ver "Tu permiso" en el listado de
+// tareas del contexto). El modelo tiene que elegir la tarea correcta por su
+// "id" real y el bloque de acción ahora incluye "taskId" — el servidor
+// vuelve a validar ese permiso específico antes de aceptar el campo
+// propuesto, nunca confía en que el modelo leyó bien el permiso listado.
+function buildProjectActionInstructions(tasks: ProjectTaskInfo[], roster: RosterPerson[]): string {
+  if (!tasks.length) return "";
+  const anyEditable = tasks.some((t) => t.permissions.canEditAll || t.permissions.canChangeStatusOnly);
+  if (!anyEditable) {
+    return `\nQuien pregunta no tiene permiso de escritura sobre NINGUNA tarea de este proyecto (no es líder, ni owner, ni está asignado directo ni por equipo a ninguna). Si te pide cambiar algo de cualquier tarea, respondé con claridad que no tiene permiso — nunca propongas una acción, nunca actúes como si pudiera. No agregues ningún bloque de acción.`;
+  }
+
+  const rosterText = roster.length ? `\n\nRoster de personas de este proyecto (usá el "userId" EXACTO para reasignar, nunca inventes uno):\n${roster.map((r) => `- ${r.name} (userId: ${r.id})`).join("\n")}` : "";
+
+  return `\nCada tarea del listado de arriba indica tu permiso real sobre ELLA puntualmente ("podés editar todo" / "podés cambiar solo el status" / "no tenés permiso para tocarla") — no asumas el mismo permiso para todas, varía tarea por tarea según quién la lidera/asigna. Si te piden cambiar algo de una tarea sin permiso ("no tenés permiso para tocarla"), decilo con claridad, no propongas nada, y no insinúes que va a aparecer una tarjeta de confirmación.
+
+Si SÍ tenés permiso sobre la tarea que te piden cambiar, y tenés todos los datos con certeza, terminá tu respuesta con un bloque en una línea aparte (nunca más de uno, JSON válido en una sola línea), SIEMPRE con "taskId" incluido usando el id EXACTO de la tarea:
+<<<ACTION>>>{"type":"update_status","taskId":"<id real de la tarea>","status":"in_progress"}<<<END_ACTION>>>
+<<<ACTION>>>{"type":"update_due_date","taskId":"<id real de la tarea>","dueDate":"2026-08-15"}<<<END_ACTION>>>
+<<<ACTION>>>{"type":"update_start_date","taskId":"<id real de la tarea>","startDate":"2026-08-01"}<<<END_ACTION>>>
+<<<ACTION>>>{"type":"update_priority","taskId":"<id real de la tarea>","priority":"high"}<<<END_ACTION>>>
+<<<ACTION>>>{"type":"reassign","taskId":"<id real de la tarea>","assigneeUserId":"<userId real del roster>"}<<<END_ACTION>>>
+
+"update_due_date"/"update_start_date"/"update_priority"/"reassign" solo son válidos si tu permiso en esa tarea es "podés editar todo" — con "podés cambiar solo el status" únicamente podés emitir "update_status". "status" solo uno de: backlog, pending, in_progress, in_review, testing, blocked, completed, cancelled. "priority" solo uno de: low, medium, high, urgent. Fechas en formato "YYYY-MM-DD".${rosterText}
+
+Si te falta un dato (a qué tarea se refiere si hay ambigüedad, a quién reasignar, fecha exacta), preguntá primero en el texto y NO agregues ningún bloque todavía. Nunca menciones "JSON"/"bloque"/"estructura de datos" en el texto conversacional — anunciá el cambio de forma natural y el bloque va después, en una línea aparte.`;
+}
+
 function buildSystemPrompt(orgName: string, requesterName: string, contextText: string, actionInstructions: string): string {
   return `Eres Aria, el asistente de Nexus dentro del workspace "${orgName}". Tu tono es cercano, claro y directo — ayudás a ${requesterName} a entender su trabajo (proyectos, tareas, cómo funciona algo), no sos un asistente genérico de escritura.
 
@@ -429,6 +540,19 @@ function resolveProposedAction(rawAction: any, task: { id: string; title: string
   }
 }
 
+// Modo "project": el bloque de acción trae "taskId" porque hay varias tareas
+// posibles — se busca esa tarea EXACTA dentro de la lista ya calculada en
+// buildProjectContext (con su permiso ya resuelto server-side, nunca el que
+// diga el modelo) y se delega a resolveProposedAction con los permisos
+// reales de esa tarea puntual. Si el taskId no existe en este proyecto, o el
+// modelo "olvidó" incluirlo, se descarta la acción entera.
+function resolveProjectProposedAction(rawAction: any, tasks: ProjectTaskInfo[], roster: RosterPerson[]) {
+  if (!rawAction || typeof rawAction !== "object" || typeof rawAction.taskId !== "string") return null;
+  const task = tasks.find((t) => t.id === rawAction.taskId);
+  if (!task) return null;
+  return resolveProposedAction(rawAction, { id: task.id, title: task.title }, task.permissions, roster);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
   if (req.method !== "POST") return json({ error: "Método no permitido" }, 405);
@@ -477,12 +601,14 @@ Deno.serve(async (req) => {
 
     let contextText: string;
     let taskActionCtx: { permissions: TaskPermissions; roster: RosterPerson[]; task: { id: string; title: string } } | null = null;
+    let projectActionCtx: { tasks: ProjectTaskInfo[]; roster: RosterPerson[] } | null = null;
 
     if (mode === "project") {
       if (!contextId) return json({ error: "Falta el proyecto" }, 400);
       const result = await buildProjectContext(admin, requesterId, isOwner, contextId, organizationId);
       if (result.error) return json({ error: result.error }, 403);
       contextText = result.contextText!;
+      projectActionCtx = { tasks: result.tasks!, roster: result.roster! };
     } else if (mode === "task") {
       if (!contextId) return json({ error: "Falta la tarea" }, 400);
       const result = await buildTaskContext(admin, requesterId, contextId, organizationId);
@@ -493,7 +619,11 @@ Deno.serve(async (req) => {
       contextText = await buildFreeContext(admin, requesterId, organizationId);
     }
 
-    const actionInstructions = taskActionCtx ? buildActionInstructions(taskActionCtx.permissions, taskActionCtx.roster) : "";
+    const actionInstructions = taskActionCtx
+      ? buildActionInstructions(taskActionCtx.permissions, taskActionCtx.roster)
+      : projectActionCtx
+      ? buildProjectActionInstructions(projectActionCtx.tasks, projectActionCtx.roster)
+      : "";
     const systemPrompt = buildSystemPrompt(org.name, requesterName, contextText, actionInstructions);
 
     const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -518,13 +648,18 @@ Deno.serve(async (req) => {
     const { reply: splitReply, rawAction } = extractAction(rawReply);
     let reply = sanitizeReply(splitReply);
 
-    const proposedAction =
-      taskActionCtx && rawAction ? resolveProposedAction(rawAction, taskActionCtx.task, taskActionCtx.permissions, taskActionCtx.roster) : null;
+    const proposedAction = !rawAction
+      ? null
+      : taskActionCtx
+      ? resolveProposedAction(rawAction, taskActionCtx.task, taskActionCtx.permissions, taskActionCtx.roster)
+      : projectActionCtx
+      ? resolveProjectProposedAction(rawAction, projectActionCtx.tasks, projectActionCtx.roster)
+      : null;
 
     // Si al final no queda ninguna acción válida para mostrar (sin permiso,
     // bloque inválido, o el modelo no emitió ninguno), limpiar cualquier
     // frase que haya insinuado que venía una tarjeta de confirmación.
-    if (taskActionCtx && !proposedAction) reply = stripDanglingConfirmation(reply);
+    if ((taskActionCtx || projectActionCtx) && !proposedAction) reply = stripDanglingConfirmation(reply);
 
     return json({ reply, proposedAction });
   } catch (err) {
