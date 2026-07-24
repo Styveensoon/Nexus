@@ -141,7 +141,17 @@ export default function BadgesScreen({ navigation }: any) {
     const { error } = await deleteBadgeDefinition(organization.id, key);
     setDeletingBadgeKey(null);
     setConfirmDeleteBadgeKey(null);
-    if (!error) setCatalog((prev) => prev.filter((b) => b.key !== key));
+    if (!error) {
+      setCatalog((prev) => prev.filter((b) => b.key !== key));
+      // deleteBadgeDefinition también purga los profile_badges huérfanos con
+      // esta key — reflejarlo acá también, si no el pill de conteo de cada
+      // persona queda desfasado hasta el próximo loadData().
+      setBadgesByProfile((prev) => {
+        const next = new Map<string, ProfileBadge[]>();
+        prev.forEach((list, profileId) => next.set(profileId, list.filter((b) => b.badgeKey !== key)));
+        return next;
+      });
+    }
   };
 
   // useFocusEffect (no useEffect) para refrescar cada vez que se vuelve a esta

@@ -105,6 +105,13 @@ export async function createBadgeDefinition(params: {
 }
 
 export async function deleteBadgeDefinition(organizationId: string, key: string) {
+  // badge_key es texto libre (no FK — los 10 badges de fábrica ni siquiera
+  // tienen fila en badge_definitions), así que Postgres no puede cascadear
+  // este borrado solo. Sin este paso, cualquier profile_badges ya otorgado
+  // con esta key queda huérfano: sigue contando en countOrgBadges/el pill de
+  // la lista, pero desaparece de la vista por persona (grantedDefinitions
+  // filtra contra el catálogo actual) — encontrado probando en vivo.
+  await supabase.from("profile_badges").delete().eq("organization_id", organizationId).eq("badge_key", key);
   const { error } = await supabase.from("badge_definitions").delete().eq("organization_id", organizationId).eq("key", key);
   return { error };
 }
