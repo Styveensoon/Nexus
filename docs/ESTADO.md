@@ -273,6 +273,12 @@ Sin cambios de schema en esta ronda (solo se ajustó el comentario de `profiles.
 ## Pendiente
 La vista del Dashboard ya distingue owner / encargado-líder / miembro normal — sigue pendiente: pantalla de detalle de proyecto y de equipo (hoy solo hay listas/tarjetas), que los "primeros pasos" del Semillero se conviertan en tasks reales, y deep-link desde "Mis tareas pendientes" del Dashboard a la task exacta (hoy solo navega a la pestaña Tasks sin preseleccionar nada). El Gantt no tiene zoom (día fijo de 36px) ni una vista "Dashboard" agregada por stats (esa cuarta vista del roadmap de `docs/ARQUITECTURA.md` sigue sin construir).
 
+Sobre Aria (acciones propuestas), alcance de v1 acotado a propósito, decidido explícitamente con el usuario antes de programar — candidatos para una v2, no olvidados:
+- **Acciones solo en modo "tarea".** En modo "proyecto" o "chat general" Aria solo responde en texto, nunca propone una card — extenderlo requeriría que esos modos referencien tasks puntuales con su `id` real dentro del contexto (hoy `buildFreeContext` en `aria-assistant/index.ts` solo lista títulos, no ids, a los ojos del modelo).
+- **Reasignar solo a una persona, nunca a un equipo** — agregar equipo como destino suma un picker de equipo más de complejidad al bloque de acción y a su validación.
+- **Un solo bloque de acción por respuesta** — pedir dos cambios a la vez (ej. "mové la tarea una semana", que cambiaría `start_date` y `due_date` juntas) hoy requiere pedirlo en dos mensajes.
+- **Crear/borrar tasks, o cambiar el status de un proyecto** — ninguna acción de mayor "blast radius" que un campo de una task existente está soportada todavía.
+
 Sobre el Módulo de Clientes (ver el bullet completo en "Lo real y funcional hoy" y el changelog "Home con widgets"), los puntos 4-7 de "Notas de alcance" de `docs/CLIENTE.md` ya están cerrados. Queda pendiente, evaluado y descartado a propósito por ahora:
 - **Editar un entregable ya creado** — hoy `client_deliverables` solo se puede crear desde `ClientDetailScreen.tsx`, no corregir título/contenido/adjunto después mientras siga `pending` (el trigger `enforce_client_deliverable_update` ya lo permitiría del lado servidor, falta la UI).
 - **Biblioteca de prompts reutilizables** (§6, último punto) — guardar los prompts de comportamiento del Dashboard más usados como plantillas, para no reescribirlos en cada widget nuevo. Ya estaba marcada como prioridad baja/post-entrega en `docs/CLIENTE.md` antes de esta ronda.
