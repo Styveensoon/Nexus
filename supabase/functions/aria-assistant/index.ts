@@ -90,6 +90,11 @@ type ProjectTaskInfo = {
   assigneeLabel: string;
   permissions: TaskPermissions;
 };
+// Datos ya 100% reales (nunca lo que el modelo haya escrito) para armar una
+// tarjeta visual de tarea en el cliente — ver extractTaskCardIds/resolveTaskCards
+// más abajo. El modelo solo elige QUÉ tareas mostrar (por id), el contenido
+// de cada card se reconstruye siempre del lado servidor.
+type TaskCardSource = { id: string; title: string; status: string; priority: string; dueDate: string | null; startDate: string | null; assigneeLabel: string };
 
 function metricsText(tasks: { status: string; due_date: string | null }[]): string {
   const today = new Date().toISOString().slice(0, 10);
@@ -257,7 +262,17 @@ ${metricsText(tasks)}
 Tareas de este proyecto (usá el "id" EXACTO de acá si vas a proponer un cambio sobre alguna):
 ${tasksText}`;
 
-  return { contextText, tasks: tasksInfo, roster };
+  const taskCards: TaskCardSource[] = tasksInfo.map((t) => ({
+    id: t.id,
+    title: t.title,
+    status: t.status,
+    priority: t.priority,
+    dueDate: t.dueDate,
+    startDate: t.startDate,
+    assigneeLabel: t.assigneeLabel,
+  }));
+
+  return { contextText, tasks: tasksInfo, roster, taskCards };
 }
 
 async function buildTaskContext(admin: any, requesterId: string, taskId: string, organizationId: string) {
@@ -323,9 +338,22 @@ async function buildTaskContext(admin: any, requesterId: string, taskId: string,
     .map((c: { user_id: string; content: string }) => `- ${nameById.get(c.user_id) ?? "Alguien"}: ${c.content}`)
     .join("\n");
 
-  const contextText = `Tarea: "${task.title}" (del proyecto "${project.name}")
+  // Asignado (persona o equipo) — solo hacía falta como texto suelto dentro
+  // del contextText antes; ahora también alimenta la card de detalle, así que
+  // se resuelve una vez y se reusa en los dos lugares.
+  let assigneeLabel = "sin asignar";
+  if (task.assigned_user_id) {
+    const { data: assigneeProfile } = await admin.from("profiles").select("full_name, nickname").eq("id", task.assigned_user_id).maybeSingle();
+    assigneeLabel = assigneeProfile ? assigneeProfile.nickname || assigneeProfile.full_name || "Sin nombre" : "alguien fuera del roster";
+  } else if (task.assigned_team_id) {
+    const { data: assigneeTeam } = await admin.from("teams").select("name").eq("id", task.assigned_team_id).maybeSingle();
+    assigneeLabel = `equipo ${assigneeTeam?.name ?? "desconocido"}`;
+  }
+
+  const contextText = `Tarea: "${task.title}" (del proyecto "${project.name}") — id: ${task.id}
 Descripción: ${task.description || "sin descripción"}
 Status: ${STATUS_LABELS[task.status] ?? task.status} | Prioridad: ${PRIORITY_LABELS[task.priority] ?? task.priority}
+Asignada a: ${assigneeLabel}
 Fechas: ${task.start_date ? `inicio ${task.start_date}` : "sin inicio"}, ${task.due_date ? `vence ${task.due_date}` : "sin fecha límite"}
 ${commentsText ? `Últimos comentarios:\n${commentsText}` : "Sin comentarios todavía."}`;
 
@@ -354,11 +382,24 @@ ${commentsText ? `Últimos comentarios:\n${commentsText}` : "Sin comentarios tod
     roster = (rosterProfiles ?? []).map((p: any) => ({ id: p.id, name: p.nickname || p.full_name || "Sin nombre" }));
   }
 
+  const taskCards: TaskCardSource[] = [
+    {
+      id: task.id,
+      title: task.title,
+      status: task.status,
+      priority: task.priority,
+      dueDate: task.due_date,
+      startDate: task.start_date,
+      assigneeLabel,
+    },
+  ];
+
   return {
     contextText,
     permissions: { canEditAll, canChangeStatusOnly } as TaskPermissions,
     roster,
     task: { id: task.id, title: task.title },
+    taskCards,
   };
 }
 
@@ -446,12 +487,26 @@ Si SÍ tenés permiso sobre la tarea que te piden cambiar, y tenés todos los da
 Si te falta un dato (a qué tarea se refiere si hay ambigüedad, a quién reasignar, fecha exacta), preguntá primero en el texto y NO agregues ningún bloque todavía. Nunca menciones "JSON"/"bloque"/"estructura de datos" en el texto conversacional — anunciá el cambio de forma natural y el bloque va después, en una línea aparte.`;
 }
 
-function buildSystemPrompt(orgName: string, requesterName: string, contextText: string, actionInstructions: string): string {
+// Instruye al modelo a NUNCA mostrar el id/uuid crudo de una tarea en el
+// texto conversacional (ruido técnico sin valor para la persona) y, cuando su
+// respuesta describa el detalle de una o más tareas puntuales por nombre, a
+// pedir que la app las renderice como tarjetas visuales en vez de texto
+// amontonado — pedido explícito del usuario tras ver a Aria repetir
+// status/prioridad/fecha/asignado en prosa larga y mencionar el id crudo.
+// El contenido real de cada card se reconstruye siempre server-side a partir
+// del id (ver resolveTaskCards) — el modelo solo elige CUÁLES mostrar.
+function buildTaskCardInstructions(availableTasks: TaskCardSource[]): string {
+  if (!availableTasks.length) return "";
+  return `\nNUNCA menciones el id/uuid de una tarea en tu texto — es un dato técnico interno, no algo que la persona necesite leer. Si tu respuesta describe el detalle de una o más tareas puntuales por su nombre (no solo un conteo agregado, ej: te piden el detalle de una tarea, o listar varias con su estado), no repitas todos sus datos en prosa larga — decí una frase breve de contexto y cerrá tu respuesta con un bloque en una línea aparte (después del bloque de acción si hay uno), EXACTAMENTE así: <<<TASKS>>>["id1","id2"]<<<END_TASKS>>> listando los "id" EXACTOS (de la lista de arriba) de las tareas de las que hablaste — la app las va a mostrar como tarjetas, así que no hace falta que repitas ahí mismo status/prioridad/fecha/asignado de cada una — esos datos ya van a estar en la tarjeta. Si tu respuesta no describe ninguna tarea puntual (solo un conteo, o info general sin mencionar tareas específicas), no agregues este bloque.`;
+}
+
+function buildSystemPrompt(orgName: string, requesterName: string, contextText: string, actionInstructions: string, taskCardInstructions: string): string {
   return `Eres Aria, el asistente de Nexus dentro del workspace "${orgName}". Tu tono es cercano, claro y directo — ayudás a ${requesterName} a entender su trabajo (proyectos, tareas, cómo funciona algo), no sos un asistente genérico de escritura.
 
 Contexto real disponible (nunca inventes datos que no estén acá):
 ${contextText}
 ${actionInstructions}
+${taskCardInstructions}
 
 Responde en español, de forma breve y concreta. Si no tenés información suficiente en el contexto para responder algo con certeza, decilo honestamente en vez de inventar.`;
 }
@@ -484,6 +539,18 @@ function stripDanglingConfirmation(text: string): string {
   return result.length ? result : text.trim();
 }
 
+// Red de seguridad adicional (pedido explícito del usuario tras verlo en
+// vivo): buildTaskCardInstructions le pide al modelo que nunca mencione el
+// id/uuid crudo de una tarea en el texto — por si igual se le escapa, se
+// elimina cualquier uuid v4 suelto que aparezca en la respuesta final (no la
+// oración completa, porque suele venir pegado a texto útil, ej. "con id:
+// xxxx-xxxx", y cortar solo el uuid deja el resto de la frase legible).
+const RAW_UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+function stripRawTaskIds(text: string): string {
+  return text.replace(RAW_UUID, "").replace(/\s{2,}/g, " ").replace(/\s+([.,:;!?])/g, "$1").trim();
+}
+
 function extractAction(raw: string): { reply: string; rawAction: any | null } {
   const match = raw.match(/<<<ACTION>>>([\s\S]*?)<<<END_ACTION>>>/);
   if (!match) return { reply: raw.trim(), rawAction: null };
@@ -493,6 +560,42 @@ function extractAction(raw: string): { reply: string; rawAction: any | null } {
   } catch {
     return { reply: raw.trim(), rawAction: null };
   }
+}
+
+// Se aplica DESPUÉS de extractAction — el bloque TASKS va antes del bloque
+// ACTION en el texto (ver buildTaskCardInstructions), así que para cuando
+// esta función corre, cualquier <<<ACTION>>> ya se cortó del reply y acá solo
+// queda, como mucho, el bloque TASKS. Se remueve de donde esté (no solo se
+// corta desde su índice) para no perder texto que lo siga.
+function extractTaskCardIds(raw: string): { reply: string; ids: string[] } {
+  const match = raw.match(/<<<TASKS>>>([\s\S]*?)<<<END_TASKS>>>/);
+  if (!match) return { reply: raw.trim(), ids: [] };
+  const reply = (raw.slice(0, match.index) + raw.slice(match.index! + match[0].length)).trim();
+  try {
+    const parsed = JSON.parse(match[1].trim());
+    if (Array.isArray(parsed) && parsed.every((id) => typeof id === "string")) return { reply, ids: parsed };
+  } catch {
+    // ignore — bloque inválido, se descarta sin romper el resto de la respuesta
+  }
+  return { reply, ids: [] };
+}
+
+// Reconstruye cada card 100% de los datos ya calculados server-side
+// (buildProjectContext/buildTaskContext) — el modelo solo aportó el id, nunca
+// se confía en ningún otro dato que haya podido escribir sobre la tarea.
+// Tope de 8 para evitar que una alucinación devuelva una lista enorme.
+function resolveTaskCards(ids: string[], availableTasks: TaskCardSource[]): TaskCardSource[] {
+  const byId = new Map(availableTasks.map((t) => [t.id, t]));
+  const seen = new Set<string>();
+  const cards: TaskCardSource[] = [];
+  for (const id of ids) {
+    if (seen.has(id) || cards.length >= 8) continue;
+    const task = byId.get(id);
+    if (!task) continue;
+    seen.add(id);
+    cards.push(task);
+  }
+  return cards;
 }
 
 // Revalida CADA campo del bloque que devolvió el modelo contra los permisos
@@ -602,6 +705,7 @@ Deno.serve(async (req) => {
     let contextText: string;
     let taskActionCtx: { permissions: TaskPermissions; roster: RosterPerson[]; task: { id: string; title: string } } | null = null;
     let projectActionCtx: { tasks: ProjectTaskInfo[]; roster: RosterPerson[] } | null = null;
+    let availableTaskCards: TaskCardSource[] = [];
 
     if (mode === "project") {
       if (!contextId) return json({ error: "Falta el proyecto" }, 400);
@@ -609,12 +713,14 @@ Deno.serve(async (req) => {
       if (result.error) return json({ error: result.error }, 403);
       contextText = result.contextText!;
       projectActionCtx = { tasks: result.tasks!, roster: result.roster! };
+      availableTaskCards = result.taskCards!;
     } else if (mode === "task") {
       if (!contextId) return json({ error: "Falta la tarea" }, 400);
       const result = await buildTaskContext(admin, requesterId, contextId, organizationId);
       if (result.error) return json({ error: result.error }, 403);
       contextText = result.contextText!;
       taskActionCtx = { permissions: result.permissions!, roster: result.roster!, task: result.task! };
+      availableTaskCards = result.taskCards!;
     } else {
       contextText = await buildFreeContext(admin, requesterId, organizationId);
     }
@@ -624,7 +730,8 @@ Deno.serve(async (req) => {
       : projectActionCtx
       ? buildProjectActionInstructions(projectActionCtx.tasks, projectActionCtx.roster)
       : "";
-    const systemPrompt = buildSystemPrompt(org.name, requesterName, contextText, actionInstructions);
+    const taskCardInstructions = buildTaskCardInstructions(availableTaskCards);
+    const systemPrompt = buildSystemPrompt(org.name, requesterName, contextText, actionInstructions, taskCardInstructions);
 
     const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
@@ -645,8 +752,9 @@ Deno.serve(async (req) => {
     const rawReply: string = groqData.choices?.[0]?.message?.content ?? "";
     if (!rawReply) return json({ error: "La IA no devolvió respuesta" }, 502);
 
-    const { reply: splitReply, rawAction } = extractAction(rawReply);
-    let reply = sanitizeReply(splitReply);
+    const { reply: replyAfterAction, rawAction } = extractAction(rawReply);
+    const { reply: replyAfterTasks, ids: taskCardIds } = extractTaskCardIds(replyAfterAction);
+    let reply = sanitizeReply(stripRawTaskIds(replyAfterTasks));
 
     const proposedAction = !rawAction
       ? null
@@ -661,7 +769,9 @@ Deno.serve(async (req) => {
     // frase que haya insinuado que venía una tarjeta de confirmación.
     if ((taskActionCtx || projectActionCtx) && !proposedAction) reply = stripDanglingConfirmation(reply);
 
-    return json({ reply, proposedAction });
+    const taskCards = resolveTaskCards(taskCardIds, availableTaskCards);
+
+    return json({ reply, proposedAction, taskCards });
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : "Error inesperado" }, 500);
   }

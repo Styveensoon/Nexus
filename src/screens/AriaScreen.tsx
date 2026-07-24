@@ -35,6 +35,7 @@ import {
   AriaContextType,
   AriaMessage,
   AriaProposedAction,
+  AriaTaskCard,
   askAria,
   autoTitle,
   createChat,
@@ -47,7 +48,17 @@ import {
   touchChat,
 } from "../lib/aria";
 import { listProjects, Project } from "../lib/projects";
-import { updateTask, updateTaskStatus, TaskPriority, TaskStatus } from "../lib/tasks";
+import {
+  updateTask,
+  updateTaskStatus,
+  TaskPriority,
+  TaskStatus,
+  TASK_STATUS_LABELS,
+  TASK_STATUS_COLORS,
+  TASK_PRIORITY_LABELS,
+  TASK_PRIORITY_COLORS,
+  formatShortDate,
+} from "../lib/tasks";
 
 // Aria — el Semillero reciclado como asistente general (docs/ARQUITECTURA.md),
 // accesible a cualquier miembro (no solo owner). Calco de SemilleroScreen.tsx
@@ -239,6 +250,7 @@ export default function AriaScreen({ navigation, route }: any) {
       role: "user",
       content: text,
       proposedAction: null,
+      taskCards: [],
       created_at: new Date().toISOString(),
     };
     const historyBase = messages;
@@ -264,13 +276,15 @@ export default function AriaScreen({ navigation, route }: any) {
       if (error || !data) throw error ?? new Error("No se pudo contactar a Aria");
 
       const proposedAction: AriaProposedAction | null = data.proposedAction ? { ...data.proposedAction, state: "pending" } : null;
-      const { data: savedAssistant } = await addMessage(chatId, "assistant", data.reply, proposedAction);
+      const taskCards = data.taskCards ?? [];
+      const { data: savedAssistant } = await addMessage(chatId, "assistant", data.reply, proposedAction, taskCards);
       const assistantMessage: AriaMessage = savedAssistant ?? {
         id: `local-${Date.now()}-a`,
         chat_id: chatId,
         role: "assistant",
         content: data.reply,
         proposedAction,
+        taskCards,
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, assistantMessage]);
@@ -303,13 +317,15 @@ export default function AriaScreen({ navigation, route }: any) {
 
       await deleteMessage(last.id);
       const proposedAction: AriaProposedAction | null = data.proposedAction ? { ...data.proposedAction, state: "pending" } : null;
-      const { data: savedAssistant } = await addMessage(activeChatId, "assistant", data.reply, proposedAction);
+      const taskCards = data.taskCards ?? [];
+      const { data: savedAssistant } = await addMessage(activeChatId, "assistant", data.reply, proposedAction, taskCards);
       const assistantMessage: AriaMessage = savedAssistant ?? {
         id: `local-${Date.now()}-a`,
         chat_id: activeChatId,
         role: "assistant",
         content: data.reply,
         proposedAction,
+        taskCards,
         created_at: new Date().toISOString(),
       };
       setMessages([...historyWithoutLast, assistantMessage]);
@@ -618,6 +634,18 @@ export default function AriaScreen({ navigation, route }: any) {
                       <Text style={[styles.bubbleText, { color: msg.role === "user" ? "#FFF" : textPrimary }]}>{msg.content}</Text>
                     </View>
 
+                    {msg.role === "assistant" &&
+                      msg.taskCards.map((card) => (
+                        <TaskDetailCard
+                          key={card.id}
+                          card={card}
+                          cardBg={inputBg}
+                          border={border}
+                          textPrimary={textPrimary}
+                          textSecondary={textSecondary}
+                        />
+                      ))}
+
                     {msg.role === "assistant" && msg.proposedAction && (
                       <View style={[styles.actionCard, { backgroundColor: inputBg, borderColor: primaryColor }]}>
                         <View style={styles.actionCardHeader}>
@@ -724,6 +752,72 @@ export default function AriaScreen({ navigation, route }: any) {
     </View>
   );
 }
+
+// Tarjeta de detalle de una tarea (pedido explícito del usuario tras verla
+// como texto amontonado: "que dé detalles de algo sea como una card"). Datos
+// ya resueltos 100% server-side (ver AriaTaskCard/resolveTaskCards en
+// aria-assistant/index.ts) — reusa los mismos colores/labels de status y
+// prioridad que el resto de la app (TaskListView, Kanban) en vez de inventar
+// una paleta nueva.
+function TaskDetailCard({
+  card,
+  cardBg,
+  border,
+  textPrimary,
+  textSecondary,
+}: {
+  card: AriaTaskCard;
+  cardBg: string;
+  border: string;
+  textPrimary: string;
+  textSecondary: string;
+}) {
+  const statusColor = TASK_STATUS_COLORS[card.status as TaskStatus] ?? textSecondary;
+  const statusLabel = TASK_STATUS_LABELS[card.status as TaskStatus] ?? card.status;
+  const priorityColor = TASK_PRIORITY_COLORS[card.priority as TaskPriority] ?? textSecondary;
+  const priorityLabel = TASK_PRIORITY_LABELS[card.priority as TaskPriority] ?? card.priority;
+  const dateLine = [card.startDate ? `Inicio ${formatShortDate(card.startDate)}` : null, card.dueDate ? `Vence ${formatShortDate(card.dueDate)}` : null]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <View style={[taskCardStyles.card, { backgroundColor: cardBg, borderColor: border }]}>
+      <View style={taskCardStyles.headerRow}>
+        <View style={[taskCardStyles.statusDot, { backgroundColor: statusColor }]} />
+        <Text style={[taskCardStyles.title, { color: textPrimary }]} numberOfLines={2}>
+          {card.title}
+        </Text>
+      </View>
+      <View style={taskCardStyles.pillRow}>
+        <View style={[taskCardStyles.pill, { backgroundColor: statusColor + "1F" }]}>
+          <Text style={[taskCardStyles.pillText, { color: statusColor }]}>{statusLabel}</Text>
+        </View>
+        <View style={[taskCardStyles.pill, { backgroundColor: priorityColor + "1F" }]}>
+          <Text style={[taskCardStyles.pillText, { color: priorityColor }]}>{priorityLabel}</Text>
+        </View>
+      </View>
+      <Text style={[taskCardStyles.detailText, { color: textSecondary }]} numberOfLines={1}>
+        Asignada a {card.assigneeLabel}
+      </Text>
+      {!!dateLine && (
+        <Text style={[taskCardStyles.detailText, { color: textSecondary }]} numberOfLines={1}>
+          {dateLine}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+const taskCardStyles = StyleSheet.create({
+  card: { alignSelf: "flex-start", maxWidth: "85%", minWidth: 220, borderWidth: 1, borderRadius: 16, padding: 12, marginTop: -8, marginBottom: 16, gap: 6 },
+  headerRow: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  statusDot: { width: 8, height: 8, borderRadius: 4, marginTop: 5 },
+  title: { flex: 1, fontSize: 13.5, fontWeight: "700", lineHeight: 18 },
+  pillRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
+  pill: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 },
+  pillText: { fontSize: 11, fontWeight: "700" },
+  detailText: { fontSize: 12, fontWeight: "500" },
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, minHeight: 0, flexDirection: "row" },

@@ -37,12 +37,29 @@ export type AriaProposedAction = {
   assigneeName?: string;
 };
 
+// Tarjeta de detalle de una tarea que Aria decidió mostrar junto a su
+// respuesta (en vez de describirla en prosa larga) — datos ya resueltos
+// 100% server-side (aria-assistant/index.ts, resolveTaskCards), nunca texto
+// libre que el modelo haya escrito. status/priority son los valores crudos
+// del enum (TaskStatus/TaskPriority de lib/tasks.ts) para poder reusar
+// TASK_STATUS_LABELS/COLORS y TASK_PRIORITY_LABELS/COLORS al pintarla.
+export type AriaTaskCard = {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueDate: string | null;
+  startDate: string | null;
+  assigneeLabel: string;
+};
+
 export type AriaMessage = {
   id: string;
   chat_id: string;
   role: "user" | "assistant";
   content: string;
   proposedAction: AriaProposedAction | null;
+  taskCards: AriaTaskCard[];
   created_at: string;
 };
 
@@ -94,10 +111,10 @@ export async function renameChat(chatId: string, title: string) {
   return { error };
 }
 
-const MESSAGE_COLUMNS = "id, chat_id, role, content, proposed_action, created_at";
+const MESSAGE_COLUMNS = "id, chat_id, role, content, proposed_action, task_cards, created_at";
 
 function mapMessageRow(row: any): AriaMessage {
-  return { ...row, proposedAction: row.proposed_action ?? null };
+  return { ...row, proposedAction: row.proposed_action ?? null, taskCards: row.task_cards ?? [] };
 }
 
 export async function getMessages(chatId: string) {
@@ -114,11 +131,12 @@ export async function addMessage(
   chatId: string,
   role: "user" | "assistant",
   content: string,
-  proposedAction?: AriaProposedAction | null
+  proposedAction?: AriaProposedAction | null,
+  taskCards?: AriaTaskCard[]
 ) {
   const { data, error } = await supabase
     .from("assistant_messages")
-    .insert({ chat_id: chatId, role, content, proposed_action: proposedAction ?? null })
+    .insert({ chat_id: chatId, role, content, proposed_action: proposedAction ?? null, task_cards: taskCards?.length ? taskCards : null })
     .select(MESSAGE_COLUMNS)
     .single();
 
@@ -152,5 +170,8 @@ export async function askAria(
   });
 
   if (error) return { data: null, error };
-  return { data: data as { reply: string; proposedAction: Omit<AriaProposedAction, "state"> | null }, error: null };
+  return {
+    data: data as { reply: string; proposedAction: Omit<AriaProposedAction, "state"> | null; taskCards: AriaTaskCard[] },
+    error: null,
+  };
 }

@@ -306,6 +306,14 @@
     -- además el "Aceptar" ejecuta una escritura real (updateTask/
     -- updateTaskStatus), nunca se aplica sola.
     proposed_action jsonb,
+    -- Tarjetas de detalle de tarea que Aria decidió mostrar junto a este
+    -- mensaje (array de {id, title, status, priority, dueDate, startDate,
+    -- assigneeLabel}, o null/[] si no aplica) — reconstruidas siempre
+    -- server-side a partir del id que eligió el modelo (aria-assistant/
+    -- index.ts, resolveTaskCards), nunca de datos que el modelo haya escrito.
+    -- Se persisten junto al mensaje (mismo criterio que proposed_action) para
+    -- que la tarjeta se vea igual al reabrir el chat, no solo en el momento.
+    task_cards jsonb,
     created_at timestamptz not null default now()
   );
 
@@ -313,6 +321,8 @@
   -- if not exists para que quede idempotente al re-correr el archivo.
   alter table assistant_messages
     add column if not exists proposed_action jsonb;
+  alter table assistant_messages
+    add column if not exists task_cards jsonb;
 
   alter table assistant_messages enable row level security;
 
