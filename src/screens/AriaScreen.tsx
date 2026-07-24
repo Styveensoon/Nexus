@@ -24,6 +24,7 @@ import {
   Send,
   Sparkles,
   Trash2,
+  Wand2,
   X,
 } from "lucide-react-native";
 import { useTheme } from "../context/ThemeContext";
@@ -33,6 +34,7 @@ import {
   AriaChat,
   AriaContextType,
   AriaMessage,
+  AriaProposedAction,
   askAria,
   autoTitle,
   createChat,
@@ -41,9 +43,11 @@ import {
   getMessages,
   listChats,
   renameChat,
+  resolveProposedAction,
   touchChat,
 } from "../lib/aria";
 import { listProjects, Project } from "../lib/projects";
+import { updateTask, updateTaskStatus, TaskPriority, TaskStatus } from "../lib/tasks";
 
 // Aria — el Semillero reciclado como asistente general (docs/ARQUITECTURA.md),
 // accesible a cualquier miembro (no solo owner). Calco de SemilleroScreen.tsx
@@ -123,6 +127,8 @@ export default function AriaScreen({ navigation, route }: any) {
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [confirmDeleteChatId, setConfirmDeleteChatId] = useState<string | null>(null);
+  const [actionBusyId, setActionBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<{ messageId: string; text: string } | null>(null);
 
   // Selección de contexto para una conversación NUEVA (solo aplica mientras
   // activeChatId es null) — "free" por defecto, o lo que venga prefijado.
@@ -213,6 +219,7 @@ export default function AriaScreen({ navigation, route }: any) {
       chat_id: activeChatId ?? "",
       role: "user",
       content: text,
+      proposedAction: null,
       created_at: new Date().toISOString(),
     };
     const historyBase = messages;
@@ -237,12 +244,14 @@ export default function AriaScreen({ navigation, route }: any) {
       const { data, error } = await askAria(organization.id, mode, contextId, history);
       if (error || !data) throw error ?? new Error("No se pudo contactar a Aria");
 
-      const { data: savedAssistant } = await addMessage(chatId, "assistant", data.reply);
+      const proposedAction: AriaProposedAction | null = data.proposedAction ? { ...data.proposedAction, state: "pending" } : null;
+      const { data: savedAssistant } = await addMessage(chatId, "assistant", data.reply, proposedAction);
       const assistantMessage: AriaMessage = savedAssistant ?? {
         id: `local-${Date.now()}-a`,
         chat_id: chatId,
         role: "assistant",
         content: data.reply,
+        proposedAction,
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, assistantMessage]);
@@ -274,12 +283,14 @@ export default function AriaScreen({ navigation, route }: any) {
       if (error || !data) throw error ?? new Error("No se pudo contactar a Aria");
 
       await deleteMessage(last.id);
-      const { data: savedAssistant } = await addMessage(activeChatId, "assistant", data.reply);
+      const proposedAction: AriaProposedAction | null = data.proposedAction ? { ...data.proposedAction, state: "pending" } : null;
+      const { data: savedAssistant } = await addMessage(activeChatId, "assistant", data.reply, proposedAction);
       const assistantMessage: AriaMessage = savedAssistant ?? {
         id: `local-${Date.now()}-a`,
         chat_id: activeChatId,
         role: "assistant",
         content: data.reply,
+        proposedAction,
         created_at: new Date().toISOString(),
       };
       setMessages([...historyWithoutLast, assistantMessage]);
@@ -290,6 +301,52 @@ export default function AriaScreen({ navigation, route }: any) {
       setSending(false);
     }
   }, [messages, sending, activeChatId, organization, chats]);
+
+  // Aria nunca ejecuta una acción sola — "Aceptar" llama a la MISMA función
+  // que ya usa la edición manual de tasks (updateTask/updateTaskStatus), así
+  // que el trigger enforce_task_update_permissions sigue siendo la última
+  // palabra aunque el permiso ya se haya validado antes en la Edge Function.
+  // Si falla (ej. alguien le quitó el permiso a esta persona entre que Aria
+  // propuso la acción y que la aceptó), se muestra el error real, nunca se
+  // finge éxito.
+  const handleActionDecision = useCallback(
+    async (message: AriaMessage, decision: "applied" | "dismissed") => {
+      const action = message.proposedAction;
+      if (!action || action.state !== "pending" || actionBusyId) return;
+
+      setActionBusyId(message.id);
+      setActionError(null);
+
+      try {
+        if (decision === "applied") {
+          let updateError: any = null;
+          if (action.type === "update_status") {
+            ({ error: updateError } = await updateTaskStatus(action.taskId, action.status as TaskStatus));
+          } else if (action.type === "update_due_date") {
+            ({ error: updateError } = await updateTask(action.taskId, { dueDate: action.dueDate! }));
+          } else if (action.type === "update_start_date") {
+            ({ error: updateError } = await updateTask(action.taskId, { startDate: action.startDate! }));
+          } else if (action.type === "update_priority") {
+            ({ error: updateError } = await updateTask(action.taskId, { priority: action.priority as TaskPriority }));
+          } else if (action.type === "reassign") {
+            ({ error: updateError } = await updateTask(action.taskId, { assignedUserId: action.assigneeUserId! }));
+          }
+          if (updateError) throw updateError;
+        }
+
+        await resolveProposedAction(message.id, action, decision);
+        setMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, proposedAction: { ...action, state: decision } } : m)));
+      } catch (err: any) {
+        setActionError({
+          messageId: message.id,
+          text: err?.message || "No se pudo aplicar el cambio — puede que ya no tengas permiso, o que la tarea haya cambiado.",
+        });
+      } finally {
+        setActionBusyId(null);
+      }
+    },
+    [actionBusyId]
+  );
 
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
@@ -528,6 +585,51 @@ export default function AriaScreen({ navigation, route }: any) {
                     >
                       <Text style={[styles.bubbleText, { color: msg.role === "user" ? "#FFF" : textPrimary }]}>{msg.content}</Text>
                     </View>
+
+                    {msg.role === "assistant" && msg.proposedAction && (
+                      <View style={[styles.actionCard, { backgroundColor: inputBg, borderColor: primaryColor }]}>
+                        <View style={styles.actionCardHeader}>
+                          <Wand2 size={14} color={primaryColor} strokeWidth={2.3} />
+                          <Text style={[styles.actionCardText, { color: textPrimary }]}>{msg.proposedAction.description}</Text>
+                        </View>
+
+                        {msg.proposedAction.state === "pending" ? (
+                          <>
+                            {actionError?.messageId === msg.id && (
+                              <Text style={[styles.actionErrorText, { color: dangerColor }]}>{actionError.text}</Text>
+                            )}
+                            <View style={styles.actionCardButtons}>
+                              <TouchableOpacity
+                                activeOpacity={0.85}
+                                disabled={actionBusyId === msg.id}
+                                style={[styles.actionAcceptBtn, { backgroundColor: primaryColor, opacity: actionBusyId === msg.id ? 0.6 : 1 }]}
+                                onPress={() => handleActionDecision(msg, "applied")}
+                              >
+                                <Check size={13} color="#FFF" strokeWidth={2.4} />
+                                <Text style={styles.actionAcceptBtnText}>{actionBusyId === msg.id ? "Aplicando…" : "Aceptar"}</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                activeOpacity={0.7}
+                                disabled={actionBusyId === msg.id}
+                                style={styles.actionRejectBtn}
+                                onPress={() => handleActionDecision(msg, "dismissed")}
+                              >
+                                <Text style={[styles.actionRejectBtnText, { color: textSecondary }]}>Rechazar</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </>
+                        ) : (
+                          <Text
+                            style={[
+                              styles.actionResolvedText,
+                              { color: msg.proposedAction.state === "applied" ? primaryColor : textSecondary },
+                            ]}
+                          >
+                            {msg.proposedAction.state === "applied" ? "✓ Aplicado" : "Descartado"}
+                          </Text>
+                        )}
+                      </View>
+                    )}
                   </View>
                 ))
               )}
@@ -632,6 +734,17 @@ const styles = StyleSheet.create({
 
   regenerateBtn: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", marginBottom: 16, paddingVertical: 4 },
   regenerateBtnText: { fontSize: 12.5, fontWeight: "700" },
+
+  actionCard: { alignSelf: "flex-start", maxWidth: "85%", borderWidth: 1.5, borderRadius: 18, padding: 14, marginTop: -8, marginBottom: 16 },
+  actionCardHeader: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  actionCardText: { flex: 1, fontSize: 13, fontWeight: "600", lineHeight: 18 },
+  actionErrorText: { fontSize: 11.5, fontWeight: "600", lineHeight: 16, marginTop: 8 },
+  actionCardButtons: { flexDirection: "row", gap: 8, marginTop: 12 },
+  actionAcceptBtn: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
+  actionAcceptBtnText: { color: "#FFF", fontSize: 12, fontWeight: "700" },
+  actionRejectBtn: { borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
+  actionRejectBtnText: { fontSize: 12, fontWeight: "700" },
+  actionResolvedText: { fontSize: 12, fontWeight: "700", marginTop: 10 },
 
   composerWrapper: { borderTopWidth: 1, padding: 16 },
   errorBanner: { borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 10 },

@@ -17,11 +17,32 @@ export type AriaChat = {
   updated_at: string;
 };
 
+// Acción propuesta por Aria sobre la tarea del contexto de este chat (solo
+// aplica en modo "task", ver aria-assistant/index.ts). "state" es el estado
+// de la CARD (pendiente/ya decidida) — distinto de "status", que cuando
+// type === "update_status" es el status objetivo de la TAREA (ej. "in_progress").
+export type AriaActionType = "update_status" | "update_due_date" | "update_start_date" | "update_priority" | "reassign";
+
+export type AriaProposedAction = {
+  type: AriaActionType;
+  taskId: string;
+  taskTitle: string;
+  description: string;
+  state: "pending" | "applied" | "dismissed";
+  status?: string;
+  dueDate?: string;
+  startDate?: string;
+  priority?: string;
+  assigneeUserId?: string;
+  assigneeName?: string;
+};
+
 export type AriaMessage = {
   id: string;
   chat_id: string;
   role: "user" | "assistant";
   content: string;
+  proposedAction: AriaProposedAction | null;
   created_at: string;
 };
 
@@ -73,28 +94,50 @@ export async function renameChat(chatId: string, title: string) {
   return { error };
 }
 
+const MESSAGE_COLUMNS = "id, chat_id, role, content, proposed_action, created_at";
+
+function mapMessageRow(row: any): AriaMessage {
+  return { ...row, proposedAction: row.proposed_action ?? null };
+}
+
 export async function getMessages(chatId: string) {
   const { data, error } = await supabase
     .from("assistant_messages")
-    .select("id, chat_id, role, content, created_at")
+    .select(MESSAGE_COLUMNS)
     .eq("chat_id", chatId)
     .order("created_at", { ascending: true });
 
-  return { data: (data as AriaMessage[] | null) ?? [], error };
+  return { data: (data ?? []).map(mapMessageRow), error };
 }
 
-export async function addMessage(chatId: string, role: "user" | "assistant", content: string) {
+export async function addMessage(
+  chatId: string,
+  role: "user" | "assistant",
+  content: string,
+  proposedAction?: AriaProposedAction | null
+) {
   const { data, error } = await supabase
     .from("assistant_messages")
-    .insert({ chat_id: chatId, role, content })
-    .select("id, chat_id, role, content, created_at")
+    .insert({ chat_id: chatId, role, content, proposed_action: proposedAction ?? null })
+    .select(MESSAGE_COLUMNS)
     .single();
 
-  return { data: data as AriaMessage | null, error };
+  return { data: data ? mapMessageRow(data) : null, error };
 }
 
 export async function deleteMessage(messageId: string) {
   const { error } = await supabase.from("assistant_messages").delete().eq("id", messageId);
+  return { error };
+}
+
+// Marca la card de una acción propuesta como aplicada o descartada — se
+// llama DESPUÉS de que la escritura real (updateTask/updateTaskStatus) ya
+// tuvo éxito en el caso de "applied", nunca antes.
+export async function resolveProposedAction(messageId: string, proposedAction: AriaProposedAction, state: "applied" | "dismissed") {
+  const { error } = await supabase
+    .from("assistant_messages")
+    .update({ proposed_action: { ...proposedAction, state } })
+    .eq("id", messageId);
   return { error };
 }
 
@@ -109,5 +152,5 @@ export async function askAria(
   });
 
   if (error) return { data: null, error };
-  return { data: data as { reply: string }, error: null };
+  return { data: data as { reply: string; proposedAction: Omit<AriaProposedAction, "state"> | null }, error: null };
 }

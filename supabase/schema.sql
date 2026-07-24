@@ -297,8 +297,22 @@
     chat_id uuid not null references assistant_chats(id) on delete cascade,
     role text not null check (role in ('user', 'assistant')),
     content text not null,
+    -- Acción propuesta por Aria sobre la tarea del contexto de este chat
+    -- (solo mensajes "assistant" en modo "task" la usan): {type, taskId,
+    -- taskTitle, description, status: "pending"|"applied"|"dismissed", ...
+    -- payload específico del tipo}. null = Aria solo respondió en texto, sin
+    -- proponer ningún cambio. Mismo criterio que semillero_messages.team_suggestion
+    -- (estructura persistida, no recalculada al reabrir el chat) — pero acá
+    -- además el "Aceptar" ejecuta una escritura real (updateTask/
+    -- updateTaskStatus), nunca se aplica sola.
+    proposed_action jsonb,
     created_at timestamptz not null default now()
   );
+
+  -- assistant_messages ya existía de la ronda anterior de Aria — add column
+  -- if not exists para que quede idempotente al re-correr el archivo.
+  alter table assistant_messages
+    add column if not exists proposed_action jsonb;
 
   alter table assistant_messages enable row level security;
 
@@ -311,6 +325,13 @@
   create policy "assistant_messages_insert_own" on assistant_messages
     for insert to authenticated
     with check (chat_id in (select id from assistant_chats where user_id = auth.uid()));
+
+  -- Necesaria para marcar proposed_action.status en "pending"->"applied"/
+  -- "dismissed" tras Aceptar/Rechazar una card de acción.
+  drop policy if exists "assistant_messages_update_own" on assistant_messages;
+  create policy "assistant_messages_update_own" on assistant_messages
+    for update to authenticated
+    using (chat_id in (select id from assistant_chats where user_id = auth.uid()));
 
   -- Necesaria para "Regenerar respuesta" (mismo patrón que semillero_messages).
   drop policy if exists "assistant_messages_delete_own" on assistant_messages;
