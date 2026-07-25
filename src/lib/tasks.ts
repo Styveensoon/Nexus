@@ -614,6 +614,134 @@ export async function deleteTaskComment(commentId: string) {
   return { error };
 }
 
+// Checklist simple dentro de una task (estilo Trello) — colaborativo: quien
+// está involucrado en la task puede agregar/tildar cualquier ítem, pero solo
+// quien lo creó puede borrarlo (mismo criterio que task_comments_delete_own).
+export type TaskChecklistItem = {
+  id: string;
+  taskId: string;
+  content: string;
+  completed: boolean;
+  createdBy: string;
+  createdAt: string;
+};
+
+function mapChecklistRow(row: any): TaskChecklistItem {
+  return { id: row.id, taskId: row.task_id, content: row.content, completed: row.completed, createdBy: row.created_by, createdAt: row.created_at };
+}
+
+export async function listChecklistItems(taskId: string) {
+  const { data, error } = await supabase
+    .from("task_checklist_items")
+    .select("id, task_id, content, completed, created_by, created_at")
+    .eq("task_id", taskId)
+    .order("created_at", { ascending: true });
+
+  return { data: (data ?? []).map(mapChecklistRow), error };
+}
+
+export async function addChecklistItem(taskId: string, userId: string, content: string) {
+  const { data, error } = await supabase
+    .from("task_checklist_items")
+    .insert({ task_id: taskId, content, created_by: userId })
+    .select("id, task_id, content, completed, created_by, created_at")
+    .single();
+
+  return { data: data ? mapChecklistRow(data) : null, error };
+}
+
+export async function toggleChecklistItem(itemId: string, completed: boolean) {
+  const { error } = await supabase.from("task_checklist_items").update({ completed }).eq("id", itemId);
+  return { error };
+}
+
+export async function deleteChecklistItem(itemId: string) {
+  const { error } = await supabase.from("task_checklist_items").delete().eq("id", itemId);
+  return { error };
+}
+
+// Dependencias entre tareas del MISMO proyecto ("task_id no puede avanzar
+// hasta que depends_on_task_id esté lista") — solo informativo/de
+// planificación, no bloquea de verdad cambiar el status (ver nota en
+// schema.sql). Gestionarlas requiere poder editar la task (líder/owner),
+// igual criterio que crear/editar tasks — no es colaborativo como el
+// checklist.
+export type TaskDependencyRef = { dependencyId: string; taskId: string; title: string; status: TaskStatus };
+
+async function resolveDependencyRefs(
+  rows: { id: string; task_id: string; depends_on_task_id: string }[],
+  idField: "task_id" | "depends_on_task_id",
+  refField: "task_id" | "depends_on_task_id"
+): Promise<TaskDependencyRef[]> {
+  const refIds = Array.from(new Set(rows.map((r) => r[refField])));
+  if (!refIds.length) return [];
+  const { data: refTasks } = await supabase.from("tasks").select("id, title, status").in("id", refIds);
+  const byId = new Map((refTasks ?? []).map((t) => [t.id, t]));
+  return rows
+    .map((r) => {
+      const t = byId.get(r[refField]);
+      if (!t) return null;
+      return { dependencyId: r.id, taskId: t.id, title: t.title, status: t.status as TaskStatus };
+    })
+    .filter((x): x is TaskDependencyRef => x !== null);
+}
+
+// Devuelve, para una task puntual: de qué tareas depende ("dependsOn") y qué
+// tareas dependen de ella ("blocks" — si esta no avanza, esas tampoco).
+export async function listTaskDependencies(taskId: string) {
+  const [{ data: dependsOnRows, error: e1 }, { data: blocksRows, error: e2 }] = await Promise.all([
+    supabase.from("task_dependencies").select("id, task_id, depends_on_task_id").eq("task_id", taskId),
+    supabase.from("task_dependencies").select("id, task_id, depends_on_task_id").eq("depends_on_task_id", taskId),
+  ]);
+  if (e1 || e2) return { dependsOn: [] as TaskDependencyRef[], blocks: [] as TaskDependencyRef[], error: e1 ?? e2 };
+
+  const [dependsOn, blocks] = await Promise.all([
+    resolveDependencyRefs(dependsOnRows ?? [], "task_id", "depends_on_task_id"),
+    resolveDependencyRefs(blocksRows ?? [], "depends_on_task_id", "task_id"),
+  ]);
+  return { dependsOn, blocks, error: null };
+}
+
+// Detecta si agregar "taskId depende de dependsOnTaskId" cerraría un ciclo
+// (ej. A depende de B, B depende de A) — recorre el grafo de dependencias del
+// proyecto en el cliente ANTES de insertar, porque validar ciclos de un grafo
+// arbitrario en SQL puro es mucho más caro que hacerlo una vez acá.
+async function wouldCreateCycle(projectId: string, taskId: string, dependsOnTaskId: string): Promise<boolean> {
+  const { data: projectTasks } = await supabase.from("tasks").select("id").eq("project_id", projectId);
+  const taskIds = (projectTasks ?? []).map((t) => t.id);
+  if (!taskIds.length) return false;
+
+  const { data: allDeps } = await supabase.from("task_dependencies").select("task_id, depends_on_task_id").in("task_id", taskIds);
+  const edges = new Map<string, string[]>();
+  (allDeps ?? []).forEach((d) => edges.set(d.task_id, [...(edges.get(d.task_id) ?? []), d.depends_on_task_id]));
+  // La arista nueva sería taskId -> dependsOnTaskId; hay ciclo si ya existe un
+  // camino de dependsOnTaskId de vuelta a taskId.
+  const visited = new Set<string>();
+  const stack = [dependsOnTaskId];
+  while (stack.length) {
+    const current = stack.pop()!;
+    if (current === taskId) return true;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    (edges.get(current) ?? []).forEach((next) => stack.push(next));
+  }
+  return false;
+}
+
+export async function addTaskDependency(projectId: string, taskId: string, dependsOnTaskId: string, userId: string) {
+  if (taskId === dependsOnTaskId) return { error: { message: "Una tarea no puede depender de sí misma." } };
+  if (await wouldCreateCycle(projectId, taskId, dependsOnTaskId)) {
+    return { error: { message: "Esa dependencia crearía un ciclo (dependencia circular)." } };
+  }
+  const { error } = await supabase.from("task_dependencies").insert({ task_id: taskId, depends_on_task_id: dependsOnTaskId, created_by: userId });
+  return { error };
+}
+
+export async function deleteTaskDependency(dependencyId: string) {
+  const { error } = await supabase.from("task_dependencies").delete().eq("id", dependencyId);
+  return { error };
+}
+
 // Colaboradores adicionales de una task (Punto 3 del feedback) — a
 // diferencia del asignado (persona O equipo, exclusivo, ver
 // tasks_assignee_xor), un colaborador es gente extra que también puede ver y

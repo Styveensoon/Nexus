@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Image,
   Linking,
@@ -26,9 +26,11 @@ import {
   Heart,
   HelpCircle,
   Kanban,
+  AlertTriangle,
   Layers,
   Link2,
   List,
+  ListChecks,
   MessageCircle,
   MessageSquare,
   Pencil,
@@ -62,26 +64,34 @@ import TaskCollaboratorsModal from "../components/TaskCollaboratorsModal";
 import UserTasksModal from "../components/UserTasksModal";
 import RebalanceSuggestionsModal from "../components/RebalanceSuggestionsModal";
 import {
+  addChecklistItem,
   addTaskComment,
   addTaskCollaborator,
+  addTaskDependency,
   createTask,
+  deleteChecklistItem,
   deleteTask,
   deleteTaskComment,
+  deleteTaskDependency,
   DUE_SOON_COLOR,
   formatShortDate,
   isDueSoon,
   isOverdue,
+  listChecklistItems,
   listTaskComments,
   listTaskCollaborators,
+  listTaskDependencies,
   listTasksForProjects,
   reactToComment,
   ReactionType,
   REACTION_TYPES,
   removeTaskCollaborator,
   Task,
+  TaskChecklistItem,
   TaskCollaborator,
   TaskComment,
   TaskCommentAttachment,
+  TaskDependencyRef,
   TaskPriority,
   TaskStatus,
   TASK_PRIORITY_COLORS,
@@ -90,6 +100,7 @@ import {
   TASK_STATUS_COLORS,
   TASK_STATUS_LABELS,
   TASK_STATUS_ORDER,
+  toggleChecklistItem,
   updateTask,
   updateTaskStatus,
   uploadTaskAttachment,
@@ -164,7 +175,7 @@ function renderLinkifiedText(text: string, linkColor: string) {
 
 type AssignableUser = { userId: string; name: string; avatarUrl: string | null; avatarColor: string };
 
-export default function TasksScreen({ navigation }: any) {
+export default function TasksScreen({ navigation, route }: any) {
   const { isDark } = useTheme();
   const { user, organization, loading: authLoading } = useAuth();
   const { width } = useWindowDimensions();
@@ -256,6 +267,14 @@ export default function TasksScreen({ navigation }: any) {
   const [editError, setEditError] = useState<string | null>(null);
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
+  const [checklistItems, setChecklistItems] = useState<TaskChecklistItem[]>([]);
+  const [newChecklistText, setNewChecklistText] = useState("");
+  const [addingChecklistItem, setAddingChecklistItem] = useState(false);
+  const [taskDependsOn, setTaskDependsOn] = useState<TaskDependencyRef[]>([]);
+  const [taskBlocks, setTaskBlocks] = useState<TaskDependencyRef[]>([]);
+  const [showDependencyPicker, setShowDependencyPicker] = useState(false);
+  const [dependencyError, setDependencyError] = useState<string | null>(null);
+  const [addingDependency, setAddingDependency] = useState(false);
   const [commentInput, setCommentInput] = useState("");
   const [postingComment, setPostingComment] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
@@ -543,6 +562,12 @@ export default function TasksScreen({ navigation }: any) {
     setConfirmDeleteCommentId(null);
     setReactionPickerFor(null);
     setTaskCollaborators([]);
+    setChecklistItems([]);
+    setNewChecklistText("");
+    setTaskDependsOn([]);
+    setTaskBlocks([]);
+    setShowDependencyPicker(false);
+    setDependencyError(null);
     listTaskCollaborators(task.id).then(({ data }) => setTaskCollaborators(data));
     if (!isInvolvedInTask(task, projects.find((p) => p.id === task.projectId) ?? null)) return;
     setLoadingComments(true);
@@ -550,6 +575,11 @@ export default function TasksScreen({ navigation }: any) {
     if (error) setCommentError("No se pudieron cargar los comentarios.");
     setComments(data);
     setLoadingComments(false);
+    listChecklistItems(task.id).then(({ data: items }) => setChecklistItems(items));
+    listTaskDependencies(task.id).then(({ dependsOn, blocks }) => {
+      setTaskDependsOn(dependsOn);
+      setTaskBlocks(blocks);
+    });
   };
 
   const closeTaskDetail = () => {
@@ -565,6 +595,29 @@ export default function TasksScreen({ navigation }: any) {
     setTaskCollaborators([]);
     setShowCollaboratorPicker(false);
   };
+
+  // Deep-link desde la búsqueda global (Dashboard) — navigation.navigate("Tasks",
+  // {projectId, taskId}) preselecciona el proyecto y abre el detalle de esa
+  // task automáticamente. Espera a que `tasks` ya esté cargado (loadData) para
+  // poder encontrarla, y limpia los params al final para no repetir el salto
+  // si se vuelve a esta pestaña después (mismo criterio que tenía el deep-link
+  // viejo del Calendar, ver docs/TRAMPAS.md — ese se quitó al fusionarse
+  // Calendar dentro de Tasks, este es nuevo para la búsqueda global).
+  useEffect(() => {
+    const targetTaskId = route?.params?.taskId as string | undefined;
+    const targetProjectId = route?.params?.projectId as string | undefined;
+    if (!targetProjectId || loadingData) return;
+
+    setSelectedProjectId(targetProjectId);
+
+    if (targetTaskId) {
+      const target = tasks.find((t) => t.id === targetTaskId);
+      if (target) openTaskDetail(target);
+    }
+
+    navigation.setParams({ projectId: undefined, taskId: undefined });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route?.params?.projectId, route?.params?.taskId, loadingData]);
 
   const handleToggleCollaborator = async (member: OrganizationMemberProfile) => {
     if (!selectedTask || !user) return;
@@ -730,6 +783,47 @@ export default function TasksScreen({ navigation }: any) {
     }
     const { data } = await listTaskComments(selectedTask.id);
     setComments(data);
+  };
+
+  const handleAddChecklistItem = async () => {
+    if (!selectedTask || !user || !newChecklistText.trim()) return;
+    setAddingChecklistItem(true);
+    const { data, error } = await addChecklistItem(selectedTask.id, user.id, newChecklistText.trim());
+    setAddingChecklistItem(false);
+    if (error || !data) return;
+    setChecklistItems((prev) => [...prev, data]);
+    setNewChecklistText("");
+  };
+
+  const handleToggleChecklistItem = async (item: TaskChecklistItem) => {
+    setChecklistItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, completed: !i.completed } : i)));
+    const { error } = await toggleChecklistItem(item.id, !item.completed);
+    if (error) setChecklistItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, completed: item.completed } : i)));
+  };
+
+  const handleDeleteChecklistItem = async (itemId: string) => {
+    setChecklistItems((prev) => prev.filter((i) => i.id !== itemId));
+    await deleteChecklistItem(itemId);
+  };
+
+  const handleAddDependency = async (dependsOnTaskId: string) => {
+    if (!selectedTask || !user) return;
+    setAddingDependency(true);
+    setDependencyError(null);
+    const { error } = await addTaskDependency(selectedTask.projectId, selectedTask.id, dependsOnTaskId, user.id);
+    setAddingDependency(false);
+    if (error) {
+      setDependencyError(error.message ?? "No se pudo agregar la dependencia.");
+      return;
+    }
+    setShowDependencyPicker(false);
+    const { dependsOn } = await listTaskDependencies(selectedTask.id);
+    setTaskDependsOn(dependsOn);
+  };
+
+  const handleRemoveDependency = async (dependencyId: string) => {
+    setTaskDependsOn((prev) => prev.filter((d) => d.dependencyId !== dependencyId));
+    await deleteTaskDependency(dependencyId);
   };
 
   const handleReact = async (commentId: string, reaction: ReactionType) => {
@@ -1761,6 +1855,60 @@ export default function TasksScreen({ navigation }: any) {
                         </Text>
                       )}
 
+                      {(taskDependsOn.length > 0 || selectedTaskCanEdit) && (
+                        <>
+                          <Text style={[styles.modalLabel, { color: textSecondary }]}>Depende de</Text>
+                          {taskDependsOn.length === 0 ? (
+                            <Text style={{ color: textSecondary, fontSize: 12 }}>Ninguna.</Text>
+                          ) : (
+                            taskDependsOn.map((dep) => {
+                              const notDone = dep.status !== "completed" && dep.status !== "cancelled";
+                              return (
+                                <View key={dep.dependencyId} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                                  {notDone && <AlertTriangle size={12} color={dangerColor} />}
+                                  <Text style={{ flex: 1, fontSize: 12.5, color: textPrimary }} numberOfLines={1}>
+                                    {dep.title}
+                                  </Text>
+                                  <Text style={{ fontSize: 10.5, fontWeight: "700", color: TASK_STATUS_COLORS[dep.status] }}>
+                                    {TASK_STATUS_LABELS[dep.status]}
+                                  </Text>
+                                  {selectedTaskCanEdit && (
+                                    <TouchableOpacity activeOpacity={0.7} hitSlop={8} onPress={() => handleRemoveDependency(dep.dependencyId)}>
+                                      <X size={12} color={textSecondary} />
+                                    </TouchableOpacity>
+                                  )}
+                                </View>
+                              );
+                            })
+                          )}
+                          {selectedTaskCanEdit && (
+                            <TouchableOpacity
+                              activeOpacity={0.7}
+                              onPress={() => setShowDependencyPicker(true)}
+                              style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 }}
+                            >
+                              <Plus size={12} color={AZURE_DEEP} strokeWidth={2.4} />
+                              <Text style={{ color: AZURE_DEEP, fontSize: 12, fontWeight: "700" }}>Agregar dependencia</Text>
+                            </TouchableOpacity>
+                          )}
+                          {!!dependencyError && <Text style={{ color: dangerColor, fontSize: 11, marginTop: 4 }}>{dependencyError}</Text>}
+                        </>
+                      )}
+
+                      {taskBlocks.length > 0 && (
+                        <>
+                          <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 12 }]}>Bloquea a</Text>
+                          {taskBlocks.map((b) => (
+                            <View key={b.dependencyId} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                              <Text style={{ flex: 1, fontSize: 12.5, color: textPrimary }} numberOfLines={1}>
+                                {b.title}
+                              </Text>
+                              <Text style={{ fontSize: 10.5, fontWeight: "700", color: TASK_STATUS_COLORS[b.status] }}>{TASK_STATUS_LABELS[b.status]}</Text>
+                            </View>
+                          ))}
+                        </>
+                      )}
+
                       {selectedTaskCanEdit && (
                         <TouchableOpacity activeOpacity={0.7} onPress={() => setConfirmDeleteId(selectedTask.id)} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 16 }}>
                           <Trash2 size={13} color={dangerColor} />
@@ -1772,6 +1920,86 @@ export default function TasksScreen({ navigation }: any) {
                 )}
 
                 <View style={[styles.divider, { backgroundColor: border }]} />
+
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 16, marginBottom: 12 }}>
+                  <ListChecks size={14} color={textSecondary} />
+                  <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 0, marginBottom: 0 }]}>
+                    Checklist{checklistItems.length ? ` (${checklistItems.filter((i) => i.completed).length}/${checklistItems.length})` : ""}
+                  </Text>
+                </View>
+
+                {!selectedTaskInvolved ? (
+                  <Text style={{ color: textSecondary, fontSize: 12.5 }}>Necesitás estar involucrado en esta task para ver el checklist.</Text>
+                ) : (
+                  <>
+                    {!!checklistItems.length && (
+                      <View style={{ height: 4, borderRadius: 2, backgroundColor: inputBg, overflow: "hidden", marginBottom: 10 }}>
+                        <View
+                          style={{
+                            height: "100%",
+                            width: `${(checklistItems.filter((i) => i.completed).length / checklistItems.length) * 100}%`,
+                            backgroundColor: AZURE_DEEP,
+                          }}
+                        />
+                      </View>
+                    )}
+                    {checklistItems.map((item) => (
+                      <View key={item.id} style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                        <TouchableOpacity
+                          activeOpacity={0.8}
+                          onPress={() => handleToggleChecklistItem(item)}
+                          style={{
+                            width: 18,
+                            height: 18,
+                            borderRadius: 5,
+                            borderWidth: 1.5,
+                            borderColor: item.completed ? AZURE_DEEP : border,
+                            backgroundColor: item.completed ? AZURE_DEEP : "transparent",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          {item.completed && <Check size={12} color="#FFF" strokeWidth={3} />}
+                        </TouchableOpacity>
+                        <Text
+                          style={{
+                            flex: 1,
+                            fontSize: 13,
+                            color: item.completed ? textSecondary : textPrimary,
+                            textDecorationLine: item.completed ? "line-through" : "none",
+                          }}
+                        >
+                          {item.content}
+                        </Text>
+                        {item.createdBy === user?.id && (
+                          <TouchableOpacity activeOpacity={0.7} hitSlop={8} onPress={() => handleDeleteChecklistItem(item.id)}>
+                            <X size={13} color={textSecondary} />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    ))}
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 }}>
+                      <TextInput
+                        value={newChecklistText}
+                        onChangeText={setNewChecklistText}
+                        onSubmitEditing={handleAddChecklistItem}
+                        placeholder="Agregar ítem…"
+                        placeholderTextColor={textSecondary}
+                        style={[styles.chipInput, { color: textPrimary }, isWeb && styles.noOutline]}
+                      />
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        disabled={!newChecklistText.trim() || addingChecklistItem}
+                        onPress={handleAddChecklistItem}
+                        style={{ opacity: !newChecklistText.trim() || addingChecklistItem ? 0.4 : 1 }}
+                      >
+                        <Plus size={18} color={AZURE_DEEP} strokeWidth={2.4} />
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
+
+                <View style={[styles.divider, { backgroundColor: border, marginTop: 16 }]} />
 
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 16, marginBottom: 12 }}>
                   <MessageSquare size={14} color={textSecondary} />
@@ -2154,6 +2382,45 @@ export default function TasksScreen({ navigation }: any) {
         projects={projects}
         onClose={() => setSearchedMember(null)}
       />
+
+      {showDependencyPicker && selectedTask && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setShowDependencyPicker(false)}>
+          <View style={styles.overlay}>
+            <View style={[styles.modalCard, { backgroundColor: cardBg, borderColor: border }, ultraShadow]}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                <Text style={[styles.modalTitle, { color: textPrimary }]}>Depende de…</Text>
+                <TouchableOpacity onPress={() => setShowDependencyPicker(false)} hitSlop={8}>
+                  <X size={18} color={textSecondary} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false}>
+                {(() => {
+                  const alreadyDeps = new Set(taskDependsOn.map((d) => d.taskId));
+                  const candidates = tasks.filter((t) => t.projectId === selectedTask.projectId && t.id !== selectedTask.id && !alreadyDeps.has(t.id));
+                  if (!candidates.length) {
+                    return <Text style={{ color: textSecondary, fontSize: 12.5 }}>No hay otras tareas disponibles en este proyecto.</Text>;
+                  }
+                  return candidates.map((t) => (
+                    <TouchableOpacity
+                      key={t.id}
+                      activeOpacity={0.7}
+                      disabled={addingDependency}
+                      onPress={() => handleAddDependency(t.id)}
+                      style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: border }}
+                    >
+                      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: TASK_STATUS_COLORS[t.status] }} />
+                      <Text style={{ flex: 1, fontSize: 13, color: textPrimary }} numberOfLines={1}>
+                        {t.title}
+                      </Text>
+                      <Text style={{ fontSize: 10.5, fontWeight: "700", color: textSecondary }}>{TASK_STATUS_LABELS[t.status]}</Text>
+                    </TouchableOpacity>
+                  ));
+                })()}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {selectedProject && (
         <RebalanceSuggestionsModal

@@ -957,6 +957,115 @@
     using (auth.uid() = user_id);
 
   -- ----------------------------------------------------------------------------
+  -- task_checklist_items: checklist simple dentro de una task (estilo Trello,
+  -- no son sub-tasks reales con su propio assignee/status — eso hubiera
+  -- significado replicar todo el modelo de permisos de tasks recursivamente
+  -- para un caso de uso que en la práctica es "una lista de pasos a tildar").
+  -- Mismo criterio de visibilidad que task_comments (task_is_involved): quien
+  -- está involucrado en la task puede ver/agregar/tildar cualquier ítem
+  -- (colaborativo, como el checklist de una card de Trello), pero solo quien
+  -- creó un ítem puede borrarlo — igual regla que task_comments_delete_own.
+  -- Sin columna de orden manual (position/drag) a propósito por ahora: se
+  -- ordenan por created_at, que ya cubre el caso de uso real sin la
+  -- complejidad de un drag-and-drop; se puede sumar después si hace falta.
+  -- ----------------------------------------------------------------------------
+  create table if not exists task_checklist_items (
+    id uuid primary key default gen_random_uuid(),
+    task_id uuid not null references tasks(id) on delete cascade,
+    content text not null,
+    completed boolean not null default false,
+    created_by uuid not null references auth.users(id) on delete cascade,
+    created_at timestamptz not null default now()
+  );
+
+  alter table task_checklist_items enable row level security;
+
+  drop policy if exists "task_checklist_items_select_involved" on task_checklist_items;
+  create policy "task_checklist_items_select_involved" on task_checklist_items
+    for select to authenticated
+    using (task_is_involved(task_id));
+
+  drop policy if exists "task_checklist_items_insert_involved" on task_checklist_items;
+  create policy "task_checklist_items_insert_involved" on task_checklist_items
+    for insert to authenticated
+    with check (auth.uid() = created_by and task_is_involved(task_id));
+
+  -- Togglear completed es colaborativo (cualquier involucrado puede tildar el
+  -- ítem de otra persona) — mismo espíritu que un checklist compartido.
+  drop policy if exists "task_checklist_items_update_involved" on task_checklist_items;
+  create policy "task_checklist_items_update_involved" on task_checklist_items
+    for update to authenticated
+    using (task_is_involved(task_id))
+    with check (task_is_involved(task_id));
+
+  drop policy if exists "task_checklist_items_delete_own" on task_checklist_items;
+  create policy "task_checklist_items_delete_own" on task_checklist_items
+    for delete to authenticated
+    using (auth.uid() = created_by);
+
+  -- ----------------------------------------------------------------------------
+  -- task_dependencies: "task_id no puede avanzar hasta que depends_on_task_id
+  -- esté lista" — a propósito solo es informativo/de planificación (una
+  -- advertencia visual si la dependencia no está completada), NO bloquea de
+  -- verdad cambiar el status de la task dependiente; agregar ese bloqueo duro
+  -- quedaría para una v2 si hace falta. Ambas tareas deben ser del MISMO
+  -- proyecto (valida el insert). Gestionar dependencias (agregar/quitar) es
+  -- un campo de planificación, no colaborativo como el checklist — mismo
+  -- criterio de permisos que crear/editar la task: solo el líder del
+  -- proyecto o el owner de la organización. Ver la validación de ciclos en
+  -- el cliente (lib/tasks.ts, addTaskDependency) — Postgres no la valida acá
+  -- porque detectar ciclos en SQL puro para un grafo arbitrario es mucho más
+  -- caro que hacerlo una vez en el cliente antes del insert.
+  -- ----------------------------------------------------------------------------
+  create table if not exists task_dependencies (
+    id uuid primary key default gen_random_uuid(),
+    task_id uuid not null references tasks(id) on delete cascade,
+    depends_on_task_id uuid not null references tasks(id) on delete cascade,
+    created_by uuid not null references auth.users(id) on delete cascade,
+    created_at timestamptz not null default now(),
+    constraint task_dependencies_not_self check (task_id <> depends_on_task_id),
+    unique (task_id, depends_on_task_id)
+  );
+
+  alter table task_dependencies enable row level security;
+
+  drop policy if exists "task_dependencies_select_org" on task_dependencies;
+  create policy "task_dependencies_select_org" on task_dependencies
+    for select to authenticated
+    using (
+      task_id in (select id from tasks where project_id in (select id from projects where organization_id in (select my_organization_ids())))
+    );
+
+  drop policy if exists "task_dependencies_insert_leader_owner" on task_dependencies;
+  create policy "task_dependencies_insert_leader_owner" on task_dependencies
+    for insert to authenticated
+    with check (
+      auth.uid() = created_by
+      and exists (
+        select 1 from tasks t
+        join projects p on p.id = t.project_id
+        join organizations o on o.id = p.organization_id
+        where t.id = task_id and (p.leader_id = auth.uid() or o.owner_id = auth.uid())
+      )
+      and exists (
+        select 1 from tasks t1, tasks t2
+        where t1.id = task_id and t2.id = depends_on_task_id and t1.project_id = t2.project_id
+      )
+    );
+
+  drop policy if exists "task_dependencies_delete_leader_owner" on task_dependencies;
+  create policy "task_dependencies_delete_leader_owner" on task_dependencies
+    for delete to authenticated
+    using (
+      exists (
+        select 1 from tasks t
+        join projects p on p.id = t.project_id
+        join organizations o on o.id = p.organization_id
+        where t.id = task_id and (p.leader_id = auth.uid() or o.owner_id = auth.uid())
+      )
+    );
+
+  -- ----------------------------------------------------------------------------
   -- profile_badges: reconocimientos otorgados a un colaborador (Líder Nato,
   -- Team Player, Mentor, etc.). El catálogo de tipos es fijo, vive en código
   -- (BADGE_CATALOG en src/lib/badges.ts) — no hay tabla de tipos porque hoy no

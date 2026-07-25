@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Image,
   Platform,
@@ -30,6 +30,7 @@ import {
   Sparkles,
   UserCheck,
   Users,
+  X,
 } from "lucide-react-native";
 
 import { useTheme } from "../context/ThemeContext";
@@ -52,6 +53,7 @@ import {
 } from "../lib/tasks";
 import ActivityRow from "../components/ActivityRow";
 import ActivityDetailModal from "../components/ActivityDetailModal";
+import { globalSearch, GlobalSearchResults } from "../lib/search";
 
 // Paleta de marca de Nexus (azure del logo) — acento moderado, no cubre áreas grandes.
 // El color de la organización (organization.color) sigue siendo el que manda en el
@@ -105,6 +107,59 @@ export default function DashboardScreen({ navigation }: any) {
   const [detailEntry, setDetailEntry] = useState<ActivityEntry | null>(null);
   const [myTasks, setMyTasks] = useState<Task[] | null>(null);
   const [workload, setWorkload] = useState<WorkloadEntry[] | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<GlobalSearchResults | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Conecta el input "Buscar…" de arriba, que hasta ahora era decorativo puro
+  // (sin value/onChangeText — ver la trampa correspondiente en docs/TRAMPAS.md
+  // sobre no simular que algo funciona sin backend). Debounce de 300ms para no
+  // disparar una query por cada tecla.
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    const trimmed = searchQuery.trim();
+    if (trimmed.length < 2 || !organization) {
+      setSearchResults(null);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    searchDebounceRef.current = setTimeout(async () => {
+      const results = await globalSearch(organization.id, trimmed);
+      setSearchResults(results);
+      setSearching(false);
+    }, 300);
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, [searchQuery, organization]);
+
+  const clearSearch = () => {
+    setSearchQuery("");
+    setSearchResults(null);
+    setSearchFocused(false);
+  };
+
+  const goToProject = (projectId: string) => {
+    clearSearch();
+    navigation.navigate("Projects");
+  };
+
+  const goToTeam = () => {
+    clearSearch();
+    navigation.navigate("Team");
+  };
+
+  const goToTask = (projectId: string, taskId: string) => {
+    clearSearch();
+    navigation.navigate("Tasks", { projectId, taskId });
+  };
+
+  const searchHasQuery = searchQuery.trim().length >= 2;
+  const searchHasAnyResult = !!searchResults && (searchResults.projects.length > 0 || searchResults.tasks.length > 0 || searchResults.teams.length > 0);
+  const showSearchDropdown = searchFocused && searchHasQuery;
 
   // useFocusEffect (no useEffect) para que los conteos se refresquen cada vez
   // que se vuelve a esta pestaña (p. ej. después de crear un proyecto en otra
@@ -279,13 +334,98 @@ export default function DashboardScreen({ navigation }: any) {
           ) : (
             <View style={[styles.sheet, { backgroundColor: sheetBg, borderColor: border, padding: isMobile ? 18 : 28 }, ultraShadow]}>
               {/* SEARCH */}
-              <View style={[styles.searchWrapper, { backgroundColor: inputBg, borderColor: border }]}>
-                <Search size={18} color={textSecondary} strokeWidth={2.3} />
-                <TextInput
-                  placeholder="Buscar…"
-                  placeholderTextColor={textSecondary}
-                  style={[styles.searchInput, { color: textPrimary }, isWeb && styles.noOutline]}
-                />
+              <View style={{ position: "relative", zIndex: 20 }}>
+                <View style={[styles.searchWrapper, { backgroundColor: inputBg, borderColor: border }]}>
+                  <Search size={18} color={textSecondary} strokeWidth={2.3} />
+                  <TextInput
+                    placeholder="Buscar proyectos, tareas o equipos…"
+                    placeholderTextColor={textSecondary}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    onFocus={() => setSearchFocused(true)}
+                    style={[styles.searchInput, { color: textPrimary }, isWeb && styles.noOutline]}
+                  />
+                  {!!searchQuery && (
+                    <TouchableOpacity onPress={clearSearch} hitSlop={8}>
+                      <X size={16} color={textSecondary} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {showSearchDropdown && (
+                  <>
+                    {/* Capa invisible para poder cerrar el dropdown tocando afuera, sin bloquear el resto de la página cuando está cerrado. */}
+                    <TouchableOpacity
+                      style={StyleSheet.absoluteFillObject as any}
+                      activeOpacity={1}
+                      onPress={() => setSearchFocused(false)}
+                    />
+                    <ScrollView style={[styles.searchDropdown, { backgroundColor: cardBg, borderColor: border }, ultraShadow]} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                      {searching ? (
+                        <Text style={{ color: textSecondary, fontSize: 13, padding: 4 }}>Buscando…</Text>
+                      ) : !searchHasAnyResult ? (
+                        <Text style={{ color: textSecondary, fontSize: 13, padding: 4 }}>Sin resultados para "{searchQuery.trim()}".</Text>
+                      ) : (
+                        <>
+                          {!!searchResults!.projects.length && (
+                            <View style={{ marginBottom: 10 }}>
+                              <Text style={[styles.searchGroupLabel, { color: textSecondary }]}>Proyectos</Text>
+                              {searchResults!.projects.map((p) => (
+                                <TouchableOpacity key={p.id} activeOpacity={0.7} style={styles.searchResultRow} onPress={() => goToProject(p.id)}>
+                                  <Folder size={13} color={primaryColor} />
+                                  <Text style={{ flex: 1, fontSize: 13, color: textPrimary }} numberOfLines={1}>
+                                    {p.name}
+                                  </Text>
+                                  <Text style={{ fontSize: 10.5, fontWeight: "700", color: STATUS_COLORS[p.status as keyof typeof STATUS_COLORS] ?? textSecondary }}>
+                                    {STATUS_LABELS[p.status as keyof typeof STATUS_LABELS] ?? p.status}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          )}
+
+                          {!!searchResults!.tasks.length && (
+                            <View style={{ marginBottom: 10 }}>
+                              <Text style={[styles.searchGroupLabel, { color: textSecondary }]}>Tareas</Text>
+                              {searchResults!.tasks.map((t) => (
+                                <TouchableOpacity
+                                  key={t.id}
+                                  activeOpacity={0.7}
+                                  style={styles.searchResultRow}
+                                  onPress={() => goToTask(t.projectId, t.id)}
+                                >
+                                  <CheckCircle2 size={13} color={primaryColor} />
+                                  <View style={{ flex: 1 }}>
+                                    <Text style={{ fontSize: 13, color: textPrimary }} numberOfLines={1}>
+                                      {t.title}
+                                    </Text>
+                                    <Text style={{ fontSize: 10.5, color: textSecondary }} numberOfLines={1}>
+                                      {t.projectName}
+                                    </Text>
+                                  </View>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          )}
+
+                          {!!searchResults!.teams.length && (
+                            <View>
+                              <Text style={[styles.searchGroupLabel, { color: textSecondary }]}>Equipos</Text>
+                              {searchResults!.teams.map((t) => (
+                                <TouchableOpacity key={t.id} activeOpacity={0.7} style={styles.searchResultRow} onPress={goToTeam}>
+                                  <Users size={13} color={primaryColor} />
+                                  <Text style={{ flex: 1, fontSize: 13, color: textPrimary }} numberOfLines={1}>
+                                    {t.name}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          )}
+                        </>
+                      )}
+                    </ScrollView>
+                  </>
+                )}
               </View>
 
               {/* HERO — color sólido original de la organización, sin degradado
@@ -746,6 +886,12 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, paddingVertical: 14, fontSize: 15 },
   noOutline: { outlineStyle: "none" } as any,
+  searchDropdown: {
+    position: "absolute", top: "100%", left: 0, right: 0, marginTop: 8, borderRadius: 18, borderWidth: 1,
+    padding: 14, maxHeight: 360, zIndex: 30,
+  },
+  searchGroupLabel: { fontSize: 10.5, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 },
+  searchResultRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 7 },
 
   heroCard: { borderRadius: 28, padding: 24, marginTop: 22 },
   heroTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
