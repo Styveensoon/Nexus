@@ -91,7 +91,21 @@ export type Task = {
   createdBy: string;
   createdAt: string;
   assignee: TaskAssignee;
+  labels: string[];
 };
+
+// Un color determinístico por texto (mismo string siempre da el mismo color)
+// para las etiquetas libres — no hay tabla de colores porque no hay catálogo
+// de labels (texto libre de verdad, ver la columna en schema.sql). Paleta
+// fija de 8 tonos legibles en claro/oscuro, elegida por un hash simple del
+// string en vez de aleatorio, para que la misma etiqueta ("bug", "urgente")
+// se vea siempre igual en toda la app sin persistir nada.
+const LABEL_COLOR_PALETE = ["#2C7BD1", "#0D9488", "#F97316", "#A855F7", "#EF4444", "#65A30D", "#DB2777", "#64748B"];
+export function labelColor(text: string): string {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  return LABEL_COLOR_PALETE[hash % LABEL_COLOR_PALETE.length];
+}
 
 export function isOverdue(task: Task) {
   if (!task.dueDate || TERMINAL_STATUSES.includes(task.status)) return false;
@@ -130,6 +144,7 @@ type TaskRow = {
   assigned_team_id: string | null;
   created_by: string;
   created_at: string;
+  labels: string[] | null;
 };
 
 async function hydrateTasks(taskRows: TaskRow[]) {
@@ -186,6 +201,7 @@ async function hydrateTasks(taskRows: TaskRow[]) {
       createdBy: row.created_by,
       createdAt: row.created_at,
       assignee,
+      labels: row.labels ?? [],
     });
     return acc;
   }, []);
@@ -194,7 +210,7 @@ async function hydrateTasks(taskRows: TaskRow[]) {
 }
 
 const TASK_COLUMNS =
-  "id, project_id, title, description, status, priority, start_date, due_date, assigned_user_id, assigned_team_id, created_by, created_at";
+  "id, project_id, title, description, status, priority, start_date, due_date, assigned_user_id, assigned_team_id, created_by, created_at, labels";
 
 export async function listTasksForProjects(projectIds: string[]) {
   if (!projectIds.length) return { data: [] as Task[], error: null };
@@ -219,6 +235,7 @@ export async function createTask(params: {
   priority?: TaskPriority;
   startDate?: string | null;
   dueDate?: string | null;
+  labels?: string[];
 }) {
   const { data, error } = await supabase
     .from("tasks")
@@ -232,6 +249,7 @@ export async function createTask(params: {
       priority: params.priority ?? "medium",
       start_date: params.startDate ?? null,
       due_date: params.dueDate ?? null,
+      labels: params.labels ?? [],
     })
     .select("id")
     .single();
@@ -345,6 +363,7 @@ export async function updateTask(
     priority: TaskPriority;
     startDate: string | null;
     dueDate: string | null;
+    labels: string[];
   }>
 ) {
   // Se necesita el estado previo solo si cambia la asignación (para saber a
@@ -379,6 +398,7 @@ export async function updateTask(
         due_date: updates.dueDate,
         ...(updates.dueDate !== before?.due_date && { due_reminder_sent_at: null }),
       }),
+      ...(updates.labels !== undefined && { labels: updates.labels }),
     })
     .eq("id", taskId);
 

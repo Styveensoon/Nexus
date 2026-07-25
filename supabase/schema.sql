@@ -729,6 +729,14 @@
       )
     );
 
+  -- Etiquetas libres de texto (labels/tags) — a diferencia de priority/status
+  -- (enum fijo), acá cualquier texto vale; el autocompletado de sugerencias en
+  -- el cliente (TasksScreen.tsx) se arma juntando las labels YA usadas en el
+  -- proyecto, no de un catálogo en la base. Mismo criterio de permisos que
+  -- title/description/priority: solo el líder del proyecto o el owner pueden
+  -- tocarlas (ver el trigger de abajo) — no es colaborativo como el checklist.
+  alter table tasks add column if not exists labels text[] not null default '{}';
+
   -- Enforcement a nivel de columna: si quien actualiza NO es líder/owner del
   -- proyecto, solo puede tocar `status` — cualquier otro cambio se rechaza.
   -- La policy de arriba ya deja pasar la fila; esto es lo que de verdad impide
@@ -759,6 +767,7 @@
       or new.start_date is distinct from old.start_date
       or new.due_date is distinct from old.due_date
       or new.priority <> old.priority
+      or new.labels is distinct from old.labels
       or new.created_by <> old.created_by then
       raise exception 'Solo el líder del proyecto o el owner pueden editar esta task, el asignado solo puede cambiar el status';
     end if;

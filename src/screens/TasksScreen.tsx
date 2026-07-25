@@ -77,6 +77,7 @@ import {
   formatShortDate,
   isDueSoon,
   isOverdue,
+  labelColor,
   listChecklistItems,
   listTaskComments,
   listTaskCollaborators,
@@ -173,6 +174,108 @@ function renderLinkifiedText(text: string, linkColor: string) {
   );
 }
 
+// Etiquetas libres de texto (Feature 5 del sprint de mejoras) — chips
+// removibles + input que agrega con Enter/coma, más sugerencias de
+// autocompletado (labels ya usadas en el proyecto, ver projectLabelSuggestions
+// en el componente principal) para no acumular variantes del mismo tag.
+function LabelsEditor({
+  labels,
+  setLabels,
+  inputValue,
+  setInputValue,
+  suggestions,
+  textPrimary,
+  textSecondary,
+  inputBg,
+  border,
+  isWeb,
+}: {
+  labels: string[];
+  setLabels: (fn: (prev: string[]) => string[]) => void;
+  inputValue: string;
+  setInputValue: (v: string) => void;
+  suggestions: string[];
+  textPrimary: string;
+  textSecondary: string;
+  inputBg: string;
+  border: string;
+  isWeb: boolean;
+}) {
+  const addLabel = (raw: string) => {
+    const value = raw.trim();
+    if (!value) return;
+    setLabels((prev) => (prev.some((l) => l.toLowerCase() === value.toLowerCase()) ? prev : [...prev, value]));
+    setInputValue("");
+  };
+
+  const handleChangeText = (text: string) => {
+    if (text.includes(",")) {
+      text.split(",").forEach((part) => addLabel(part));
+      return;
+    }
+    setInputValue(text);
+  };
+
+  const visibleSuggestions = suggestions
+    .filter((s) => !labels.some((l) => l.toLowerCase() === s.toLowerCase()))
+    .filter((s) => !inputValue.trim() || s.toLowerCase().includes(inputValue.trim().toLowerCase()))
+    .slice(0, 6);
+
+  return (
+    <View>
+      {!!labels.length && (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+          {labels.map((label) => (
+            <View
+              key={label}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 5,
+                paddingVertical: 4,
+                paddingHorizontal: 9,
+                borderRadius: 999,
+                backgroundColor: `${labelColor(label)}1F`,
+              }}
+            >
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: labelColor(label) }} />
+              <Text style={{ fontSize: 11.5, fontWeight: "700", color: labelColor(label) }}>{label}</Text>
+              <TouchableOpacity hitSlop={6} onPress={() => setLabels((prev) => prev.filter((l) => l !== label))}>
+                <X size={11} color={labelColor(label)} />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      )}
+      <TextInput
+        value={inputValue}
+        onChangeText={handleChangeText}
+        onSubmitEditing={() => addLabel(inputValue)}
+        placeholder="Agregar etiqueta y presionar Enter…"
+        placeholderTextColor={textSecondary}
+        style={[
+          { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, fontSize: 13, backgroundColor: inputBg, borderColor: border, color: textPrimary },
+          isWeb && ({ outlineStyle: "none" } as any),
+        ]}
+      />
+      {!!visibleSuggestions.length && (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+          {visibleSuggestions.map((s) => (
+            <TouchableOpacity
+              key={s}
+              activeOpacity={0.7}
+              onPress={() => addLabel(s)}
+              style={{ paddingVertical: 4, paddingHorizontal: 9, borderRadius: 999, borderWidth: 1, borderColor: border }}
+            >
+              <Text style={{ fontSize: 11, color: textSecondary }}>+ {s}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
 type AssignableUser = { userId: string; name: string; avatarUrl: string | null; avatarColor: string };
 
 export default function TasksScreen({ navigation, route }: any) {
@@ -242,6 +345,8 @@ export default function TasksScreen({ navigation, route }: any) {
   const [newPriority, setNewPriority] = useState<TaskPriority>("medium");
   const [newStartDate, setNewStartDate] = useState<string | null>(null);
   const [newDueDate, setNewDueDate] = useState<string | null>(null);
+  const [newLabels, setNewLabels] = useState<string[]>([]);
+  const [newLabelInput, setNewLabelInput] = useState("");
   const [showNewStartDatePicker, setShowNewStartDatePicker] = useState(false);
   const [showNewDueDatePicker, setShowNewDueDatePicker] = useState(false);
   const [newAttachments, setNewAttachments] = useState<TaskCommentAttachment[]>([]);
@@ -261,6 +366,8 @@ export default function TasksScreen({ navigation, route }: any) {
   const [editPriority, setEditPriority] = useState<TaskPriority>("medium");
   const [editStartDate, setEditStartDate] = useState<string | null>(null);
   const [editDueDate, setEditDueDate] = useState<string | null>(null);
+  const [editLabels, setEditLabels] = useState<string[]>([]);
+  const [editLabelInput, setEditLabelInput] = useState("");
   const [showEditStartDatePicker, setShowEditStartDatePicker] = useState(false);
   const [showEditDueDatePicker, setShowEditDueDatePicker] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -339,6 +446,17 @@ export default function TasksScreen({ navigation, route }: any) {
     });
     return Array.from(map.values());
   }, [selectedProject]);
+
+  // Sugerencias de autocompletado para labels: las que YA se usaron en el
+  // proyecto seleccionado (no hay catálogo/tabla, es texto libre de verdad,
+  // ver la columna en schema.sql) — así el mismo proyecto tiende a reusar
+  // las mismas etiquetas en vez de acumular variantes ("bug"/"Bug"/"BUG").
+  const projectLabelSuggestions = useMemo(() => {
+    if (!selectedProject) return [];
+    const set = new Set<string>();
+    tasks.filter((t) => t.projectId === selectedProject.id).forEach((t) => t.labels.forEach((l) => set.add(l)));
+    return Array.from(set).sort();
+  }, [tasks, selectedProject]);
 
   // Solo el owner de la organización puede vincular equipos nuevos a un
   // proyecto (project_teams_insert_owner en schema.sql) — un líder de
@@ -426,6 +544,8 @@ export default function TasksScreen({ navigation, route }: any) {
     setNewPriority("medium");
     setNewStartDate(null);
     setNewDueDate(null);
+    setNewLabels([]);
+    setNewLabelInput("");
     setCreateError(null);
     setNewAttachments([]);
     setCreateAttachError(null);
@@ -511,6 +631,7 @@ export default function TasksScreen({ navigation, route }: any) {
       priority: newPriority,
       startDate: newStartDate,
       dueDate: newDueDate,
+      labels: newLabels,
     });
     if (error || !taskRow) {
       setCreating(false);
@@ -649,6 +770,8 @@ export default function TasksScreen({ navigation, route }: any) {
     setEditPriority(selectedTask.priority);
     setEditStartDate(selectedTask.startDate);
     setEditDueDate(selectedTask.dueDate);
+    setEditLabels(selectedTask.labels);
+    setEditLabelInput("");
     setEditError(null);
     setEditingTask(true);
   };
@@ -696,6 +819,7 @@ export default function TasksScreen({ navigation, route }: any) {
       priority: editPriority,
       startDate: editStartDate,
       dueDate: editDueDate,
+      labels: editLabels,
     });
     setSavingEdit(false);
     if (error) {
@@ -904,6 +1028,16 @@ export default function TasksScreen({ navigation, route }: any) {
           <Text style={[styles.taskDescription, { color: textSecondary }]} numberOfLines={2}>
             {task.description}
           </Text>
+        )}
+
+        {!!task.labels.length && (
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+            {task.labels.map((label) => (
+              <View key={label} style={{ paddingVertical: 2, paddingHorizontal: 7, borderRadius: 999, backgroundColor: `${labelColor(label)}1F` }}>
+                <Text style={{ fontSize: 10, fontWeight: "700", color: labelColor(label) }}>{label}</Text>
+              </View>
+            ))}
+          </View>
         )}
 
         {(task.priority !== "medium" || task.dueDate) && (
@@ -1439,6 +1573,20 @@ export default function TasksScreen({ navigation, route }: any) {
                     <Text style={[styles.errorText, { color: dangerColor, marginTop: 8 }]}>La fecha límite no puede ser antes que la de inicio.</Text>
                   )}
 
+                  <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Etiquetas (opcional)</Text>
+                  <LabelsEditor
+                    labels={newLabels}
+                    setLabels={setNewLabels}
+                    inputValue={newLabelInput}
+                    setInputValue={setNewLabelInput}
+                    suggestions={projectLabelSuggestions}
+                    textPrimary={textPrimary}
+                    textSecondary={textSecondary}
+                    inputBg={inputBg}
+                    border={border}
+                    isWeb={isWeb}
+                  />
+
                   <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Adjuntos (opcional)</Text>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
                     <ChatAttachmentButtons color={primaryColor} disabled={uploadingCreateAttachment} onAttachmentReady={handleCreateAttachmentReady} onError={setCreateAttachError} />
@@ -1695,6 +1843,20 @@ export default function TasksScreen({ navigation, route }: any) {
                             )}
                           </TouchableOpacity>
                         </View>
+
+                        <Text style={[styles.modalLabel, { color: textSecondary, marginTop: 20 }]}>Etiquetas (opcional)</Text>
+                        <LabelsEditor
+                          labels={editLabels}
+                          setLabels={setEditLabels}
+                          inputValue={editLabelInput}
+                          setInputValue={setEditLabelInput}
+                          suggestions={projectLabelSuggestions}
+                          textPrimary={textPrimary}
+                          textSecondary={textSecondary}
+                          inputBg={cardBg}
+                          border={border}
+                          isWeb={isWeb}
+                        />
                       </View>
                     </View>
 
@@ -1823,6 +1985,16 @@ export default function TasksScreen({ navigation, route }: any) {
                           );
                         })()}
                       </View>
+
+                      {!!selectedTask.labels.length && (
+                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                          {selectedTask.labels.map((label) => (
+                            <View key={label} style={{ paddingVertical: 3, paddingHorizontal: 8, borderRadius: 999, backgroundColor: `${labelColor(label)}1F` }}>
+                              <Text style={{ fontSize: 10.5, fontWeight: "700", color: labelColor(label) }}>{label}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
 
                       <Text style={[styles.modalLabel, { color: textSecondary }]}>Status</Text>
                       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
