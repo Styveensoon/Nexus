@@ -364,7 +364,7 @@ async function buildTaskContext(admin: any, requesterId: string, taskId: string,
 
   const { data: comments } = await admin
     .from("task_comments")
-    .select("content, created_at, user_id")
+    .select("content, created_at, user_id, attachment_url, attachment_type, attachment_name")
     .eq("task_id", taskId)
     .order("created_at", { ascending: false })
     .limit(5);
@@ -375,9 +375,26 @@ async function buildTaskContext(admin: any, requesterId: string, taskId: string,
     : { data: [] };
   const nameById = new Map((profiles ?? []).map((p: { id: string; full_name: string | null; nickname: string | null }) => [p.id, p.nickname || p.full_name || "Alguien"]));
 
+  // Los 4 tipos de adjunto que soporta el chat de una task (image/file/link/
+  // date, ver docs/BASE_DE_DATOS.md) — antes Aria solo veía `content`, así que
+  // un comentario que era SOLO un adjunto (sin texto, el caso más común al
+  // subir algo) se veía vacío. No se le "muestra" la imagen en sí a la IA,
+  // solo metadata (tipo + nombre/URL/fecha), suficiente para que pueda
+  // mencionarlo si preguntan.
+  const ATTACHMENT_LABELS: Record<string, string> = { image: "imagen", file: "archivo", link: "link", date: "fecha" };
+  const describeAttachment = (c: { attachment_type: string | null; attachment_url: string | null; attachment_name: string | null }) => {
+    if (!c.attachment_type) return "";
+    const label = ATTACHMENT_LABELS[c.attachment_type] ?? c.attachment_type;
+    const detail = c.attachment_type === "image" || c.attachment_type === "file" ? c.attachment_name || label : c.attachment_url;
+    return ` [adjuntó ${label}: ${detail}]`;
+  };
+
   const commentsText = (comments ?? [])
     .reverse()
-    .map((c: { user_id: string; content: string }) => `- ${nameById.get(c.user_id) ?? "Alguien"}: ${c.content}`)
+    .map(
+      (c: { user_id: string; content: string; attachment_type: string | null; attachment_url: string | null; attachment_name: string | null }) =>
+        `- ${nameById.get(c.user_id) ?? "Alguien"}: ${c.content?.trim() || "(sin texto)"}${describeAttachment(c)}`
+    )
     .join("\n");
 
   // Asignado (persona o equipo) — solo hacía falta como texto suelto dentro

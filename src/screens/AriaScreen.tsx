@@ -620,7 +620,7 @@ export default function AriaScreen({ navigation, route }: any) {
                 <View style={styles.heroEmpty}>
                   <Text style={[styles.heroTitle, { color: textPrimary }]}>Hola, soy Aria</Text>
                   <Text style={[styles.heroSubtitle, { color: textSecondary }]}>
-                    Preguntame lo que necesites sobre tu organización, un proyecto o una tarea — te respondo con datos reales,
+                    Preguntame lo que necesites sobre tu organización, un proyecto o una tarea, te respondo con datos reales,
                     nunca invento algo que no sepa.
                   </Text>
                 </View>
