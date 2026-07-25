@@ -257,10 +257,12 @@ export async function createTask(params: {
           project.name,
           assignedByName,
           params.dueDate ?? null,
-          project.organization_id
+          project.organization_id,
+          params.projectId,
+          data.id
         );
       } else if (params.assignedTeamId) {
-        await notifyTaskTeamAssigned(params.assignedTeamId, params.title, project.name, project.organization_id);
+        await notifyTaskTeamAssigned(params.assignedTeamId, params.title, project.name, project.organization_id, params.projectId, data.id);
       }
     }
   }
@@ -310,7 +312,9 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
             taskBefore.title,
             enteringBlocked,
             changedByName,
-            project.organization_id
+            project.organization_id,
+            taskBefore.project_id,
+            taskId
           );
         } else if (taskBefore.assigned_team_id) {
           const { data: teamMembers } = await supabase.from("team_members").select("user_id").eq("team_id", taskBefore.assigned_team_id);
@@ -319,7 +323,9 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
             taskBefore.title,
             enteringBlocked,
             changedByName,
-            project.organization_id
+            project.organization_id,
+            taskBefore.project_id,
+            taskId
           );
         }
       }
@@ -349,13 +355,24 @@ export async function updateTask(
     ? await supabase.from("tasks").select("project_id, title, assigned_user_id, assigned_team_id, due_date").eq("id", taskId).maybeSingle()
     : { data: null };
 
+  // assignedUserId/assignedTeamId se tratan como UNA sola unidad (persona XOR
+  // equipo, tasks_assignee_xor) — spreadearlos por separado con un "&& { ...,
+  // otroCampo: null }" cada uno se pisaba entre sí cuando el caller manda los
+  // DOS (que es siempre el caso real: TasksScreen.saveEditTask siempre pasa
+  // assignedUserId Y assignedTeamId, uno con el id elegido y el otro en null
+  // explícito) — el segundo spread terminaba dejando AMBOS en null y violando
+  // el constraint. Bug real encontrado probando en vivo (ver docs/TRAMPAS.md).
+  const assigneeChangedFields =
+    updates.assignedUserId !== undefined || updates.assignedTeamId !== undefined
+      ? { assigned_user_id: updates.assignedUserId ?? null, assigned_team_id: updates.assignedTeamId ?? null }
+      : {};
+
   const { error } = await supabase
     .from("tasks")
     .update({
       ...(updates.title !== undefined && { title: updates.title }),
       ...(updates.description !== undefined && { description: updates.description }),
-      ...(updates.assignedUserId !== undefined && { assigned_user_id: updates.assignedUserId, assigned_team_id: null }),
-      ...(updates.assignedTeamId !== undefined && { assigned_team_id: updates.assignedTeamId, assigned_user_id: null }),
+      ...assigneeChangedFields,
       ...(updates.priority !== undefined && { priority: updates.priority }),
       ...(updates.startDate !== undefined && { start_date: updates.startDate }),
       ...(updates.dueDate !== undefined && {
@@ -385,10 +402,12 @@ export async function updateTask(
             project.name,
             assignedByName,
             updates.dueDate ?? null,
-            project.organization_id
+            project.organization_id,
+            before.project_id,
+            taskId
           );
         } else if (updates.assignedTeamId) {
-          await notifyTaskTeamAssigned(updates.assignedTeamId, title, project.name, project.organization_id);
+          await notifyTaskTeamAssigned(updates.assignedTeamId, title, project.name, project.organization_id, before.project_id, taskId);
         }
       }
     }
@@ -797,7 +816,7 @@ export async function addTaskCollaborator(taskId: string, userId: string, addedB
       const { data: project } = await supabase.from("projects").select("organization_id").eq("id", task.project_id).maybeSingle();
       if (project) {
         const addedByName = await getDisplayName(addedBy);
-        await notifyTaskCollaboratorAdded(userId, task.title, addedByName, project.organization_id);
+        await notifyTaskCollaboratorAdded(userId, task.title, addedByName, project.organization_id, task.project_id, taskId);
       }
     }
   }

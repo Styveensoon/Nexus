@@ -10,6 +10,7 @@ import ProfileScreen from "../screens/ProfileScreen";
 import TasksScreen from "../screens/TasksScreen";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
+import NotificationBell from "../components/NotificationBell";
 
 const Tab = createBottomTabNavigator();
 
@@ -64,6 +65,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   if (isMobile) {
     return (
       <View style={[styles.mobileBar, { backgroundColor: bg, borderTopColor: border }, glass]}>
+        <NotificationBell navigation={navigation} floating />
         {state.routes.map((route, index) => {
           const isFocused = state.index === index;
           const Icon = TAB_ICONS[route.name] ?? LayoutGrid;
@@ -117,14 +119,17 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
           })}
         </View>
 
-        <TouchableOpacity
-          activeOpacity={0.8}
-          style={[styles.signOutBtn, { borderColor: border }]}
-          onPress={handleSignOut}
-          {...(Platform.OS === "web" ? ({ title: "Cerrar sesión" } as any) : {})}
-        >
-          <LogOut size={16} color={textSecondary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <NotificationBell navigation={navigation} />
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={[styles.signOutBtn, { borderColor: border }]}
+            onPress={handleSignOut}
+            {...(Platform.OS === "web" ? ({ title: "Cerrar sesión" } as any) : {})}
+          >
+            <LogOut size={16} color={textSecondary} />
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );

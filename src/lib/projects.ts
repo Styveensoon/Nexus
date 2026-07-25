@@ -225,7 +225,7 @@ export async function createProject(params: {
     if (teamsError) return { data: project, error: teamsError };
 
     for (const teamId of teamIds) {
-      await notifyProjectTeamAssigned(teamId, params.name, params.organizationId);
+      await notifyProjectTeamAssigned(teamId, params.name, params.organizationId, project.id);
     }
   }
 
@@ -278,7 +278,7 @@ export async function createProjectFromSuggestion(
 
   const addedByName = await getDisplayName(createdBy);
   for (const m of members) {
-    await notifyProjectMemberAdded(m.user_id, suggestion.projectName, addedByName, organizationId);
+    await notifyProjectMemberAdded(m.user_id, suggestion.projectName, addedByName, organizationId, project.id);
   }
 
   await logActivity({
@@ -394,7 +394,7 @@ export async function setProjectTeams(projectId: string, teamIds: string[]) {
     const { data: project } = await supabase.from("projects").select("name, organization_id").eq("id", projectId).maybeSingle();
     if (project) {
       for (const teamId of newlyLinkedTeamIds) {
-        await notifyProjectTeamAssigned(teamId, project.name, project.organization_id);
+        await notifyProjectTeamAssigned(teamId, project.name, project.organization_id, projectId);
       }
     }
   }

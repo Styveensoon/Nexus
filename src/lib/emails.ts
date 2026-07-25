@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { pushNotification } from "./notifications";
 
 // Correos transaccionales (docs/EMAILS.md) — cada notify* se llama desde
 // lib/organizations.ts, teams.ts, projects.ts, tasks.ts o badges.ts justo
@@ -64,23 +65,60 @@ export async function notifyOrganizationJoined(userId: string, orgName: string, 
   await sendEmail(await getEmailsForUserIds([userId]), "org_joined", { orgName }, organizationId);
 }
 
+async function getUserIdsForTeam(teamId: string): Promise<string[]> {
+  const { data } = await supabase.from("team_members").select("user_id").eq("team_id", teamId);
+  return (data ?? []).map((m) => m.user_id);
+}
+
 // 3.1
 export async function notifyTeamMembersAdded(userIds: string[], teamName: string, addedByName: string, organizationId: string) {
-  await sendEmail(await getEmailsForUserIds(userIds), "team_member_added", { teamName, addedByName }, organizationId);
+  await Promise.all([
+    sendEmail(await getEmailsForUserIds(userIds), "team_member_added", { teamName, addedByName }, organizationId),
+    pushNotification(organizationId, userIds, "team_member_added", "Te agregaron a un equipo", `${addedByName} te agregó al equipo "${teamName}".`, {
+      entityType: "team",
+    }),
+  ]);
 }
 
 // 4.1
-export async function notifyProjectMemberAdded(userId: string, projectName: string, addedByName: string, organizationId: string) {
-  await sendEmail(await getEmailsForUserIds([userId]), "project_member_added", { projectName, addedByName }, organizationId);
+export async function notifyProjectMemberAdded(
+  userId: string,
+  projectName: string,
+  addedByName: string,
+  organizationId: string,
+  projectId?: string
+) {
+  await Promise.all([
+    sendEmail(await getEmailsForUserIds([userId]), "project_member_added", { projectName, addedByName }, organizationId),
+    pushNotification(
+      organizationId,
+      [userId],
+      "project_member_added",
+      "Te agregaron a un proyecto",
+      `${addedByName} te agregó al proyecto "${projectName}".`,
+      { entityType: "project", projectId }
+    ),
+  ]);
 }
 
 // 4.2 (grupal)
-export async function notifyProjectTeamAssigned(teamId: string, projectName: string, organizationId: string) {
-  const [{ data: teamRow }, emails] = await Promise.all([
+export async function notifyProjectTeamAssigned(teamId: string, projectName: string, organizationId: string, projectId?: string) {
+  const [{ data: teamRow }, emails, userIds] = await Promise.all([
     supabase.from("teams").select("name").eq("id", teamId).maybeSingle(),
     getEmailsForTeam(teamId),
+    getUserIdsForTeam(teamId),
   ]);
-  await sendEmail(emails, "project_team_assigned", { teamName: teamRow?.name ?? "tu equipo", projectName }, organizationId);
+  await Promise.all([
+    sendEmail(emails, "project_team_assigned", { teamName: teamRow?.name ?? "tu equipo", projectName }, organizationId),
+    pushNotification(
+      organizationId,
+      userIds,
+      "project_team_assigned",
+      "Tu equipo fue asignado a un proyecto",
+      `El equipo "${teamRow?.name ?? "tu equipo"}" fue asignado al proyecto "${projectName}".`,
+      { entityType: "project", projectId }
+    ),
+  ]);
 }
 
 // 5.1
@@ -90,29 +128,76 @@ export async function notifyTaskAssigned(
   projectName: string,
   assignedByName: string,
   dueDate: string | null,
-  organizationId: string
+  organizationId: string,
+  projectId?: string,
+  taskId?: string
 ) {
-  await sendEmail(
-    await getEmailsForUserIds([userId]),
-    "task_assigned",
-    {
-      taskTitle,
-      projectName,
-      assignedByName,
-      dueDate: dueDate ? new Date(`${dueDate}T00:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "long" }) : "",
-    },
-    organizationId
-  );
+  await Promise.all([
+    sendEmail(
+      await getEmailsForUserIds([userId]),
+      "task_assigned",
+      {
+        taskTitle,
+        projectName,
+        assignedByName,
+        dueDate: dueDate ? new Date(`${dueDate}T00:00:00`).toLocaleDateString("es-ES", { day: "numeric", month: "long" }) : "",
+      },
+      organizationId
+    ),
+    pushNotification(
+      organizationId,
+      [userId],
+      "task_assigned",
+      "Te asignaron una tarea",
+      `${assignedByName} te asignó "${taskTitle}" en ${projectName}.`,
+      { entityType: "task", entityId: taskId, projectId }
+    ),
+  ]);
 }
 
 // 5.2 (grupal)
-export async function notifyTaskTeamAssigned(teamId: string, taskTitle: string, projectName: string, organizationId: string) {
-  await sendEmail(await getEmailsForTeam(teamId), "task_team_assigned", { taskTitle, projectName }, organizationId);
+export async function notifyTaskTeamAssigned(
+  teamId: string,
+  taskTitle: string,
+  projectName: string,
+  organizationId: string,
+  projectId?: string,
+  taskId?: string
+) {
+  const [emails, userIds] = await Promise.all([getEmailsForTeam(teamId), getUserIdsForTeam(teamId)]);
+  await Promise.all([
+    sendEmail(emails, "task_team_assigned", { taskTitle, projectName }, organizationId),
+    pushNotification(
+      organizationId,
+      userIds,
+      "task_team_assigned",
+      "Tu equipo tiene una tarea nueva",
+      `Le asignaron "${taskTitle}" a tu equipo en ${projectName}.`,
+      { entityType: "task", entityId: taskId, projectId }
+    ),
+  ]);
 }
 
 // 5.3
-export async function notifyTaskCollaboratorAdded(userId: string, taskTitle: string, addedByName: string, organizationId: string) {
-  await sendEmail(await getEmailsForUserIds([userId]), "task_collaborator_added", { taskTitle, addedByName }, organizationId);
+export async function notifyTaskCollaboratorAdded(
+  userId: string,
+  taskTitle: string,
+  addedByName: string,
+  organizationId: string,
+  projectId?: string,
+  taskId?: string
+) {
+  await Promise.all([
+    sendEmail(await getEmailsForUserIds([userId]), "task_collaborator_added", { taskTitle, addedByName }, organizationId),
+    pushNotification(
+      organizationId,
+      [userId],
+      "task_collaborator_added",
+      "Te agregaron como colaborador",
+      `${addedByName} te agregó como colaborador de "${taskTitle}".`,
+      { entityType: "task", entityId: taskId, projectId }
+    ),
+  ]);
 }
 
 // 5.5 (bloqueada/desbloqueada) — a quien esté asignado (persona, o todo el
@@ -122,19 +207,36 @@ export async function notifyTaskBlockedToggle(
   taskTitle: string,
   toBlocked: boolean,
   changedByName: string,
-  organizationId: string
+  organizationId: string,
+  projectId?: string,
+  taskId?: string
 ) {
-  await sendEmail(
-    await getEmailsForUserIds(userIds),
-    "task_blocked_toggle",
-    { taskTitle, changedByName, toBlocked: toBlocked ? "true" : "false" },
-    organizationId
-  );
+  await Promise.all([
+    sendEmail(
+      await getEmailsForUserIds(userIds),
+      "task_blocked_toggle",
+      { taskTitle, changedByName, toBlocked: toBlocked ? "true" : "false" },
+      organizationId
+    ),
+    pushNotification(
+      organizationId,
+      userIds,
+      "task_blocked_toggle",
+      toBlocked ? "Tarea bloqueada" : "Tarea desbloqueada",
+      `${changedByName} ${toBlocked ? "bloqueó" : "desbloqueó"} "${taskTitle}".`,
+      { entityType: "task", entityId: taskId, projectId }
+    ),
+  ]);
 }
 
 // 7.1
 export async function notifyBadgeGranted(userId: string, badgeLabel: string, badgeDescription: string, organizationId: string) {
-  await sendEmail(await getEmailsForUserIds([userId]), "badge_granted", { badgeLabel, badgeDescription }, organizationId);
+  await Promise.all([
+    sendEmail(await getEmailsForUserIds([userId]), "badge_granted", { badgeLabel, badgeDescription }, organizationId),
+    pushNotification(organizationId, [userId], "badge_granted", "Recibiste un badge", `Te otorgaron el badge "${badgeLabel}".`, {
+      entityType: "badge",
+    }),
+  ]);
 }
 
 // docs/CLIENTE.md §8: notifica a TODOS los encargados actuales de un cliente

@@ -1297,6 +1297,72 @@
     $$
   );
 
+  -- ----------------------------------------------------------------------------
+  -- notifications: centro de notificaciones IN-APP (campanita en la nav),
+  -- paralelo a los correos transaccionales (docs/EMAILS.md) pero un canal más
+  -- inmediato dentro de la propia app — nunca los reemplaza. Se genera en los
+  -- MISMOS puntos donde emails.ts ya dispara un correo (mismo criterio de
+  -- resiliencia: si falla el insert, no aborta la mutación principal, solo
+  -- console.warn) vía pushNotification en src/lib/notifications.ts, llamada
+  -- desde los notify* de src/lib/emails.ts. Acotado a propósito a eventos
+  -- "core" de la organización (equipos/proyectos/tasks/badges) — el Módulo de
+  -- Clientes queda fuera de esta ronda, igual que una notificación genérica de
+  -- "tu home cambió" (ambos ya estaban marcados como pendientes en
+  -- docs/ESTADO.md antes de esta ronda).
+  --
+  -- entity_type/entity_id son polimórficos (sin FK, mismo criterio que
+  -- activity_log.entity_id) — el cliente decide cómo navegar según el type de
+  -- la notificación (ver NOTIFICATION_ROUTES en NotificationBell.tsx). project_id
+  -- SÍ es FK real (on delete set null) para poder "ir al proyecto" sin
+  -- resolver nada más.
+  -- ----------------------------------------------------------------------------
+  create table if not exists notifications (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references organizations(id) on delete cascade,
+    user_id uuid not null references auth.users(id) on delete cascade,
+    type text not null,
+    title text not null,
+    body text not null,
+    entity_type text,
+    entity_id uuid,
+    project_id uuid references projects(id) on delete set null,
+    read boolean not null default false,
+    created_at timestamptz not null default now()
+  );
+
+  create index if not exists notifications_user_unread_idx on notifications (user_id, read, created_at desc);
+
+  alter table notifications enable row level security;
+
+  drop policy if exists "notifications_select_own" on notifications;
+  create policy "notifications_select_own" on notifications
+    for select to authenticated
+    using (auth.uid() = user_id);
+
+  -- Insertar es autoatestiguado a nivel de ORGANIZACIÓN (quien inserta debe
+  -- ser miembro), pero el destinatario (user_id) puede ser CUALQUIER otro
+  -- miembro de esa misma organización — a diferencia de activity_log
+  -- (auth.uid() = actor_id), acá el "actor" casi siempre notifica a OTRA
+  -- persona (ej. asignar una task a un compañero). Se valida que el
+  -- destinatario también sea miembro real de la organización, para que nadie
+  -- pueda insertar notificaciones para un user_id ajeno a ese workspace.
+  drop policy if exists "notifications_insert_org" on notifications;
+  create policy "notifications_insert_org" on notifications
+    for insert to authenticated
+    with check (
+      organization_id in (select my_organization_ids())
+      and exists (
+        select 1 from organization_members om
+        where om.organization_id = notifications.organization_id and om.user_id = notifications.user_id
+      )
+    );
+
+  drop policy if exists "notifications_update_own" on notifications;
+  create policy "notifications_update_own" on notifications
+    for update to authenticated
+    using (auth.uid() = user_id)
+    with check (auth.uid() = user_id);
+
   -- ============================================================================
   -- Módulo de Clientes (docs/CLIENTE.md) — portal aislado por cliente.
   --
