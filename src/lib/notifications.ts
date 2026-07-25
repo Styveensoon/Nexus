@@ -16,7 +16,8 @@ export type NotificationType =
   | "task_team_assigned"
   | "task_collaborator_added"
   | "task_blocked_toggle"
-  | "badge_granted";
+  | "badge_granted"
+  | "automation_triggered";
 
 export type AppNotification = {
   id: string;

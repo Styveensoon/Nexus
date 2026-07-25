@@ -47,6 +47,7 @@ import {
   UserPlus,
   Users,
   X,
+  Zap,
 } from "lucide-react-native";
 
 import { useTheme } from "../context/ThemeContext";
@@ -63,6 +64,7 @@ import TaskGanttChart from "../components/TaskGanttChart";
 import TaskCollaboratorsModal from "../components/TaskCollaboratorsModal";
 import UserTasksModal from "../components/UserTasksModal";
 import RebalanceSuggestionsModal from "../components/RebalanceSuggestionsModal";
+import AutomationsModal from "../components/AutomationsModal";
 import {
   addChecklistItem,
   addTaskComment,
@@ -333,6 +335,7 @@ export default function TasksScreen({ navigation, route }: any) {
   const [filterOverdueOnly, setFilterOverdueOnly] = useState(false);
   const [filterPriorities, setFilterPriorities] = useState<Set<TaskPriority>>(new Set());
   const [showRebalanceModal, setShowRebalanceModal] = useState(false);
+  const [showAutomationsModal, setShowAutomationsModal] = useState(false);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -1140,6 +1143,14 @@ export default function TasksScreen({ navigation, route }: any) {
 
             {isProjectLeaderOrOwner(selectedProject) && selectedProject && (
               <View style={{ flexDirection: "row", gap: 10 }}>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[styles.newBtn, { backgroundColor: inputBg, borderWidth: 1, borderColor: border }]}
+                  onPress={() => setShowAutomationsModal(true)}
+                >
+                  <Zap size={16} color={primaryColor} />
+                  <Text style={[styles.newBtnText, { color: primaryColor }]}>Automatizaciones</Text>
+                </TouchableOpacity>
                 <TouchableOpacity
                   activeOpacity={0.85}
                   style={[styles.newBtn, { backgroundColor: inputBg, borderWidth: 1, borderColor: border }]}
@@ -2602,6 +2613,18 @@ export default function TasksScreen({ navigation, route }: any) {
           projectName={selectedProject.name}
           onClose={() => setShowRebalanceModal(false)}
           onApplied={loadData}
+        />
+      )}
+
+      {selectedProject && user && (
+        <AutomationsModal
+          visible={showAutomationsModal}
+          isDark={isDark}
+          projectId={selectedProject.id}
+          projectName={selectedProject.name}
+          currentUserId={user.id}
+          assignableUsers={assignableUsers}
+          onClose={() => setShowAutomationsModal(false)}
         />
       )}
     </View>

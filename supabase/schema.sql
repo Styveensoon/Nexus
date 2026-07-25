@@ -1075,6 +1075,88 @@
     );
 
   -- ----------------------------------------------------------------------------
+  -- project_automations: reglas "CUANDO <trigger> ENTONCES <acción>" por
+  -- proyecto (ej. "cuando una task pasa a Urgente, notificar al líder"). Mismo
+  -- criterio de permisos que crear/editar tasks: solo el líder del proyecto o
+  -- el owner pueden gestionarlas (no es colaborativo). trigger_type/action_type
+  -- son texto libre validado en el cliente (no hay tabla de catálogo, mismo
+  -- criterio que BADGE_CATALOG/TASK_STATUS_*) — trigger_config/action_config
+  -- (jsonb) guardan los parámetros según el tipo (ej. {"toStatus": "blocked"}
+  -- para task_status_changed, {"status": "urgent"} para change_priority).
+  --
+  -- El motor que evalúa y ejecuta estas reglas (runAutomations, en
+  -- src/lib/automations.ts) es 100% client-side, llamado desde createTask/
+  -- updateTaskStatus/updateTask justo después de que la mutación real ya tuvo
+  -- éxito — mismo patrón que logActivity/notify*. Reusa las MISMAS funciones
+  -- de escritura que la edición manual (updateTask/updateTaskStatus/
+  -- addTaskComment/pushNotification), nunca un camino de escritura paralelo,
+  -- así activity_log y las notificaciones que esas funciones ya disparan
+  -- siguen funcionando gratis. Protección anti-loop: esas llamadas internas
+  -- pasan { skipAutomations: true } para que una automatización NUNCA dispare
+  -- otra — cascada de un solo nivel, nunca infinita, por construcción.
+  -- ----------------------------------------------------------------------------
+  create table if not exists project_automations (
+    id uuid primary key default gen_random_uuid(),
+    project_id uuid not null references projects(id) on delete cascade,
+    name text not null,
+    trigger_type text not null,
+    trigger_config jsonb not null default '{}',
+    action_type text not null,
+    action_config jsonb not null default '{}',
+    enabled boolean not null default true,
+    created_by uuid not null references auth.users(id) on delete cascade,
+    created_at timestamptz not null default now()
+  );
+
+  alter table project_automations enable row level security;
+
+  drop policy if exists "project_automations_select_org" on project_automations;
+  create policy "project_automations_select_org" on project_automations
+    for select to authenticated
+    using (project_id in (select id from projects where organization_id in (select my_organization_ids())));
+
+  drop policy if exists "project_automations_insert_leader_owner" on project_automations;
+  create policy "project_automations_insert_leader_owner" on project_automations
+    for insert to authenticated
+    with check (
+      auth.uid() = created_by
+      and exists (
+        select 1 from projects p
+        join organizations o on o.id = p.organization_id
+        where p.id = project_id and (p.leader_id = auth.uid() or o.owner_id = auth.uid())
+      )
+    );
+
+  drop policy if exists "project_automations_update_leader_owner" on project_automations;
+  create policy "project_automations_update_leader_owner" on project_automations
+    for update to authenticated
+    using (
+      exists (
+        select 1 from projects p
+        join organizations o on o.id = p.organization_id
+        where p.id = project_id and (p.leader_id = auth.uid() or o.owner_id = auth.uid())
+      )
+    )
+    with check (
+      exists (
+        select 1 from projects p
+        join organizations o on o.id = p.organization_id
+        where p.id = project_id and (p.leader_id = auth.uid() or o.owner_id = auth.uid())
+      )
+    );
+
+  drop policy if exists "project_automations_delete_leader_owner" on project_automations;
+  create policy "project_automations_delete_leader_owner" on project_automations
+    for delete to authenticated
+    using (
+      exists (
+        select 1 from projects p
+        join organizations o on o.id = p.organization_id
+        where p.id = project_id and (p.leader_id = auth.uid() or o.owner_id = auth.uid())
+      )
+    );
+
+  -- ----------------------------------------------------------------------------
   -- profile_badges: reconocimientos otorgados a un colaborador (Líder Nato,
   -- Team Player, Mentor, etc.). El catálogo de tipos es fijo, vive en código
   -- (BADGE_CATALOG en src/lib/badges.ts) — no hay tabla de tipos porque hoy no

@@ -9,6 +9,8 @@ import {
   notifyTaskCollaboratorAdded,
   notifyTaskBlockedToggle,
 } from "./emails";
+import { pushNotification } from "./notifications";
+import { AutomationEvent, ProjectAutomation, matchEnabledAutomations } from "./automations";
 
 export type TaskStatus =
   | "backlog"
@@ -225,6 +227,83 @@ export async function listTasksForProjects(projectIds: string[]) {
   return hydrateTasks(taskRows ?? []);
 }
 
+// Motor de ejecución de automatizaciones — vive acá (no en automations.ts)
+// para evitar un import circular: necesita llamar a updateTask/
+// updateTaskStatus/addTaskComment, que están en este mismo archivo. Nunca se
+// llama a sí mismo indirectamente: cada acción escribe con
+// { skipAutomations: true }, así una automatización jamás dispara otra
+// (cascada de un solo nivel, por construcción). Si una regla puntual falla,
+// se loguea con console.warn y se sigue con las demás — una automatización
+// rota nunca debe tumbar la acción humana que la disparó.
+async function runProjectAutomations(event: AutomationEvent) {
+  const matching = await matchEnabledAutomations(event);
+  for (const automation of matching) {
+    try {
+      await executeAutomationAction(automation, event);
+    } catch (err) {
+      console.warn(`Automatización "${automation.name}" falló:`, err);
+    }
+  }
+}
+
+async function executeAutomationAction(automation: ProjectAutomation, event: AutomationEvent) {
+  const { actionType, actionConfig } = automation;
+  const taskId = event.taskId;
+
+  switch (actionType) {
+    case "change_status": {
+      const status = actionConfig.status as TaskStatus | undefined;
+      if (!status) return;
+      await updateTaskStatus(taskId, status, { skipAutomations: true });
+      return;
+    }
+    case "change_priority": {
+      const priority = actionConfig.priority as TaskPriority | undefined;
+      if (!priority) return;
+      await updateTask(taskId, { priority }, { skipAutomations: true });
+      return;
+    }
+    case "add_label": {
+      const label = (actionConfig.label as string | undefined)?.trim();
+      if (!label) return;
+      const { data: row } = await supabase.from("tasks").select("labels").eq("id", taskId).maybeSingle();
+      const current: string[] = row?.labels ?? [];
+      if (current.some((l) => l.toLowerCase() === label.toLowerCase())) return;
+      await updateTask(taskId, { labels: [...current, label] }, { skipAutomations: true });
+      return;
+    }
+    case "assign_to_user": {
+      const userId = actionConfig.userId as string | undefined;
+      if (!userId) return;
+      await updateTask(taskId, { assignedUserId: userId, assignedTeamId: null }, { skipAutomations: true });
+      return;
+    }
+    case "post_comment": {
+      const content = (actionConfig.content as string | undefined)?.trim();
+      if (!content) return;
+      // Sin skipActivityLog — un comentario de automatización es un comentario
+      // real con texto, debe aparecer en Actividad igual que uno humano (ese
+      // flag es solo para los adjuntos sin texto que se agregan al crear una
+      // task, ver el comentario en addTaskComment).
+      await addTaskComment({ taskId, userId: event.actorUserId, content });
+      return;
+    }
+    case "notify_user": {
+      const userId = actionConfig.userId as string | undefined;
+      if (!userId) return;
+      await pushNotification(
+        event.organizationId,
+        [userId],
+        "automation_triggered",
+        automation.name,
+        (actionConfig.message as string | undefined)?.trim() || `Automatización "${automation.name}" se activó.`,
+        { entityType: "task", entityId: taskId, projectId: event.projectId }
+      );
+      return;
+    }
+  }
+}
+
 export async function createTask(params: {
   projectId: string;
   createdBy: string;
@@ -236,7 +315,7 @@ export async function createTask(params: {
   startDate?: string | null;
   dueDate?: string | null;
   labels?: string[];
-}) {
+}, opts?: { skipAutomations?: boolean }) {
   const { data, error } = await supabase
     .from("tasks")
     .insert({
@@ -282,13 +361,23 @@ export async function createTask(params: {
       } else if (params.assignedTeamId) {
         await notifyTaskTeamAssigned(params.assignedTeamId, params.title, project.name, project.organization_id, params.projectId, data.id);
       }
+
+      if (!opts?.skipAutomations) {
+        await runProjectAutomations({
+          type: "task_created",
+          taskId: data.id,
+          projectId: params.projectId,
+          organizationId: project.organization_id,
+          actorUserId: params.createdBy,
+        });
+      }
     }
   }
 
   return { data, error };
 }
 
-export async function updateTaskStatus(taskId: string, status: TaskStatus) {
+export async function updateTaskStatus(taskId: string, status: TaskStatus, opts?: { skipAutomations?: boolean }) {
   const { data: taskBefore } = await supabase
     .from("tasks")
     .select("project_id, title, status, assigned_user_id, assigned_team_id")
@@ -347,6 +436,18 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus) {
           );
         }
       }
+
+      if (!opts?.skipAutomations) {
+        await runProjectAutomations({
+          type: "task_status_changed",
+          taskId,
+          projectId: taskBefore.project_id,
+          organizationId: project.organization_id,
+          actorUserId: user.id,
+          toStatus: status,
+          fromStatus: taskBefore.status as TaskStatus,
+        });
+      }
     }
   }
 
@@ -364,7 +465,8 @@ export async function updateTask(
     startDate: string | null;
     dueDate: string | null;
     labels: string[];
-  }>
+  }>,
+  opts?: { skipAutomations?: boolean }
 ) {
   // Se necesita el estado previo solo si cambia la asignación (para saber a
   // quién avisar) o la fecha límite (para resetear el aviso de vencimiento
@@ -428,6 +530,18 @@ export async function updateTask(
           );
         } else if (updates.assignedTeamId) {
           await notifyTaskTeamAssigned(updates.assignedTeamId, title, project.name, project.organization_id, before.project_id, taskId);
+        }
+
+        if (!opts?.skipAutomations) {
+          await runProjectAutomations({
+            type: "task_assigned",
+            taskId,
+            projectId: before.project_id,
+            organizationId: project.organization_id,
+            actorUserId: user.id,
+            assignedUserId: updates.assignedUserId ?? null,
+            assignedTeamId: updates.assignedTeamId ?? null,
+          });
         }
       }
     }
